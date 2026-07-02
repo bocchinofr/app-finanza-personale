@@ -1,42 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const SPREADSHEET_ID = '1IBO4KSWopaS7TG0cLdPC83rmEHGxOiSda4AtP6AsQJg'
+const SHEET_ID_PATTERN = /^[a-zA-Z0-9_-]{20,80}$/
+const ALLOWED_SHEETS = ['Movimenti conto', 'Liquidità', 'Anagrafica Portafoglio']
 
-const SHEETS = [
-  'movimenti conto',
-  'ChashFlow',
-]
-
-function buildCsvUrl(sheet: string) {
-  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`
+function buildCsvUrl(sheetId: string, sheetName: string) {
+  return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`
 }
 
 export async function GET(req: NextRequest) {
-  const sheet = req.nextUrl.searchParams.get('sheet') ?? 'movimenti conto'
+  const sheetId   = req.nextUrl.searchParams.get('sheetId')
+  const sheetName = req.nextUrl.searchParams.get('sheet') ?? 'Movimenti conto'
 
-  if (!SHEETS.includes(sheet)) {
-    return NextResponse.json({ error: 'Foglio non consentito' }, { status: 400 })
-  }
+  if (!sheetId) return NextResponse.json({ error: 'Parametro sheetId mancante' }, { status: 400 })
+  if (!SHEET_ID_PATTERN.test(sheetId)) return NextResponse.json({ error: 'sheetId non valido' }, { status: 400 })
+  if (!ALLOWED_SHEETS.includes(sheetName)) return NextResponse.json({ error: 'Foglio non consentito' }, { status: 400 })
 
   try {
-    const res = await fetch(buildCsvUrl(sheet), {
-      next: { revalidate: 300 }, // cache 5 min server-side
-    })
-
+    const res = await fetch(buildCsvUrl(sheetId, sheetName), { cache: 'no-store' })
     if (!res.ok) {
-      return NextResponse.json(
-        { error: `Google Sheets ha risposto con ${res.status}` },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: `Google Sheets ha risposto con ${res.status}` }, { status: 502 })
     }
-
     const csv = await res.text()
-    return new NextResponse(csv, {
-      headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
-      },
-    })
+    if (csv.trim().startsWith('<')) {
+      return NextResponse.json({ error: 'Foglio non accessibile o nome foglio errato.' }, { status: 404 })
+    }
+    return new NextResponse(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8' } })
   } catch (err) {
     console.error('sync-sheets error:', err)
     return NextResponse.json({ error: 'Errore nel recupero del foglio' }, { status: 500 })

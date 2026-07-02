@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { Movimento, MESI, CATEGORIE_ENTRATE, CATEGORIE_INVESTIMENTI } from '@/types'
+import { Movimento, MESI, CATEGORIE_ENTRATE } from '@/types'
 
 const MESI_SET = new Set(MESI as unknown as string[])
 const CAT_ENTRATE = new Set(CATEGORIE_ENTRATE)
@@ -39,7 +39,7 @@ export function parseMovimentiSheet(file: ArrayBuffer, anno: number): Movimento[
     }
   }
 
-  function parseRows(rows: Record<string, unknown>[], defaultPersona: 'G' | 'F') {
+  function parseRows(rows: Record<string, unknown>[], defaultComponente: string) {
     for (const row of rows) {
       const mese = String(row['MESE'] ?? '').toLowerCase().trim()
       if (!mese || !MESI_SET.has(mese)) continue
@@ -50,9 +50,7 @@ export function parseMovimentiSheet(file: ArrayBuffer, anno: number): Movimento[
       if (entrate === 0 && uscite === 0) continue
 
       const isEntrata = CAT_ENTRATE.has(cat)
-      let persona: 'G' | 'F' = defaultPersona
-      if (cat === 'STIPENDIO G') persona = 'G'
-      else if (cat === 'STIPENDIO F') persona = 'F'
+      const componente = String(row['COMPONENTE'] ?? row['Componente'] ?? '').trim() || defaultComponente
 
       movimenti.push({
         mese,
@@ -63,7 +61,7 @@ export function parseMovimentiSheet(file: ArrayBuffer, anno: number): Movimento[
         categoria: cat,
         sottocategoria: String(row['SOTTOCATEGORIA'] ?? '').trim(),
         nome_etf: String(row['nome ETF'] ?? row['NOME ETF'] ?? '').trim(),
-        persona,
+        componente,
         anno,
       })
     }
@@ -71,8 +69,8 @@ export function parseMovimentiSheet(file: ArrayBuffer, anno: number): Movimento[
 
   const table1 = secondTableStart > 0 ? raw.slice(0, secondTableStart - 1) : raw
   const table2 = secondTableStart > 0 ? raw.slice(secondTableStart) : []
-  parseRows(table1, 'G')
-  parseRows(table2, 'F')
+  parseRows(table1, '')
+  parseRows(table2, '')
 
   return movimenti
 }

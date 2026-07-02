@@ -1,0 +1,321 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase'
+
+function extractSheetId(input: string): string | null {
+  const trimmed = input.trim()
+  if (/^[a-zA-Z0-9_-]{20,80}$/.test(trimmed)) return trimmed
+  const match = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/)
+  return match ? match[1] : null
+}
+
+// Domande del questionario rischio (invariate)
+const RISK_QUESTIONS = [
+  {
+    id: 'horizon',
+    label: 'Qual è il tuo orizzonte temporale per gli investimenti?',
+    options: [
+      { value: 20, label: 'Breve termine (< 3 anni)' },
+      { value: 50, label: 'Medio termine (3-10 anni)' },
+      { value: 80, label: 'Lungo termine (> 10 anni)' },
+    ]
+  },
+  {
+    id: 'reaction',
+    label: 'Come reagiresti a un calo del 20% del tuo portafoglio?',
+    options: [
+      { value: 10, label: 'Venderei tutto per fermare le perdite' },
+      { value: 40, label: 'Aspetterei senza fare nulla' },
+      { value: 80, label: 'Approfitterei per comprare di più' },
+    ]
+  },
+  {
+    id: 'knowledge',
+    label: 'Come valuti la tua conoscenza finanziaria?',
+    options: [
+      { value: 20, label: 'Base (solo conto corrente e risparmio)' },
+      { value: 50, label: 'Intermedia (fondi, obbligazioni, azioni)' },
+      { value: 90, label: 'Avanzata (asset allocation, derivati, mercati)' },
+    ]
+  },
+]
+
+function getRiskLabel(score: number): string {
+  if (score <= 30) return 'Conservativo'
+  if (score <= 50) return 'Prudente'
+  if (score <= 70) return 'Bilanciato'
+  if (score <= 85) return 'Dinamico'
+  return 'Aggressivo'
+}
+
+// Lista degli obiettivi disponibili
+const AVAILABLE_GOALS = ['Fondo emergenza', 'Acquisto casa', 'Pensione', 'Istruzione figli', 'Viaggi', 'Auto nuova']
+
+export default function ProfiloPage() {
+  const supabase = createClient()
+  
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  
+  // Dati profilo
+  const [email, setEmail] = useState('')
+  const [nome, setNome] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [employmentStatus, setEmploymentStatus] = useState('')
+  const [financialGoals, setFinancialGoals] = useState<string[]>([])
+  const [sheetInput, setSheetInput] = useState('')
+  
+  // Risk questionnaire
+  const [riskAnswers, setRiskAnswers] = useState<Record<string, number>>({})
+  const [riskLabel, setRiskLabel] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setEmail(user.email ?? '')
+
+      const { data } = await supabase
+        .from('profili')
+        .select('*')
+        .eq('user_id', user.id)
+        .single()
+
+      if (data) {
+        setNome(data.nome_visualizzato ?? '')
+        setBirthDate(data.birth_date ?? '')
+        setEmploymentStatus(data.employment_status ?? '')
+        setFinancialGoals(data.financial_goals ?? [])
+        setSheetInput(data.google_sheet_id ?? '')
+        if (data.risk_profile_label) {
+          setRiskLabel(data.risk_profile_label)
+        }
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  function handleRiskChange(questionId: string, value: number) {
+    setRiskAnswers(prev => ({ ...prev, [questionId]: value }))
+  }
+
+  function calculateRiskProfile(): { score: number; label: string } {
+    const values = Object.values(riskAnswers)
+    if (values.length === 0) return { score: 0, label: 'Non definito' }
+    const avgScore = values.reduce((a, b) => a + b, 0) / values.length
+    const score = Math.round(avgScore)
+    return { score, label: getRiskLabel(score) }
+  }
+
+  function toggleGoal(goal: string) {
+    setFinancialGoals(prev =>
+      prev.includes(goal) ? prev.filter(g => g !== goal) : [...prev, goal]
+    )
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setMessage('')
+
+    const sheetId = sheetInput.trim() ? extractSheetId(sheetInput) : null
+    if (sheetInput.trim() && !sheetId) {
+      setError('Formato foglio Google non riconosciuto.')
+      return
+    }
+
+    let riskScore = null
+    let riskLabelFinal = null
+    if (Object.keys(riskAnswers).length === RISK_QUESTIONS.length) {
+      const result = calculateRiskProfile()
+      riskScore = result.score
+      riskLabelFinal = result.label
+    }
+
+    setSaving(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Non autenticato')
+
+      const { error: upsertError } = await supabase
+        .from('profili')
+        .upsert({
+          user_id: user.id,
+          google_sheet_id: sheetId,
+          nome_visualizzato: nome.trim() || null,
+          birth_date: birthDate || null,
+          employment_status: employmentStatus || null,
+          financial_goals: financialGoals,
+          risk_profile_score: riskScore,
+          risk_profile_label: riskLabelFinal,
+          updated_at: new Date().toISOString(),
+        })
+
+      if (upsertError) throw upsertError
+      
+      setMessage('✓ Profilo aggiornato con successo')
+      if (riskLabelFinal) setRiskLabel(riskLabelFinal)
+      setSheetInput(sheetId ?? '')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Errore nel salvataggio')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div className="text-sm text-gray-400">Caricamento…</div>
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-6">
+      <h1 className="text-lg font-semibold text-gray-900 mb-1">Profilo</h1>
+      <p className="text-sm text-gray-500 mb-6">Gestisci i tuoi dati personali, il profilo di rischio e il foglio collegato.</p>
+
+      <form onSubmit={handleSave}>
+        {/* Griglia a 3 colonne */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+          
+          {/* --- COLONNA 1: Dati personali --- */}
+          <div className="card space-y-4">
+            <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <span className="text-base">👤</span> Dati personali
+            </h2>
+            <div>
+              <p className="text-xs text-gray-400 mb-1">Email</p>
+              <p className="text-sm text-gray-700 bg-surface-50 px-3 py-2 rounded-lg border border-surface-200">
+                {email}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nome visualizzato</label>
+              <input value={nome} onChange={e => setNome(e.target.value)} className="input" placeholder="Francesco" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Data di nascita</label>
+              <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} className="input" />
+              {birthDate && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Età: {new Date().getFullYear() - new Date(birthDate).getFullYear()} anni
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Situazione lavorativa</label>
+              <select value={employmentStatus} onChange={e => setEmploymentStatus(e.target.value)} className="input">
+                <option value="">Seleziona...</option>
+                <option value="dipendente">Dipendente</option>
+                <option value="autonomo">Autonomo / Libero professionista</option>
+                <option value="imprenditore">Imprenditore</option>
+                <option value="pensionato">Pensionato</option>
+                <option value="in_cerca">In cerca di occupazione</option>
+                <option value="studente">Studente</option>
+              </select>
+            </div>
+          </div>
+
+          {/* --- COLONNA 2: Profilo di rischio + Obiettivi --- */}
+          <div className="card space-y-4">
+            <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <span className="text-base">📈</span> Profilo di rischio &amp; Obiettivi
+            </h2>
+            
+            {/* Sottosezione: Questionario */}
+            <div className="space-y-3">
+              <p className="text-xs text-gray-400">Rispondi alle domande per calcolare il tuo profilo.</p>
+              {RISK_QUESTIONS.map((q) => (
+                <div key={q.id} className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">{q.label}</label>
+                  <select 
+                    className="input text-sm" 
+                    value={riskAnswers[q.id] ?? ''} 
+                    onChange={(e) => handleRiskChange(q.id, Number(e.target.value))}
+                  >
+                    <option value="">Seleziona...</option>
+                    {q.options.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+
+              {Object.keys(riskAnswers).length === RISK_QUESTIONS.length && (
+                <div className="mt-2 p-3 bg-brand-50 border border-brand-200 rounded-lg text-center">
+                  <p className="text-xs text-brand-700">Il tuo profilo attuale:</p>
+                  <p className="text-lg font-bold text-brand-900">
+                    {calculateRiskProfile().label}
+                  </p>
+                </div>
+              )}
+              {riskLabel && Object.keys(riskAnswers).length === 0 && (
+                <div className="mt-2 p-3 bg-surface-50 rounded-lg text-center">
+                  <p className="text-xs text-gray-500">Profilo salvato: <strong>{riskLabel}</strong></p>
+                  <p className="text-xs text-gray-400">Modifica le risposte per ricalcolarlo.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Divisore tra le due sezioni */}
+            <hr className="border-surface-200" />
+
+            {/* Sottosezione: Obiettivi */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-2">Obiettivi finanziari</label>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_GOALS.map(goal => (
+                  <button
+                    key={goal}
+                    type="button"
+                    onClick={() => toggleGoal(goal)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                      financialGoals.includes(goal) 
+                        ? 'bg-brand-600 text-white border-brand-600' 
+                        : 'bg-white text-gray-600 border-surface-300 hover:border-brand-400'
+                    }`}
+                  >
+                    {goal}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5">Seleziona uno o più obiettivi principali.</p>
+            </div>
+          </div>
+
+          {/* --- COLONNA 3: Solo Foglio Google --- */}
+          <div className="card space-y-4">
+            <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <span className="text-base">🔗</span> Foglio Google collegato
+            </h2>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">URL o ID del foglio</label>
+              <input 
+                value={sheetInput} 
+                onChange={e => setSheetInput(e.target.value)} 
+                className="input" 
+                placeholder="Incolla l'URL o l'ID" 
+              />
+              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                Il foglio deve essere condiviso pubblicamente:{' '}
+                <strong>Condividi → Chiunque abbia il link → Visualizzatore</strong>.
+                <br />
+                Deve contenere un foglio chiamato <code className="bg-surface-100 px-1 rounded">movimenti conto</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Messaggi */}
+        {error && <div className="mb-4 rounded-lg px-4 py-3 text-sm bg-red-50 text-red-600">{error}</div>}
+        {message && <div className="mb-4 rounded-lg px-4 py-3 text-sm bg-green-50 text-green-700">{message}</div>}
+
+        {/* Bottone Salva */}
+        <div className="flex justify-end">
+          <button type="submit" disabled={saving} className="btn-primary">
+            {saving ? 'Salvataggio…' : 'Salva profilo'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

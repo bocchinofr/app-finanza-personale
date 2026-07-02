@@ -2,16 +2,33 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { useEffect, useState } from 'react'
 
 const navItems = [
   { href: '/dashboard', label: 'Movimenti & Cash Flow', icon: '◈' },
-  { href: '/dashboard/upload', label: 'Carica file', icon: '↑' },
+  { href: '/dashboard/upload', label: 'Importa dati', icon: '↑' },
+  { href: '/dashboard/profilo', label: 'Profilo', icon: '○' },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    async function checkAdmin() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('profili')
+        .select('is_admin')
+        .eq('user_id', user.id)
+        .single()
+      setIsAdmin(data?.is_admin ?? false)
+    }
+    checkAdmin()
+  }, [])
 
   async function logout() {
     await supabase.auth.signOut()
@@ -21,7 +38,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-surface-200 flex flex-col fixed h-full">
         <div className="px-5 py-5 border-b border-surface-100">
           <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
@@ -42,6 +58,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {item.label}
             </Link>
           ))}
+
+          {isAdmin && (
+            <Link
+              href="/dashboard/admin"
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors mt-2
+                ${pathname === '/dashboard/admin'
+                  ? 'bg-brand-50 text-brand-700 font-medium'
+                  : 'text-gray-600 hover:bg-surface-50 hover:text-gray-900'}`}
+            >
+              <span className="text-base">⚙</span>
+              Admin
+            </Link>
+          )}
         </nav>
 
         <div className="p-3 border-t border-surface-100">
@@ -54,7 +83,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* Main */}
       <main className="flex-1 ml-56 p-6">
         {children}
       </main>

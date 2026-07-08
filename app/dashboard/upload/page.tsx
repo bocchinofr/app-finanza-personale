@@ -46,6 +46,7 @@ export default function UploadPage() {
       setProfileLoading(false)
     }
     loadProfile()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Salva (o aggiorna) il foglio Google nel profilo
@@ -188,6 +189,7 @@ export default function UploadPage() {
     e.preventDefault(); setDragging(false)
     const file = e.dataTransfer.files[0]
     if (file) processFile(file)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anno])
 
   const isLoading = ['fetching','parsing','saving'].includes(status)
@@ -196,7 +198,7 @@ export default function UploadPage() {
     <div className="max-w-7xl mx-auto px-4 py-6">
       <h1 className="text-lg font-semibold text-gray-900 mb-1">Importa dati</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Scegli come caricare i movimenti. I dati esistenti per l'anno selezionato verranno sostituiti.
+        Scegli come caricare i movimenti. I dati esistenti per l&apos;anno selezionato verranno sostituiti.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
@@ -324,18 +326,18 @@ export default function UploadPage() {
         <div className="space-y-3 pt-3 text-xs text-gray-500">
           <p>
             Il template contiene <strong className="text-gray-700">3 fogli</strong> che puoi compilare.
-            Solo il foglio <strong className="text-gray-700">"Movimenti conto"</strong> è obbligatorio.
+            Solo il foglio <strong className="text-gray-700">&quot;Movimenti conto&quot;</strong> è obbligatorio.
           </p>
           <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
             <p className="font-medium text-gray-700 text-xs">📊 Foglio 1: Movimenti conto (obbligatorio)</p>
-            <p className="text-gray-500">Contiene l'elenco di tutte le transazioni del conto.</p>
+            <p className="text-gray-500">Contiene l&apos;elenco di tutte le transazioni del conto.</p>
             <div className="space-y-0.5 pt-1">
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Data operazione</code> — formato GG/MM/AAAA</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Descrizione</code> — testo libero</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Entrate</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Uscite</code> — importo numerico senza simbolo €</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CATEGORIA</code> — usa i valori dell'elenco nel template</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">COMPONENTE</code> — opzionale, es. "Giulia" o "Famiglia"</p>
+              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CATEGORIA</code> — usa i valori dell&apos;elenco nel template</p>
+              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">COMPONENTE</code> — opzionale, es. &quot;Giulia&quot; o &quot;Famiglia&quot;</p>
             </div>
           </div>
           <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
@@ -343,7 +345,7 @@ export default function UploadPage() {
             <p className="text-gray-500">Traccia il saldo dei conti correnti e dei depositi.</p>
             <div className="space-y-0.5 pt-1">
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Data</code> — formato GG/MM/AAAA</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Conto</code> — nome del conto (es. "Intesa", "Fineco")</p>
+              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Conto</code> — nome del conto (es. &quot;Intesa&quot;, &quot;Fineco&quot;)</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Saldo</code> — importo numerico</p>
             </div>
           </div>
@@ -352,7 +354,7 @@ export default function UploadPage() {
             <p className="text-gray-500">Elenco degli asset finanziari (azioni, obbligazioni, ETF, fondi).</p>
             <div className="space-y-0.5 pt-1">
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Tipo</code> — Azioni, Obbligazioni, ETF, Fondi, Crypto</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Ticker</code> — codice identificativo (es. "AAPL", "VWCE")</p>
+              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Ticker</code> — codice identificativo (es. &quot;AAPL&quot;, &quot;VWCE&quot;)</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Quantità</code> — numero di unità possedute</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Prezzo medio carico</code> — prezzo di acquisto medio</p>
               <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Valore attuale</code> — valore di mercato aggiornato</p>
@@ -363,7 +365,7 @@ export default function UploadPage() {
             <p>1. Apri il <a href="https://docs.google.com/spreadsheets/d/1fLJoECuxa8bjYPAskzFi7RhRx6-O_1TWB_lmTHWBZ34" target="_blank" rel="noopener noreferrer" className="text-brand-600 underline">template</a> e fai <strong className="text-gray-700">File → Crea una copia</strong></p>
             <p>2. Rinomina il file e compila i fogli che ti servono</p>
             <p>3. Condividilo: <strong className="text-gray-700">Condividi → Chiunque abbia il link → Visualizzatore</strong></p>
-            <p>4. Incolla l'URL qui sopra e clicca <strong className="text-gray-700">Salva foglio</strong></p>
+            <p>4. Incolla l&apos;URL qui sopra e clicca <strong className="text-gray-700">Salva foglio</strong></p>
             <p>5. Clicca <strong className="text-gray-700">Sincronizza ora</strong></p>
           </div>
         </div>
@@ -374,7 +376,7 @@ export default function UploadPage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-red-800">⚠️ Cancella dati {anno}</p>
-            <p className="text-xs text-red-600 mt-0.5">Rimuove movimenti e liquidità per l'anno selezionato.</p>
+            <p className="text-xs text-red-600 mt-0.5">Rimuove movimenti e liquidità per l&apos;anno selezionato.</p>
           </div>
           <button onClick={clearData} disabled={isLoading}
             className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-40">

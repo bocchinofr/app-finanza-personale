@@ -33,11 +33,13 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json(res.data.values ?? [])
-  } catch (err: any) {
-    console.error('google sheets error full:', err)
+  } catch (err: unknown) {
+    console.error('google sheets error full:', err);
+    const message =
+      err instanceof Error ? err.message : 'Errore lettura Google Sheets';
     return NextResponse.json(
-      { error: err?.message ?? 'Errore lettura Google Sheets' },
+      { error: message },
       { status: 500 }
-    )
+    );
   }
 }

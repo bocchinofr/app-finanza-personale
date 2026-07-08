@@ -725,7 +725,9 @@ export default function DashboardPage() {
           {portafoglio.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3">
               <p className="text-sm text-gray-500">Nessun asset nel portafoglio.</p>
-              <p className="text-xs text-gray-400">Compila il foglio &ldquo;"Anagrafica Portafoglio"&rdquo; e risincronizza.</p>
+              <p className="text-xs text-gray-400">
+                {`Compila il foglio "Anagrafica Portafoglio" e risincronizza.`}
+              </p>
             </div>
           ) : (
             <>

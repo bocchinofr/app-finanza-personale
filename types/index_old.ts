@@ -37,28 +37,6 @@ export interface AssetPortafoglio {
   pac_versamento: number
 }
 
-export interface AlertSoglia {
-  id?: string
-  user_id?: string
-  portafoglio_id: string
-  tipo: 'massimo' | 'mensile'
-  soglia_pct: number
-  attivo: boolean
-  in_breach: boolean
-  ultima_notifica_at?: string | null
-  created_at?: string
-}
-
-export interface Notifica {
-  id: string
-  user_id?: string
-  portafoglio_id: string | null
-  tipo: string
-  messaggio: string
-  letta: boolean
-  created_at: string
-}
-
 export interface Profilo {
   user_id: string
   google_sheet_id: string | null

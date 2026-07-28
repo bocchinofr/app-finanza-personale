@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Movimento, Liquidita, AssetPortafoglio, MESI } from '@/types'
+import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, MESI } from '@/types'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, Area, AreaChart
@@ -133,6 +133,14 @@ export default function DashboardPage() {
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, QuoteInfo>>({})
   const [loadingPrezzi, setLoadingPrezzi] = useState(false)
 
+  // Soglie di allerta portafoglio
+  const [soglie, setSoglie] = useState<AlertSoglia[]>([])
+  const [showSoglieForm, setShowSoglieForm] = useState(false)
+  const [globalSogliaMax, setGlobalSogliaMax] = useState(15)
+  const [globalSogliaMese, setGlobalSogliaMese] = useState(10)
+  const [draftSoglie, setDraftSoglie] = useState<Record<string, { massimo: number; mensile: number; attivo: boolean }>>({})
+  const [savingSoglie, setSavingSoglie] = useState(false)
+
   // Filters
   const [filterComponente, setFilterComponente] = useState('')
   const [expandedAssetRow, setExpandedAssetRow] = useState<number | null>(null)
@@ -151,19 +159,40 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const [movRes, liqRes, portRes] = await Promise.all([
+    const [movRes, liqRes, portRes, sogRes] = await Promise.all([
       supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('portafoglio').select('*').eq('user_id', user.id),
+      supabase.from('alert_soglie').select('*').eq('user_id', user.id),
     ])
 
     setMovimenti((movRes.data as Movimento[]) ?? [])
     setLiquidita((liqRes.data as Liquidita[]) ?? [])
     setPortafoglio((portRes.data as AssetPortafoglio[]) ?? [])
+    setSoglie((sogRes.data as AlertSoglia[]) ?? [])
     setLoading(false)
   }, [anno])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Inizializza il form soglie con i valori salvati (o i default globali)
+  useEffect(() => {
+    setDraftSoglie(prev => {
+      const next: Record<string, { massimo: number; mensile: number; attivo: boolean }> = {}
+      portafoglio.forEach(a => {
+        if (!a.id) return
+        const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'massimo')
+        const sMese = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile')
+        next[a.id] = prev[a.id] ?? {
+          massimo: sMax?.soglia_pct ?? globalSogliaMax,
+          mensile: sMese?.soglia_pct ?? globalSogliaMese,
+          attivo: sMax?.attivo ?? sMese?.attivo ?? true,
+        }
+      })
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portafoglio, soglie])
 
   // Prezzi attuali via Yahoo Finance, recuperati tramite la nostra API route
   // (la chiamata diretta a Yahoo dal browser viene bloccata da CORS)
@@ -176,11 +205,110 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(`API prezzi: ${res.status}`)
       const json = await res.json()
       setPrezziAttuali(json)
+      await checkSoglieBreach(json)
     } catch (err) {
       console.error('Errore nel recupero dei prezzi', err)
     } finally {
       setLoadingPrezzi(false)
     }
+  }
+
+  // Confronta le variazioni appena scaricate con le soglie impostate.
+  // Notifica (edge-triggered) solo al passaggio da "non superata" a "superata".
+  async function checkSoglieBreach(quotes: Record<string, QuoteInfo>) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const updates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
+    const nuoveNotifiche: { user_id: string; portafoglio_id: string; tipo: string; messaggio: string }[] = []
+
+    for (const a of portafoglio) {
+      if (!a.id || !a.ticker) continue
+      const quote = quotes[a.ticker]
+      if (!quote) continue
+      const nomeAsset = a.nome || a.descrizione || a.ticker
+
+      const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'massimo')
+      if (sMax?.id && sMax.attivo && quote.changeFromHigh != null) {
+        const breach = quote.changeFromHigh <= -sMax.soglia_pct
+        if (breach && !sMax.in_breach) {
+          updates.push({ id: sMax.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
+          nuoveNotifiche.push({
+            user_id: user.id, portafoglio_id: a.id, tipo: 'massimo',
+            messaggio: `${nomeAsset}: ${quote.changeFromHigh.toFixed(1)}% dal massimo (soglia ${sMax.soglia_pct}%)`,
+          })
+        } else if (!breach && sMax.in_breach) {
+          updates.push({ id: sMax.id, in_breach: false })
+        }
+      }
+
+      const sMese = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile')
+      if (sMese?.id && sMese.attivo && quote.changeFromMonth != null) {
+        const breach = quote.changeFromMonth <= -sMese.soglia_pct
+        if (breach && !sMese.in_breach) {
+          updates.push({ id: sMese.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
+          nuoveNotifiche.push({
+            user_id: user.id, portafoglio_id: a.id, tipo: 'mensile',
+            messaggio: `${nomeAsset}: ${quote.changeFromMonth.toFixed(1)}% nel mese (soglia ${sMese.soglia_pct}%)`,
+          })
+        } else if (!breach && sMese.in_breach) {
+          updates.push({ id: sMese.id, in_breach: false })
+        }
+      }
+    }
+
+    if (nuoveNotifiche.length > 0) {
+      await supabase.from('notifiche').insert(nuoveNotifiche)
+    }
+    for (const u of updates) {
+      await supabase.from('alert_soglie')
+        .update(u.ultima_notifica_at ? { in_breach: u.in_breach, ultima_notifica_at: u.ultima_notifica_at } : { in_breach: u.in_breach })
+        .eq('id', u.id)
+    }
+    if (updates.length > 0) {
+      const { data } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
+      setSoglie((data as AlertSoglia[]) ?? [])
+    }
+    if (nuoveNotifiche.length > 0) {
+      window.dispatchEvent(new Event('notifiche:refresh'))
+    }
+  }
+
+  // Applica i due valori globali a tutti gli asset nel form (prima di salvare)
+  function applicaSoglieATutti() {
+    setDraftSoglie(prev => {
+      const next = { ...prev }
+      portafoglio.forEach(a => {
+        if (!a.id) return
+        next[a.id] = { ...(next[a.id] ?? { attivo: true }), massimo: globalSogliaMax, mensile: globalSogliaMese }
+      })
+      return next
+    })
+  }
+
+  // Salva le soglie impostate nel form su Supabase (upsert: 2 righe per asset)
+  async function saveSoglie() {
+    setSavingSoglie(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSavingSoglie(false); return }
+
+    const rows: Partial<AlertSoglia>[] = []
+    portafoglio.forEach(a => {
+      if (!a.id) return
+      const d = draftSoglie[a.id]
+      if (!d) return
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'massimo', soglia_pct: d.massimo, attivo: d.attivo })
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'mensile', soglia_pct: d.mensile, attivo: d.attivo })
+    })
+
+    const { error } = await supabase.from('alert_soglie').upsert(rows, { onConflict: 'user_id,portafoglio_id,tipo' })
+    if (error) {
+      console.error('Errore salvataggio soglie', error)
+    } else {
+      const { data } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
+      setSoglie((data as AlertSoglia[]) ?? [])
+    }
+    setSavingSoglie(false)
   }
 
   function toggleSort(key: SortKey) {
@@ -757,6 +885,30 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
+              {/* Banner soglie superate */}
+              {(() => {
+                const breaches = soglie.filter(s => s.in_breach)
+                if (breaches.length === 0) return null
+                return (
+                  <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
+                    <p className="text-sm font-semibold text-red-700 mb-2">⚠ {breaches.length} soglia/e superata/e</p>
+                    <ul className="space-y-1">
+                      {breaches.map(s => {
+                        const asset = portafoglio.find(a => a.id === s.portafoglio_id)
+                        const quote = asset?.ticker ? prezziAttuali[asset.ticker] : undefined
+                        const dev = s.tipo === 'massimo' ? quote?.changeFromHigh : quote?.changeFromMonth
+                        return (
+                          <li key={s.id} className="text-xs text-red-700">
+                            <strong>{asset?.nome || asset?.descrizione || asset?.ticker}</strong>
+                            {' — '}{s.tipo === 'massimo' ? 'dal massimo' : 'nel mese'}: {dev != null ? `${dev.toFixed(1)}%` : '–'} (soglia {s.soglia_pct}%)
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )
+              })()}
+
               {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
               {(() => {
                 const hasPrezzi = Object.keys(prezziAttuali).length > 0
@@ -855,6 +1007,78 @@ export default function DashboardPage() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              {/* Gestione soglie di allerta */}
+              <div className="card mb-6">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Soglie di allerta</p>
+                  <button onClick={() => setShowSoglieForm(v => !v)} className="text-xs text-brand-600 font-medium">
+                    {showSoglieForm ? 'Chiudi' : 'Gestisci soglie'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 mb-3">
+                  Notifica in app quando la variazione dal massimo o dal mese scende sotto la soglia impostata (es. soglia 15% → notifica se dal massimo sei a -15% o peggio).
+                </p>
+
+                {showSoglieForm && (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
+                        <input type="number" min={0} step={0.5} value={globalSogliaMax}
+                          onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
+                        <input type="number" min={0} step={0.5} value={globalSogliaMese}
+                          onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
+                      </div>
+                      <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr>
+                            <th className="table-th">Asset</th>
+                            <th className="table-th w-28 text-right">Soglia massimo %</th>
+                            <th className="table-th w-28 text-right">Soglia mensile %</th>
+                            <th className="table-th w-16 text-center">Attiva</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {portafoglio.filter(a => a.id).map(a => {
+                            const d = draftSoglie[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }
+                            return (
+                              <tr key={a.id}>
+                                <td className="table-td text-xs">{a.nome || a.descrizione}</td>
+                                <td className="table-td text-right">
+                                  <input type="number" min={0} step={0.5} value={d.massimo}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...d, massimo: Number(e.target.value) } }))}
+                                    className="input w-20 text-xs text-right" />
+                                </td>
+                                <td className="table-td text-right">
+                                  <input type="number" min={0} step={0.5} value={d.mensile}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...d, mensile: Number(e.target.value) } }))}
+                                    className="input w-20 text-xs text-right" />
+                                </td>
+                                <td className="table-td text-center">
+                                  <input type="checkbox" checked={d.attivo}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...d, attivo: e.target.checked } }))} />
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <button onClick={saveSoglie} disabled={savingSoglie} className="btn-primary text-sm">
+                      {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Tabella asset */}

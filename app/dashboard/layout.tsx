@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
+import NotificationBell from '@/components/NotificationBell'
 
 const navItems = [
   { href: '/dashboard', label: 'Movimenti & Cash Flow', icon: '◈' },
@@ -92,13 +93,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
           <p className="text-xs text-gray-400 -mt-0.5">2026</p>
         </div>
-        <button
-          onClick={() => setMenuOpen(true)}
-          aria-label="Apri menu"
-          className="p-2 rounded-lg border border-surface-200 text-gray-600"
-        >
-          <span className="text-lg leading-none">☰</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <button
+            onClick={() => setMenuOpen(true)}
+            aria-label="Apri menu"
+            className="p-2 rounded-lg border border-surface-200 text-gray-600"
+          >
+            <span className="text-lg leading-none">☰</span>
+          </button>
+        </div>
       </div>
 
       {/* Mobile drawer overlay */}
@@ -133,9 +137,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 bg-white border-r border-surface-200 flex-col fixed h-full">
-        <div className="px-5 py-5 border-b border-surface-100">
-          <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-          <p className="text-xs text-gray-400 mt-0.5">2026</p>
+        <div className="px-5 py-5 border-b border-surface-100 flex items-start justify-between">
+          <div>
+            <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+            <p className="text-xs text-gray-400 mt-0.5">2026</p>
+          </div>
+          <NotificationBell />
         </div>
         {navLinks}
       </aside>

@@ -367,35 +367,61 @@ export default function DashboardPage() {
       {/* ===== MOVIMENTI ===== */}
       {tab === 'movimenti' && (
         <>
-          {/* Metric cards + liquidità */}
-          <div className="grid grid-cols-5 gap-3 mb-5">
+          {/* Metric cards + liquidità - stile Stitch (icona, valore, badge con metrica reale) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
             {[
-              { label: 'Entrate', val: `€ ${fmt(totalIn)}`, color: 'text-green-700' },
-              { label: 'Uscite', val: `€ ${fmt(totalOut)}`, color: 'text-red-600' },
-              { label: 'Saldo', val: `€ ${fmt(saldo)}`, color: saldo >= 0 ? 'text-green-700' : 'text-red-600' },
-              { label: 'Movimenti', val: filtered.length.toString(), color: 'text-gray-900' },
+              {
+                label: 'Entrate', val: `€ ${fmt(totalIn)}`, color: 'text-green-700', icon: '↑', iconBg: 'bg-green-100 text-green-700',
+                badge: `${(totalIn + totalOut) > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`, badgeBg: 'bg-green-50 text-green-700',
+              },
+              {
+                label: 'Uscite', val: `€ ${fmt(totalOut)}`, color: 'text-red-600', icon: '↓', iconBg: 'bg-red-100 text-red-600',
+                badge: `${(totalIn + totalOut) > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`, badgeBg: 'bg-red-50 text-red-600',
+              },
+              {
+                label: 'Saldo', val: `€ ${fmt(saldo)}`, color: saldo >= 0 ? 'text-green-700' : 'text-red-600', icon: '●', iconBg: saldo >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
+                badge: `Saving rate ${totalIn > 0 ? ((saldo / totalIn) * 100).toFixed(0) : 0}%`, badgeBg: saldo >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600',
+              },
+              {
+                label: 'Movimenti', val: filtered.length.toString(), color: 'text-gray-900', icon: '≡', iconBg: 'bg-gray-100 text-gray-600',
+                badge: `${componenti.length || 1} cont${componenti.length === 1 ? 'o' : 'i'}`, badgeBg: 'bg-surface-100 text-gray-600',
+              },
             ].map(c => (
-              <div key={c.label} className="card py-3">
-                <p className="text-xs text-gray-400 mb-1">{c.label}</p>
-                <p className={`text-xl font-semibold ${c.color}`}>{c.val}</p>
+              <div key={c.label} className="card p-4 transition-transform hover:scale-[1.01]">
+                <div className="flex items-start justify-between mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
+                  <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
+                </div>
+                <p className={`text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                <div className="mt-2.5">
+                  <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
+                </div>
               </div>
             ))}
+
             {/* Liquidità card */}
-            <div className="card py-3 border-blue-100">
-              <p className="text-xs text-gray-400 mb-1">
-                Liquidità {ultimaLiquidita ? `(${MESI_LABEL[ultimaLiquidita.mese]})` : ''}
-              </p>
+            <div className="card p-4 transition-transform hover:scale-[1.01] border-blue-100">
+              <div className="flex items-start justify-between mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Liquidità {ultimaLiquidita ? `(${MESI_LABEL[ultimaLiquidita.mese]})` : ''}
+                </p>
+                <span className="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold bg-blue-100 text-blue-700">€</span>
+              </div>
               {ultimaLiquidita ? (
                 <>
-                  <p className="text-xl font-semibold text-blue-700">{fmtK(ultimaLiquidita.total)}</p>
-                  {ultimaLiquidita.conti.length > 1 && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {ultimaLiquidita.conti.map(c => `${c.conto}: ${fmtK(c.saldo)}`).join(' · ')}
-                    </p>
-                  )}
+                  <p className="text-xl font-bold tabular-nums text-blue-700">{fmtK(ultimaLiquidita.total)}</p>
+                  <div className="mt-2.5">
+                    {ultimaLiquidita.conti.length > 1 ? (
+                      <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                        {ultimaLiquidita.conti.map(c => `${c.conto}: ${fmtK(c.saldo)}`).join(' · ')}
+                      </span>
+                    ) : (
+                      <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Ultimo saldo registrato</span>
+                    )}
+                  </div>
                 </>
               ) : (
-                <p className="text-xl font-semibold text-gray-300">–</p>
+                <p className="text-xl font-bold tabular-nums text-gray-300">–</p>
               )}
             </div>
           </div>
@@ -403,26 +429,26 @@ export default function DashboardPage() {
           {/* Filters */}
           <div className="flex flex-wrap gap-2 mb-4 items-center">
             {componenti.length > 0 && (
-              <select value={filterComponente} onChange={e => { setFilterComponente(e.target.value); setPage(1) }} className="input w-36 text-xs py-1.5">
+              <select value={filterComponente} onChange={e => { setFilterComponente(e.target.value); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-36 text-xs py-1.5">
                 <option value="">Tutti</option>
                 {componenti.map(c => <option key={c}>{c}</option>)}
               </select>
             )}
-            <select value={filterMese} onChange={e => { setFilterMese(e.target.value); setPage(1) }} className="input w-28 text-xs py-1.5">
+            <select value={filterMese} onChange={e => { setFilterMese(e.target.value); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-28 text-xs py-1.5">
               <option value="">Tutti i mesi</option>
               {MESI.map(m => <option key={m} value={m}>{MESI_LABEL[m]}</option>)}
             </select>
-            <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1) }} className="input w-44 text-xs py-1.5">
+            <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-44 text-xs py-1.5">
               <option value="">Tutte le categorie</option>
               {cats.map(c => <option key={c}>{c}</option>)}
             </select>
-            <select value={filterType} onChange={e => { setFilterType(e.target.value as 'all' | 'in' | 'out'); setPage(1) }} className="input w-36 text-xs py-1.5">
+            <select value={filterType} onChange={e => { setFilterType(e.target.value as 'all' | 'in' | 'out'); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-36 text-xs py-1.5">
               <option value="all">Entrate + Uscite</option>
               <option value="in">Solo entrate</option>
               <option value="out">Solo uscite</option>
             </select>
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-              placeholder="Cerca descrizione…" className="input flex-1 min-w-32 text-xs py-1.5" />
+              placeholder="Cerca descrizione…" className="input flex-1 min-w-[calc(100%-0.5rem)] sm:min-w-32 text-xs py-1.5" />
           </div>
 
           {/* Table */}
@@ -731,31 +757,48 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
-              {/* Summary cards */}
-              <div className="grid grid-cols-4 gap-3 mb-6">
-                <div className="card py-3">
-                  <p className="text-xs text-gray-400 mb-1">Valore di carico</p>
-                  <p className="text-xl font-semibold text-gray-900">{fmtK(valoreCaricoTotale)}</p>
-                </div>
-                <div className="card py-3">
-                  <p className="text-xs text-gray-400 mb-1">Valore attuale</p>
-                  <p className="text-xl font-semibold text-gray-900">
-                    {Object.keys(prezziAttuali).length > 0 ? fmtK(valoreAttualeTotale) : <span className="text-gray-300">–</span>}
-                  </p>
-                </div>
-                <div className="card py-3">
-                  <p className="text-xs text-gray-400 mb-1">Plus/Minus latente</p>
-                  <p className={`text-xl font-semibold ${plusminus >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                    {Object.keys(prezziAttuali).length > 0 ? fmtK(plusminus) : <span className="text-gray-300">–</span>}
-                  </p>
-                </div>
-                <div className="card py-3">
-                  <p className="text-xs text-gray-400 mb-1">Asset</p>
-                  <p className="text-xl font-semibold text-gray-900">{portafoglio.length}</p>
-                </div>
-              </div>
+              {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
+              {(() => {
+                const hasPrezzi = Object.keys(prezziAttuali).length > 0
+                const pctPlusMinus = valoreCaricoTotale > 0 ? (plusminus / valoreCaricoTotale) * 100 : 0
+                const cards = [
+                  {
+                    label: 'Valore di carico', val: fmtK(valoreCaricoTotale), color: 'text-gray-900', icon: '◆', iconBg: 'bg-blue-100 text-blue-700',
+                    badge: `${portafoglio.length} asset`, badgeBg: 'bg-blue-50 text-blue-700',
+                  },
+                  {
+                    label: 'Valore attuale', val: hasPrezzi ? fmtK(valoreAttualeTotale) : '–', color: hasPrezzi ? 'text-gray-900' : 'text-gray-300', icon: '↑', iconBg: 'bg-brand-100 text-brand-700',
+                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% vs carico` : 'In attesa di quotazioni', badgeBg: 'bg-surface-100 text-gray-600',
+                  },
+                  {
+                    label: 'Plus/Minus latente', val: hasPrezzi ? fmtK(plusminus) : '–', color: !hasPrezzi ? 'text-gray-300' : plusminus >= 0 ? 'text-green-700' : 'text-red-600',
+                    icon: '●', iconBg: !hasPrezzi ? 'bg-gray-100 text-gray-400' : plusminus >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
+                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% sul capitale` : 'Nessuna quotazione', badgeBg: !hasPrezzi ? 'bg-surface-100 text-gray-600' : plusminus >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600',
+                  },
+                  {
+                    label: 'Asset', val: portafoglio.length.toString(), color: 'text-gray-900', icon: '≡', iconBg: 'bg-gray-100 text-gray-600',
+                    badge: `${assetClasses.length || 1} asset class`, badgeBg: 'bg-surface-100 text-gray-600',
+                  },
+                ]
+                return (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                    {cards.map(c => (
+                      <div key={c.label} className="card p-4 transition-transform hover:scale-[1.01]">
+                        <div className="flex items-start justify-between mb-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
+                          <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
+                        </div>
+                        <p className={`text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                        <div className="mt-2.5">
+                          <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
                 {/* Torta allocazione per asset class */}
                 <div className="card">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Allocazione per asset class</p>

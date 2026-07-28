@@ -137,18 +137,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 bg-white border-r border-surface-200 flex-col fixed h-full">
-        <div className="px-5 py-5 border-b border-surface-100 flex items-start justify-between">
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-            <p className="text-xs text-gray-400 mt-0.5">2026</p>
-          </div>
-          <NotificationBell />
+        <div className="px-5 py-5 border-b border-surface-100">
+          <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+          <p className="text-xs text-gray-400 mt-0.5">2026</p>
         </div>
         {navLinks}
       </aside>
 
-      <main className="flex-1 md:ml-56 p-4 md:p-6">
-        {children}
+      <main className="flex-1 md:ml-56">
+        {/* Header desktop */}
+        <div className="hidden md:flex sticky top-0 z-20 items-center justify-end bg-white border-b border-surface-200 px-6 py-3">
+          <NotificationBell />
+        </div>
+        <div className="p-4 md:p-6">
+          {children}
+        </div>
       </main>
     </div>
   )

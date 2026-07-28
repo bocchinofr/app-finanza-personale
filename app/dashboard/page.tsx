@@ -1009,81 +1009,46 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Gestione soglie di allerta */}
-              <div className="card mb-6">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Soglie di allerta</p>
-                  <button onClick={() => setShowSoglieForm(v => !v)} className="text-xs text-brand-600 font-medium">
-                    {showSoglieForm ? 'Chiudi' : 'Gestisci soglie'}
-                  </button>
+              {/* Tabella asset con gestione soglie integrata */}
+              <div className="card p-0 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Portafoglio</p>
+                  {!showSoglieForm ? (
+                    <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
+                      ✎ Modifica soglie
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setShowSoglieForm(false)} className="text-xs text-gray-400 font-medium">
+                        Annulla
+                      </button>
+                      <button onClick={async () => { await saveSoglie(); setShowSoglieForm(false) }} disabled={savingSoglie} className="btn-primary text-xs">
+                        {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <p className="text-[10px] text-gray-400 mb-3">
-                  Notifica in app quando la variazione dal massimo o dal mese scende sotto la soglia impostata (es. soglia 15% → notifica se dal massimo sei a -15% o peggio).
-                </p>
 
                 {showSoglieForm && (
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
-                      <div>
-                        <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
-                        <input type="number" min={0} step={0.5} value={globalSogliaMax}
-                          onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
-                        <input type="number" min={0} step={0.5} value={globalSogliaMese}
-                          onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
-                      </div>
-                      <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
+                  <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
+                    <p className="text-[10px] text-gray-400 w-full">
+                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso.
+                    </p>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMax}
+                        onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
                     </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr>
-                            <th className="table-th">Asset</th>
-                            <th className="table-th w-28 text-right">Soglia massimo %</th>
-                            <th className="table-th w-28 text-right">Soglia mensile %</th>
-                            <th className="table-th w-16 text-center">Attiva</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {portafoglio.filter(a => a.id).map(a => {
-                            const d = draftSoglie[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }
-                            return (
-                              <tr key={a.id}>
-                                <td className="table-td text-xs">{a.nome || a.descrizione}</td>
-                                <td className="table-td text-right">
-                                  <input type="number" min={0} step={0.5} value={d.massimo}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...d, massimo: Number(e.target.value) } }))}
-                                    className="input w-20 text-xs text-right" />
-                                </td>
-                                <td className="table-td text-right">
-                                  <input type="number" min={0} step={0.5} value={d.mensile}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...d, mensile: Number(e.target.value) } }))}
-                                    className="input w-20 text-xs text-right" />
-                                </td>
-                                <td className="table-td text-center">
-                                  <input type="checkbox" checked={d.attivo}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...d, attivo: e.target.checked } }))} />
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMese}
+                        onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
                     </div>
-
-                    <button onClick={saveSoglie} disabled={savingSoglie} className="btn-primary text-sm">
-                      {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
-                    </button>
+                    <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
                   </div>
                 )}
-              </div>
 
-              {/* Tabella asset */}
-              <div className="card p-0 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto mt-3">
                   <table className="w-full">
                     <thead>
                       <tr>
@@ -1099,6 +1064,8 @@ export default function DashboardPage() {
                         <th className="table-th w-28 text-right">Valore att.</th>
                         <th className="table-th w-24 text-right">+/–</th>
                         <th className="table-th w-10 text-center">PAC</th>
+                        <th className="table-th w-24 text-center">Soglia max %</th>
+                        <th className="table-th w-24 text-center">Soglia mese %</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1113,6 +1080,9 @@ export default function DashboardPage() {
                         const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
                         const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
                         const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
+                        const dSoglia = a.id ? draftSoglie[a.id] : undefined
+                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'massimo') : undefined
+                        const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
                         return (
                           <tr key={i} className="hover:bg-surface-50 transition-colors">
                             <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span></td>
@@ -1161,12 +1131,41 @@ export default function DashboardPage() {
                               {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
                             </td>
                             <td className="table-td text-center text-xs">{a.pac ? '✓' : ''}</td>
+                            <td className="table-td text-center">
+                              {showSoglieForm && a.id ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <input type="number" min={0} step={0.5}
+                                    value={dSoglia?.massimo ?? globalSogliaMax}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), massimo: Number(e.target.value) } }))}
+                                    className="input w-14 text-xs text-right" />
+                                  <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), attivo: e.target.checked } }))} />
+                                </div>
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMaxSaved && sMaxSaved.attivo ? `${sMaxSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="table-td text-center">
+                              {showSoglieForm && a.id ? (
+                                <input type="number" min={0} step={0.5}
+                                  value={dSoglia?.mensile ?? globalSogliaMese}
+                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), mensile: Number(e.target.value) } }))}
+                                  className="input w-14 text-xs text-right" />
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
+                <div className="h-4" />
               </div>
             </>
           )}

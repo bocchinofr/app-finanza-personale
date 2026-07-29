@@ -181,7 +181,7 @@ export default function DashboardPage() {
       const next: Record<string, { massimo: number; mensile: number; attivo: boolean }> = {}
       portafoglio.forEach(a => {
         if (!a.id) return
-        const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'massimo')
+        const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico')
         const sMese = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile')
         next[a.id] = prev[a.id] ?? {
           massimo: sMax?.soglia_pct ?? globalSogliaMax,
@@ -228,13 +228,13 @@ export default function DashboardPage() {
       if (!quote) continue
       const nomeAsset = a.nome || a.descrizione || a.ticker
 
-      const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'massimo')
+      const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico')
       if (sMax?.id && sMax.attivo && quote.changeFromHigh != null) {
         const breach = quote.changeFromHigh <= -sMax.soglia_pct
         if (breach && !sMax.in_breach) {
           updates.push({ id: sMax.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
           nuoveNotifiche.push({
-            user_id: user.id, portafoglio_id: a.id, tipo: 'massimo',
+            user_id: user.id, portafoglio_id: a.id, tipo: 'storico',
             messaggio: `${nomeAsset}: ${quote.changeFromHigh.toFixed(1)}% dal massimo (soglia ${sMax.soglia_pct}%)`,
           })
         } else if (!breach && sMax.in_breach) {
@@ -297,7 +297,7 @@ export default function DashboardPage() {
       if (!a.id) return
       const d = draftSoglie[a.id]
       if (!d) return
-      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'massimo', soglia_pct: d.massimo, attivo: d.attivo })
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'storico', soglia_pct: d.massimo, attivo: d.attivo })
       rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'mensile', soglia_pct: d.mensile, attivo: d.attivo })
     })
 
@@ -905,11 +905,11 @@ export default function DashboardPage() {
                       {breaches.map(s => {
                         const asset = portafoglio.find(a => a.id === s.portafoglio_id)
                         const quote = asset?.ticker ? prezziAttuali[asset.ticker] : undefined
-                        const dev = s.tipo === 'massimo' ? quote?.changeFromHigh : quote?.changeFromMonth
+                        const dev = s.tipo === 'storico' ? quote?.changeFromHigh : quote?.changeFromMonth
                         return (
                           <li key={s.id} className="text-xs text-red-700">
                             <strong>{asset?.nome || asset?.descrizione || asset?.ticker}</strong>
-                            {' — '}{s.tipo === 'massimo' ? 'dal massimo' : 'nel mese'}: {dev != null ? `${dev.toFixed(1)}%` : '–'} (soglia {s.soglia_pct}%)
+                            {' — '}{s.tipo === 'storico' ? 'dal massimo' : 'nel mese'}: {dev != null ? `${dev.toFixed(1)}%` : '–'} (soglia {s.soglia_pct}%)
                           </li>
                         )
                       })}
@@ -1090,7 +1090,7 @@ export default function DashboardPage() {
                         const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
                         const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
                         const dSoglia = a.id ? draftSoglie[a.id] : undefined
-                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'massimo') : undefined
+                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
                         const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
                         return (
                           <tr key={i} className="hover:bg-surface-50 transition-colors">

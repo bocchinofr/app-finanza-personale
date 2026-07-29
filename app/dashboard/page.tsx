@@ -301,11 +301,20 @@ export default function DashboardPage() {
       rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'mensile', soglia_pct: d.mensile, attivo: d.attivo })
     })
 
+    if (rows.length === 0) {
+      console.error('Nessuna riga da salvare: gli asset del portafoglio non hanno un id valido (a.id è undefined). Verifica che la tabella "portafoglio" abbia una colonna "id".')
+      alert('Nessun asset valido da salvare: manca l\'id nella tabella portafoglio. Controlla la console per i dettagli.')
+      setSavingSoglie(false)
+      return
+    }
+
     const { error } = await supabase.from('alert_soglie').upsert(rows, { onConflict: 'user_id,portafoglio_id,tipo' })
     if (error) {
-      console.error('Errore salvataggio soglie', error)
+      console.error('Errore salvataggio soglie:', error)
+      alert(`Errore salvataggio soglie: ${error.message}`)
     } else {
-      const { data } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
+      const { data, error: reloadError } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
+      if (reloadError) console.error('Errore ricaricamento soglie:', reloadError)
       setSoglie((data as AlertSoglia[]) ?? [])
     }
     setSavingSoglie(false)

@@ -41,7 +41,7 @@ export interface AlertSoglia {
   id?: string
   user_id?: string
   portafoglio_id: string
-  tipo: 'massimo' | 'mensile'
+  tipo: 'storico' | 'mensile' | 'acquisto'
   soglia_pct: number
   attivo: boolean
   in_breach: boolean

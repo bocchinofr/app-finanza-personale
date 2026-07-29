@@ -140,6 +140,7 @@ export default function DashboardPage() {
   const [globalSogliaMese, setGlobalSogliaMese] = useState(10)
   const [draftSoglie, setDraftSoglie] = useState<Record<string, { massimo: number; mensile: number; attivo: boolean }>>({})
   const [savingSoglie, setSavingSoglie] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   // Filters
   const [filterComponente, setFilterComponente] = useState('')
@@ -271,6 +272,7 @@ export default function DashboardPage() {
     }
     if (nuoveNotifiche.length > 0) {
       window.dispatchEvent(new Event('notifiche:refresh'))
+      setBannerDismissed(false)
     }
   }
 
@@ -897,10 +899,17 @@ export default function DashboardPage() {
               {/* Banner soglie superate */}
               {(() => {
                 const breaches = soglie.filter(s => s.in_breach)
-                if (breaches.length === 0) return null
+                if (breaches.length === 0 || bannerDismissed) return null
                 return (
-                  <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
-                    <p className="text-sm font-semibold text-red-700 mb-2">⚠ {breaches.length} soglia/e superata/e</p>
+                  <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 relative">
+                    <button
+                      onClick={() => setBannerDismissed(true)}
+                      aria-label="Chiudi avviso"
+                      className="absolute top-3 right-3 text-red-400 hover:text-red-600 text-sm leading-none"
+                    >
+                      ✕
+                    </button>
+                    <p className="text-sm font-semibold text-red-700 mb-2 pr-6">⚠ {breaches.length} soglia/e superata/e</p>
                     <ul className="space-y-1">
                       {breaches.map(s => {
                         const asset = portafoglio.find(a => a.id === s.portafoglio_id)
@@ -1073,8 +1082,8 @@ export default function DashboardPage() {
                         <th className="table-th w-28 text-right">Valore att.</th>
                         <th className="table-th w-24 text-right">+/–</th>
                         <th className="table-th w-10 text-center">PAC</th>
-                        <th className="table-th w-24 text-center">Soglia max %</th>
-                        <th className="table-th w-24 text-center">Soglia mese %</th>
+                        <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo storico">Max %</th>
+                        <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo mensile">Mese %</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1140,13 +1149,13 @@ export default function DashboardPage() {
                               {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
                             </td>
                             <td className="table-td text-center text-xs">{a.pac ? '✓' : ''}</td>
-                            <td className="table-td text-center">
+                            <td className="table-td text-center px-1">
                               {showSoglieForm && a.id ? (
                                 <div className="flex items-center justify-center gap-1">
                                   <input type="number" min={0} step={0.5}
                                     value={dSoglia?.massimo ?? globalSogliaMax}
                                     onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), massimo: Number(e.target.value) } }))}
-                                    className="input w-14 text-xs text-right" />
+                                    className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
                                   <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
                                     onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), attivo: e.target.checked } }))} />
                                 </div>
@@ -1156,12 +1165,12 @@ export default function DashboardPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="table-td text-center">
+                            <td className="table-td text-center px-1">
                               {showSoglieForm && a.id ? (
                                 <input type="number" min={0} step={0.5}
                                   value={dSoglia?.mensile ?? globalSogliaMese}
                                   onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), mensile: Number(e.target.value) } }))}
-                                  className="input w-14 text-xs text-right" />
+                                  className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
                               ) : (
                                 <span className="text-xs tabular-nums text-gray-500">
                                   {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}

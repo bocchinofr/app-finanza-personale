@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { AssetPortafoglio, Movimento, statoAttuale } from '@/types'
-import { trovaAssetCorrispondente, estraiQuantitaPrezzo, calcolaNuovoStato } from '@/lib/riconciliazione'
+import { trovaAssetCorrispondente, estraiQuantitaPrezzo, calcolaNuovoStato, estraiPattern, RegolaMatching } from '@/lib/riconciliazione'
 
 function fmt(n: number) {
   return n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
@@ -22,6 +22,7 @@ export default function RiconciliazionePage() {
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState<string | null>(null)
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
+  const [regole, setRegole] = useState<RegolaMatching[]>([])
   const [righe, setRighe] = useState<RigaBozza[]>([])
   const [messaggio, setMessaggio] = useState('')
 
@@ -30,20 +31,23 @@ export default function RiconciliazionePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const [movRes, portRes] = await Promise.all([
+    const [movRes, portRes, regRes] = await Promise.all([
       supabase.from('movimenti').select('*')
         .eq('user_id', user.id)
         .eq('categoria', 'INVESTIMENTI')
         .eq('riconciliato', false),
       supabase.from('portafoglio').select('*').eq('user_id', user.id),
+      supabase.from('regole_riconciliazione').select('pattern, portafoglio_id').eq('user_id', user.id),
     ])
 
     const port = (portRes.data as AssetPortafoglio[]) ?? []
     const movs = (movRes.data as Movimento[]) ?? []
+    const reg = (regRes.data as RegolaMatching[]) ?? []
     setPortafoglio(port)
+    setRegole(reg)
 
     setRighe(movs.map(m => {
-      const suggerito = trovaAssetCorrispondente(m, port)
+      const suggerito = trovaAssetCorrispondente(m, port, reg)
       const { quantita } = estraiQuantitaPrezzo(m.descrizione)
       return {
         movimento: m,
@@ -87,6 +91,22 @@ export default function RiconciliazionePage() {
         portafoglio_id: asset.id,
       }).eq('id', riga.movimento.id)
       if (e2) throw e2
+
+      // Salva/aggiorna la regola di matching per questo pattern di testo,
+      // così un movimento futuro con la stessa descrizione (quantità diversa)
+      // viene associato automaticamente all'asset.
+      const pattern = estraiPattern(`${riga.movimento.nome_etf} ${riga.movimento.descrizione}`)
+      if (pattern) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          await supabase.from('regole_riconciliazione')
+            .upsert({ user_id: user.id, pattern, portafoglio_id: asset.id }, { onConflict: 'user_id,pattern' })
+          setRegole(prev => {
+            const altre = prev.filter(r => r.pattern !== pattern)
+            return [...altre, { pattern, portafoglio_id: asset.id! }]
+          })
+        }
+      }
 
       setPortafoglio(prev => prev.map(a => a.id === asset.id
         ? { ...a, quantita_attuale: risultato.nuovaQuantita, prezzo_carico_attuale: risultato.nuovoPrezzoCarico }

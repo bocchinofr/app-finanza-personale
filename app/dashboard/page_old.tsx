@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Movimento, Liquidita, AssetPortafoglio, MESI } from '@/types'
+import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, MESI, statoAttuale } from '@/types'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, Area, AreaChart
@@ -133,6 +133,15 @@ export default function DashboardPage() {
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, QuoteInfo>>({})
   const [loadingPrezzi, setLoadingPrezzi] = useState(false)
 
+  // Soglie di allerta portafoglio
+  const [soglie, setSoglie] = useState<AlertSoglia[]>([])
+  const [showSoglieForm, setShowSoglieForm] = useState(false)
+  const [globalSogliaMax, setGlobalSogliaMax] = useState(15)
+  const [globalSogliaMese, setGlobalSogliaMese] = useState(10)
+  const [draftSoglie, setDraftSoglie] = useState<Record<string, { massimo: number; mensile: number; attivo: boolean }>>({})
+  const [savingSoglie, setSavingSoglie] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+
   // Filters
   const [filterComponente, setFilterComponente] = useState('')
   const [expandedAssetRow, setExpandedAssetRow] = useState<number | null>(null)
@@ -151,19 +160,40 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const [movRes, liqRes, portRes] = await Promise.all([
+    const [movRes, liqRes, portRes, sogRes] = await Promise.all([
       supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('portafoglio').select('*').eq('user_id', user.id),
+      supabase.from('alert_soglie').select('*').eq('user_id', user.id),
     ])
 
     setMovimenti((movRes.data as Movimento[]) ?? [])
     setLiquidita((liqRes.data as Liquidita[]) ?? [])
     setPortafoglio((portRes.data as AssetPortafoglio[]) ?? [])
+    setSoglie((sogRes.data as AlertSoglia[]) ?? [])
     setLoading(false)
   }, [anno])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Inizializza il form soglie con i valori salvati (o i default globali)
+  useEffect(() => {
+    setDraftSoglie(prev => {
+      const next: Record<string, { massimo: number; mensile: number; attivo: boolean }> = {}
+      portafoglio.forEach(a => {
+        if (!a.id) return
+        const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico')
+        const sMese = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile')
+        next[a.id] = prev[a.id] ?? {
+          massimo: sMax?.soglia_pct ?? globalSogliaMax,
+          mensile: sMese?.soglia_pct ?? globalSogliaMese,
+          attivo: sMax?.attivo ?? sMese?.attivo ?? true,
+        }
+      })
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portafoglio, soglie])
 
   // Prezzi attuali via Yahoo Finance, recuperati tramite la nostra API route
   // (la chiamata diretta a Yahoo dal browser viene bloccata da CORS)
@@ -176,11 +206,120 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(`API prezzi: ${res.status}`)
       const json = await res.json()
       setPrezziAttuali(json)
+      await checkSoglieBreach(json)
     } catch (err) {
       console.error('Errore nel recupero dei prezzi', err)
     } finally {
       setLoadingPrezzi(false)
     }
+  }
+
+  // Confronta le variazioni appena scaricate con le soglie impostate.
+  // Notifica (edge-triggered) solo al passaggio da "non superata" a "superata".
+  async function checkSoglieBreach(quotes: Record<string, QuoteInfo>) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const updates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
+    const nuoveNotifiche: { user_id: string; portafoglio_id: string; tipo: string; messaggio: string }[] = []
+
+    for (const a of portafoglio) {
+      if (!a.id || !a.ticker) continue
+      const quote = quotes[a.ticker]
+      if (!quote) continue
+      const nomeAsset = a.nome || a.descrizione || a.ticker
+
+      const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico')
+      if (sMax?.id && sMax.attivo && quote.changeFromHigh != null) {
+        const breach = quote.changeFromHigh <= -sMax.soglia_pct
+        if (breach && !sMax.in_breach) {
+          updates.push({ id: sMax.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
+          nuoveNotifiche.push({
+            user_id: user.id, portafoglio_id: a.id, tipo: 'storico',
+            messaggio: `${nomeAsset}: ${quote.changeFromHigh.toFixed(1)}% dal massimo (soglia ${sMax.soglia_pct}%)`,
+          })
+        } else if (!breach && sMax.in_breach) {
+          updates.push({ id: sMax.id, in_breach: false })
+        }
+      }
+
+      const sMese = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile')
+      if (sMese?.id && sMese.attivo && quote.changeFromMonth != null) {
+        const breach = quote.changeFromMonth <= -sMese.soglia_pct
+        if (breach && !sMese.in_breach) {
+          updates.push({ id: sMese.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
+          nuoveNotifiche.push({
+            user_id: user.id, portafoglio_id: a.id, tipo: 'mensile',
+            messaggio: `${nomeAsset}: ${quote.changeFromMonth.toFixed(1)}% nel mese (soglia ${sMese.soglia_pct}%)`,
+          })
+        } else if (!breach && sMese.in_breach) {
+          updates.push({ id: sMese.id, in_breach: false })
+        }
+      }
+    }
+
+    if (nuoveNotifiche.length > 0) {
+      await supabase.from('notifiche').insert(nuoveNotifiche)
+    }
+    for (const u of updates) {
+      await supabase.from('alert_soglie')
+        .update(u.ultima_notifica_at ? { in_breach: u.in_breach, ultima_notifica_at: u.ultima_notifica_at } : { in_breach: u.in_breach })
+        .eq('id', u.id)
+    }
+    if (updates.length > 0) {
+      const { data } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
+      setSoglie((data as AlertSoglia[]) ?? [])
+    }
+    if (nuoveNotifiche.length > 0) {
+      window.dispatchEvent(new Event('notifiche:refresh'))
+      setBannerDismissed(false)
+    }
+  }
+
+  // Applica i due valori globali a tutti gli asset nel form (prima di salvare)
+  function applicaSoglieATutti() {
+    setDraftSoglie(prev => {
+      const next = { ...prev }
+      portafoglio.forEach(a => {
+        if (!a.id) return
+        next[a.id] = { ...(next[a.id] ?? { attivo: true }), massimo: globalSogliaMax, mensile: globalSogliaMese }
+      })
+      return next
+    })
+  }
+
+  // Salva le soglie impostate nel form su Supabase (upsert: 2 righe per asset)
+  async function saveSoglie() {
+    setSavingSoglie(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSavingSoglie(false); return }
+
+    const rows: Partial<AlertSoglia>[] = []
+    portafoglio.forEach(a => {
+      if (!a.id) return
+      const d = draftSoglie[a.id]
+      if (!d) return
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'storico', soglia_pct: d.massimo, attivo: d.attivo })
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'mensile', soglia_pct: d.mensile, attivo: d.attivo })
+    })
+
+    if (rows.length === 0) {
+      console.error('Nessuna riga da salvare: gli asset del portafoglio non hanno un id valido (a.id è undefined). Verifica che la tabella "portafoglio" abbia una colonna "id".')
+      alert('Nessun asset valido da salvare: manca l\'id nella tabella portafoglio. Controlla la console per i dettagli.')
+      setSavingSoglie(false)
+      return
+    }
+
+    const { error } = await supabase.from('alert_soglie').upsert(rows, { onConflict: 'user_id,portafoglio_id,tipo' })
+    if (error) {
+      console.error('Errore salvataggio soglie:', error)
+      alert(`Errore salvataggio soglie: ${error.message}`)
+    } else {
+      const { data, error: reloadError } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
+      if (reloadError) console.error('Errore ricaricamento soglie:', reloadError)
+      setSoglie((data as AlertSoglia[]) ?? [])
+    }
+    setSavingSoglie(false)
   }
 
   function toggleSort(key: SortKey) {
@@ -311,19 +450,22 @@ export default function DashboardPage() {
 
   // Portafoglio
   const assetClasses = [...new Set(portafoglio.map(a => a.asset).filter(Boolean))]
-  const valoreCaricoTotale = portafoglio.reduce((s, a) => s + (a.prezzo_acquisto * a.quantita), 0)
+  const valoreCaricoTotale = portafoglio.reduce((s, a) => { const { quantita, prezzoCarico } = statoAttuale(a); return s + prezzoCarico * quantita }, 0)
   const valoreAttualeTotale = portafoglio.reduce((s, a) => {
+    const { quantita } = statoAttuale(a)
     const prezzoAtt = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : a.prezzo_acquisto
-    return s + (prezzoAtt * a.quantita)
+    return s + (prezzoAtt * quantita)
   }, 0)
   const plusminus = valoreAttualeTotale - valoreCaricoTotale
+  const movimentiDaRiconciliare = movimenti.filter(m => m.categoria === 'INVESTIMENTI' && !m.riconciliato).length
 
   const usaValoreMonetario = valoreCaricoTotale > 0
   const piePortafoglio = assetClasses.map(cls => {
     const assetsInClass = portafoglio.filter(a => a.asset === cls)
     const valore = assetsInClass.reduce((s, a) => {
+      const { quantita } = statoAttuale(a)
       const p = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : a.prezzo_acquisto
-      return s + p * a.quantita
+      return s + p * quantita
     }, 0)
     return {
       name: cls,
@@ -748,6 +890,17 @@ export default function DashboardPage() {
       {/* ===== PORTAFOGLIO ===== */}
       {tab === 'portafoglio' && (
         <>
+          {movimentiDaRiconciliare > 0 && (
+            <a
+              href="/dashboard/riconciliazione"
+              className="mb-4 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
+            >
+              <span className="text-sm text-amber-800">
+                <strong>{movimentiDaRiconciliare}</strong> movimento/i ETF da riconciliare con il portafoglio
+              </span>
+              <span className="text-xs font-medium text-amber-700">Vai alla riconciliazione →</span>
+            </a>
+          )}
           {portafoglio.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3">
               <p className="text-sm text-gray-500">Nessun asset nel portafoglio.</p>
@@ -757,6 +910,37 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
+              {/* Banner soglie superate */}
+              {(() => {
+                const breaches = soglie.filter(s => s.in_breach)
+                if (breaches.length === 0 || bannerDismissed) return null
+                return (
+                  <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 relative">
+                    <button
+                      onClick={() => setBannerDismissed(true)}
+                      aria-label="Chiudi avviso"
+                      className="absolute top-3 right-3 text-red-400 hover:text-red-600 text-sm leading-none"
+                    >
+                      ✕
+                    </button>
+                    <p className="text-sm font-semibold text-red-700 mb-2 pr-6">⚠ {breaches.length} soglia/e superata/e</p>
+                    <ul className="space-y-1">
+                      {breaches.map(s => {
+                        const asset = portafoglio.find(a => a.id === s.portafoglio_id)
+                        const quote = asset?.ticker ? prezziAttuali[asset.ticker] : undefined
+                        const dev = s.tipo === 'storico' ? quote?.changeFromHigh : quote?.changeFromMonth
+                        return (
+                          <li key={s.id} className="text-xs text-red-700">
+                            <strong>{asset?.nome || asset?.descrizione || asset?.ticker}</strong>
+                            {' — '}{s.tipo === 'storico' ? 'dal massimo' : 'nel mese'}: {dev != null ? `${dev.toFixed(1)}%` : '–'} (soglia {s.soglia_pct}%)
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )
+              })()}
+
               {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
               {(() => {
                 const hasPrezzi = Object.keys(prezziAttuali).length > 0
@@ -857,9 +1041,46 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Tabella asset */}
+              {/* Tabella asset con gestione soglie integrata */}
               <div className="card p-0 overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Portafoglio</p>
+                  {!showSoglieForm ? (
+                    <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
+                      ✎ Modifica soglie
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setShowSoglieForm(false)} className="text-xs text-gray-400 font-medium">
+                        Annulla
+                      </button>
+                      <button onClick={async () => { await saveSoglie(); setShowSoglieForm(false) }} disabled={savingSoglie} className="btn-primary text-xs">
+                        {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {showSoglieForm && (
+                  <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
+                    <p className="text-[10px] text-gray-400 w-full">
+                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso.
+                    </p>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMax}
+                        onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMese}
+                        onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
+                    </div>
+                    <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto mt-3">
                   <table className="w-full">
                     <thead>
                       <tr>
@@ -875,20 +1096,26 @@ export default function DashboardPage() {
                         <th className="table-th w-28 text-right">Valore att.</th>
                         <th className="table-th w-24 text-right">+/–</th>
                         <th className="table-th w-10 text-center">PAC</th>
+                        <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo storico">Max %</th>
+                        <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo mensile">Mese %</th>
                       </tr>
                     </thead>
                     <tbody>
                       {portafoglio.map((a, i) => {
+                        const { quantita: qtaAttuale, prezzoCarico } = statoAttuale(a)
                         const quote = a.ticker ? prezziAttuali[a.ticker] : undefined
                         const prezzoAtt = quote ? quote.price : null
-                        const valCarico = a.prezzo_acquisto * a.quantita
-                        const valAtt = prezzoAtt ? prezzoAtt * a.quantita : null
+                        const valCarico = prezzoCarico * qtaAttuale
+                        const valAtt = prezzoAtt ? prezzoAtt * qtaAttuale : null
                         const pm = valAtt ? valAtt - valCarico : null
                         const pmPct = pm && valCarico > 0 ? (pm / valCarico * 100).toFixed(1) : null
                         const highDev = quote?.changeFromHigh ?? null
                         const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
                         const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
                         const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
+                        const dSoglia = a.id ? draftSoglie[a.id] : undefined
+                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
+                        const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
                         return (
                           <tr key={i} className="hover:bg-surface-50 transition-colors">
                             <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span></td>
@@ -903,8 +1130,8 @@ export default function DashboardPage() {
                               {a.ticker && <p className="text-xs text-gray-400">{a.ticker}</p>}
                             </td>
                             <td className="table-td text-xs text-gray-400 font-mono">{a.isin || '–'}</td>
-                            <td className="table-td text-right text-xs tabular-nums">{a.quantita.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
-                            <td className="table-td text-right text-xs tabular-nums">{fmtPrice(a.prezzo_acquisto)}</td>
+                            <td className="table-td text-right text-xs tabular-nums">{qtaAttuale.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
+                            <td className="table-td text-right text-xs tabular-nums">{fmtPrice(prezzoCarico)}</td>
                             <td className="table-td text-right text-xs tabular-nums">
                               {prezzoAtt ? fmtPrice(prezzoAtt) : <span className="text-gray-300">–</span>}
                             </td>
@@ -937,12 +1164,41 @@ export default function DashboardPage() {
                               {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
                             </td>
                             <td className="table-td text-center text-xs">{a.pac ? '✓' : ''}</td>
+                            <td className="table-td text-center px-1">
+                              {showSoglieForm && a.id ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <input type="number" min={0} step={0.5}
+                                    value={dSoglia?.massimo ?? globalSogliaMax}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), massimo: Number(e.target.value) } }))}
+                                    className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                                  <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), attivo: e.target.checked } }))} />
+                                </div>
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMaxSaved && sMaxSaved.attivo ? `${sMaxSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="table-td text-center px-1">
+                              {showSoglieForm && a.id ? (
+                                <input type="number" min={0} step={0.5}
+                                  value={dSoglia?.mensile ?? globalSogliaMese}
+                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), mensile: Number(e.target.value) } }))}
+                                  className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
+                <div className="h-4" />
               </div>
             </>
           )}

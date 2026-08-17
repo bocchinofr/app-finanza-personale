@@ -11,6 +11,8 @@ export interface Movimento {
   nome_etf: string
   componente: string
   anno: number
+  riconciliato?: boolean
+  portafoglio_id?: string | null
 }
 
 export interface Liquidita {
@@ -35,6 +37,34 @@ export interface AssetPortafoglio {
   quantita: number
   pac: boolean
   pac_versamento: number
+  // Stato attuale gestito dall'app (mai sovrascritto dal sync col foglio Google
+  // dopo la prima inizializzazione). Fallback ai campi "anagrafica" sopra
+  // finché non c'è stata almeno una riconciliazione.
+  quantita_attuale?: number | null
+  prezzo_carico_attuale?: number | null
+  ultimo_aggiornamento_at?: string | null
+}
+
+export interface AlertSoglia {
+  id?: string
+  user_id?: string
+  portafoglio_id: string
+  tipo: 'storico' | 'mensile' | 'acquisto'
+  soglia_pct: number
+  attivo: boolean
+  in_breach: boolean
+  ultima_notifica_at?: string | null
+  created_at?: string
+}
+
+export interface Notifica {
+  id: string
+  user_id?: string
+  portafoglio_id: string | null
+  tipo: string
+  messaggio: string
+  letta: boolean
+  created_at: string
 }
 
 export interface Profilo {
@@ -58,3 +88,12 @@ export const CATEGORIE_USCITE = [
   'ABBIGLIAMENTO','FORMAZIONE','SPORT','AMAZON & CO','VACANZE','ASSICURAZIONE',
   'CARTA PREP BPER'
 ]
+
+// Restituisce lo stato "attuale" di un asset: usa i campi aggiornati
+// dall'app se presenti, altrimenti ricade sui valori di anagrafica del foglio.
+export function statoAttuale(a: AssetPortafoglio): { quantita: number; prezzoCarico: number } {
+  return {
+    quantita: a.quantita_attuale ?? a.quantita,
+    prezzoCarico: a.prezzo_carico_attuale ?? a.prezzo_acquisto,
+  }
+}

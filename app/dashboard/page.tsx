@@ -952,7 +952,6 @@ export default function DashboardPage() {
                 prezziAttuali={prezziAttuali}
                 behaviorLabel={profilo?.behavior_label ?? null}
                 ddMax={profilo?.dd_max ?? 0.30}
-                onPortafoglioAggiornato={loadData}
               />
 
               {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
@@ -1112,6 +1111,8 @@ export default function DashboardPage() {
                         <th className="table-th w-10 text-center">PAC</th>
                         <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo storico">Max %</th>
                         <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo mensile">Mese %</th>
+                        <th className="table-th w-28 text-center">Classe</th>
+                        <th className="table-th w-24 text-center">Svincolato</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1205,6 +1206,37 @@ export default function DashboardPage() {
                                   {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
                                 </span>
                               )}
+                            </td>
+                            <td className="table-td text-center px-1">
+                              <select
+                                value={a.classe_rischio ?? ''}
+                                onChange={async e => {
+                                  if (!a.id) return
+                                  const val = e.target.value as 'azionario' | 'obbligazionario' | 'altro' | ''
+                                  await supabase.from('portafoglio').update({ classe_rischio: val || null }).eq('id', a.id)
+                                  loadData()
+                                }}
+                                className="rounded-md border border-surface-200 text-xs py-1 px-1 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                              >
+                                <option value="">–</option>
+                                <option value="azionario">Azionario</option>
+                                <option value="obbligazionario">Obbligazionario</option>
+                                <option value="altro">Altro</option>
+                              </select>
+                            </td>
+                            <td className="table-td text-center">
+                              <button
+                                onClick={async () => {
+                                  if (!a.id) return
+                                  await supabase.from('portafoglio').update({ svincolato: !a.svincolato }).eq('id', a.id)
+                                  loadData()
+                                }}
+                                className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                                  a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
+                                }`}
+                              >
+                                {a.svincolato ? 'Sì' : 'No'}
+                              </button>
                             </td>
                           </tr>
                         )

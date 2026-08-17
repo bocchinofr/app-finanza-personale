@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, MESI, statoAttuale } from '@/types'
+import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MESI, statoAttuale } from '@/types'
+import RiservaAccumulo from '@/components/RiservaAccumulo'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, Area, AreaChart
@@ -135,6 +136,7 @@ export default function DashboardPage() {
 
   // Soglie di allerta portafoglio
   const [soglie, setSoglie] = useState<AlertSoglia[]>([])
+  const [profilo, setProfilo] = useState<Profilo | null>(null)
   const [showSoglieForm, setShowSoglieForm] = useState(false)
   const [globalSogliaMax, setGlobalSogliaMax] = useState(15)
   const [globalSogliaMese, setGlobalSogliaMese] = useState(10)
@@ -160,17 +162,19 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const [movRes, liqRes, portRes, sogRes] = await Promise.all([
+    const [movRes, liqRes, portRes, sogRes, profRes] = await Promise.all([
       supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('portafoglio').select('*').eq('user_id', user.id),
       supabase.from('alert_soglie').select('*').eq('user_id', user.id),
+      supabase.from('profili').select('*').eq('user_id', user.id).single(),
     ])
 
     setMovimenti((movRes.data as Movimento[]) ?? [])
     setLiquidita((liqRes.data as Liquidita[]) ?? [])
     setPortafoglio((portRes.data as AssetPortafoglio[]) ?? [])
     setSoglie((sogRes.data as AlertSoglia[]) ?? [])
+    setProfilo((profRes.data as Profilo) ?? null)
     setLoading(false)
   }, [anno])
 
@@ -940,6 +944,16 @@ export default function DashboardPage() {
                   </div>
                 )
               })()}
+
+              <RiservaAccumulo
+                portafoglio={portafoglio}
+                liquidita={liquidita}
+                soglie={soglie}
+                prezziAttuali={prezziAttuali}
+                behaviorLabel={profilo?.behavior_label ?? null}
+                ddMax={profilo?.dd_max ?? 0.30}
+                onPortafoglioAggiornato={loadData}
+              />
 
               {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
               {(() => {

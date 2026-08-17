@@ -12,7 +12,6 @@ interface Props {
   prezziAttuali: Record<string, QuoteInfo>
   behaviorLabel: string | null
   ddMax: number
-  onPortafoglioAggiornato: () => void
 }
 
 function fmtEuro(n: number) {
@@ -25,14 +24,19 @@ function valoreAttualeAsset(a: AssetPortafoglio, prezzi: Record<string, QuoteInf
   return p * quantita
 }
 
+// La classificazione azionario/obbligazionario/altro e il flag "svincolato"
+// per singolo asset si gestiscono direttamente nella tabella principale del
+// portafoglio (colonne "Classe" e "Svincolato"). Qui si gestisce solo lo
+// svincolo dei conti di liquidità (non legato a una riga mensile specifica)
+// e si mostrano i riepiloghi/suggerimenti calcolati.
 export default function RiservaAccumulo({
-  portafoglio, liquidita, soglie, prezziAttuali, behaviorLabel, ddMax, onPortafoglioAggiornato,
+  portafoglio, liquidita, soglie, prezziAttuali, behaviorLabel, ddMax,
 }: Props) {
   const supabase = createClient()
   const [contoFlags, setContoFlags] = useState<ContoFlag[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
-  const [savingId, setSavingId] = useState<string | null>(null)
+  const [savingConto, setSavingConto] = useState<string | null>(null)
 
   const profiloDinamico = behaviorLabel === PROFILO_DINAMICO_LABEL
 
@@ -63,18 +67,10 @@ export default function RiservaAccumulo({
 
   const isContoSvincolato = (conto: string) => contoFlags.find(c => c.conto === conto)?.svincolata ?? false
 
-  async function toggleAssetSvincolato(a: AssetPortafoglio) {
-    if (!a.id) return
-    setSavingId(a.id)
-    await supabase.from('portafoglio').update({ svincolato: !a.svincolato }).eq('id', a.id)
-    setSavingId(null)
-    onPortafoglioAggiornato()
-  }
-
   async function toggleContoSvincolato(conto: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    setSavingId(conto)
+    setSavingConto(conto)
     const nuovoValore = !isContoSvincolato(conto)
     await supabase.from('conto_flags').upsert(
       { user_id: user.id, conto, svincolata: nuovoValore },
@@ -82,15 +78,7 @@ export default function RiservaAccumulo({
     )
     const { data } = await supabase.from('conto_flags').select('*').eq('user_id', user.id)
     setContoFlags((data as ContoFlag[]) ?? [])
-    setSavingId(null)
-  }
-
-  async function setClasseRischio(a: AssetPortafoglio, classe: 'azionario' | 'obbligazionario' | 'altro') {
-    if (!a.id) return
-    setSavingId(a.id)
-    await supabase.from('portafoglio').update({ classe_rischio: classe }).eq('id', a.id)
-    setSavingId(null)
-    onPortafoglioAggiornato()
+    setSavingConto(null)
   }
 
   // --- Calcoli aggregati ---
@@ -145,12 +133,14 @@ export default function RiservaAccumulo({
           <p className="text-sm font-semibold text-gray-900">Riserva Accumulo</p>
           <p className="text-xs text-gray-500">Capitale svincolato disponibile per acquisti sui crolli</p>
         </div>
-        <button
-          onClick={() => setExpanded(e => !e)}
-          className="text-xs font-medium text-brand-700 hover:underline"
-        >
-          {expanded ? 'Chiudi' : 'Gestisci'}
-        </button>
+        {conti.length > 0 && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs font-medium text-brand-700 hover:underline"
+          >
+            {expanded ? 'Chiudi' : 'Conti liquidità'}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-2">
@@ -187,73 +177,23 @@ export default function RiservaAccumulo({
         </div>
       )}
 
-      {expanded && (
-        <div className="mt-3 space-y-4">
-          <div>
-            <p className="text-xs font-semibold text-gray-700 mb-2">Asset — classe e svincolo</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-gray-400 border-b border-gray-100">
-                    <th className="py-1 pr-2">Asset</th>
-                    <th className="py-1 pr-2">Classe</th>
-                    <th className="py-1 pr-2 text-right">Svincolato</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {portafoglio.map(a => (
-                    <tr key={a.id} className="border-b border-gray-50">
-                      <td className="py-1.5 pr-2">{a.nome || a.descrizione || a.ticker}</td>
-                      <td className="py-1.5 pr-2">
-                        <select
-                          value={a.classe_rischio ?? ''}
-                          onChange={e => setClasseRischio(a, e.target.value as 'azionario' | 'obbligazionario' | 'altro')}
-                          disabled={savingId === a.id}
-                          className="rounded border border-gray-200 text-xs py-0.5 px-1"
-                        >
-                          <option value="">–</option>
-                          <option value="azionario">Azionario</option>
-                          <option value="obbligazionario">Obbligazionario</option>
-                          <option value="altro">Altro</option>
-                        </select>
-                      </td>
-                      <td className="py-1.5 pr-2 text-right">
-                        <button
-                          onClick={() => toggleAssetSvincolato(a)}
-                          disabled={savingId === a.id}
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
-                          }`}
-                        >
-                          {a.svincolato ? 'Svincolato' : 'Vincolato'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {expanded && conti.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Conti di liquidità</p>
+          <div className="flex flex-wrap gap-2">
+            {conti.map(conto => (
+              <button
+                key={conto}
+                onClick={() => toggleContoSvincolato(conto)}
+                disabled={savingConto === conto}
+                className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  isContoSvincolato(conto) ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
+                }`}
+              >
+                {conto} · {isContoSvincolato(conto) ? 'Svincolata' : 'Vincolata'}
+              </button>
+            ))}
           </div>
-
-          {conti.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-gray-700 mb-2">Conti di liquidità</p>
-              <div className="flex flex-wrap gap-2">
-                {conti.map(conto => (
-                  <button
-                    key={conto}
-                    onClick={() => toggleContoSvincolato(conto)}
-                    disabled={savingId === conto}
-                    className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      isContoSvincolato(conto) ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
-                    }`}
-                  >
-                    {conto} · {isContoSvincolato(conto) ? 'Svincolata' : 'Vincolata'}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

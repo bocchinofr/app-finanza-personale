@@ -152,18 +152,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 bg-white border-r border-surface-200 flex-col fixed h-full">
-        <div className="px-5 py-5 border-b border-surface-100">
+        <div className="px-5 py-5 border-b border-surface-100 space-y-3">
           <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+          <div className="flex items-center gap-2">
+            <AnnoSelect />
+            <NotificationBell />
+          </div>
         </div>
         {navLinks}
       </aside>
 
       <main className="flex-1 md:ml-56">
-        {/* Header desktop */}
-        <div className="hidden md:flex sticky top-0 z-20 items-center justify-end gap-3 bg-white border-b border-surface-200 px-6 py-3">
-          <AnnoSelect />
-          <NotificationBell />
-        </div>
         <div className="p-4 md:p-6">
           {children}
         </div>

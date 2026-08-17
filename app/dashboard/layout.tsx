@@ -4,14 +4,30 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
+import { AnnoProvider, useAnno } from '@/lib/AnnoContext'
 
 const navItems = [
-  { href: '/dashboard', label: 'Movimenti & Cash Flow', icon: '◈' },
+  { href: '/dashboard', label: 'Patrimonio', icon: '◆' },
+  { href: '/dashboard/gestione', label: 'Gestione', icon: '◈' },
   { href: '/dashboard/upload', label: 'Importa dati', icon: '↑' },
   { href: '/dashboard/profilo', label: 'Profilo', icon: '○' },
 ]
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function AnnoSelect() {
+  const { anno, setAnno, anniDisponibili } = useAnno()
+  return (
+    <select
+      value={anno}
+      onChange={e => setAnno(Number(e.target.value))}
+      className="input w-20 text-sm py-1.5"
+      aria-label="Anno selezionato"
+    >
+      {anniDisponibili.map(y => <option key={y}>{y}</option>)}
+    </select>
+  )
+}
+
+function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -91,9 +107,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between bg-white border-b border-surface-200 px-4 py-3">
         <div>
           <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-          <p className="text-xs text-gray-400 -mt-0.5">2026</p>
         </div>
         <div className="flex items-center gap-2">
+          <AnnoSelect />
           <NotificationBell />
           <button
             onClick={() => setMenuOpen(true)}
@@ -122,7 +138,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="px-5 py-5 border-b border-surface-100 flex items-center justify-between">
           <div>
             <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-            <p className="text-xs text-gray-400 mt-0.5">2026</p>
           </div>
           <button
             onClick={() => setMenuOpen(false)}
@@ -139,14 +154,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className="hidden md:flex w-56 bg-white border-r border-surface-200 flex-col fixed h-full">
         <div className="px-5 py-5 border-b border-surface-100">
           <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-          <p className="text-xs text-gray-400 mt-0.5">2026</p>
         </div>
         {navLinks}
       </aside>
 
       <main className="flex-1 md:ml-56">
         {/* Header desktop */}
-        <div className="hidden md:flex sticky top-0 z-20 items-center justify-end bg-white border-b border-surface-200 px-6 py-3">
+        <div className="hidden md:flex sticky top-0 z-20 items-center justify-end gap-3 bg-white border-b border-surface-200 px-6 py-3">
+          <AnnoSelect />
           <NotificationBell />
         </div>
         <div className="p-4 md:p-6">
@@ -154,5 +169,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </main>
     </div>
+  )
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AnnoProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </AnnoProvider>
   )
 }

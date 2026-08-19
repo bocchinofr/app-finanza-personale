@@ -4,18 +4,19 @@ import { createClient } from '@/lib/supabase'
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
-import { Liquidita, AssetPortafoglio, Movimento, MESI } from '@/types'
+import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
-import InteressiStoricoForm from '@/components/InteressiStoricoForm'
 
 const MESI_LABEL: Record<string, string> = {
   gen: 'Gen', feb: 'Feb', mar: 'Mar', apr: 'Apr', mag: 'Mag', giu: 'Giu',
   lug: 'Lug', ago: 'Ago', set: 'Set', ott: 'Ott', nov: 'Nov', dic: 'Dic',
 }
 
-// Valore del campo "asset" (grouping) che marca un asset come fondo pensione.
-// Deve corrispondere esattamente al valore usato nel Google Sheet / tabella portafoglio.
-const CATEGORIA_FONDO_PENSIONE = 'Fondo Pensione'
+// Valore legacy del campo "asset" (grouping) che marcava un asset come fondo
+// pensione nel vecchio approccio. Il fondo pensione ora arriva dal foglio
+// dedicato, ma teniamo questo filtro per sicurezza: se in portafoglio è
+// rimasto un asset con questo tag, non finisce doppio nel capitale investito.
+const CATEGORIA_FONDO_PENSIONE_LEGACY = 'Fondo Pensione'
 
 function fmtEuro(n: number) {
   return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
@@ -45,9 +46,8 @@ export default function PatrimonioPage() {
   const [liquidita, setLiquidita] = useState<Liquidita[]>([])
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
-  const [interessi, setInteressi] = useState<{ mese: string; asset_id: string | null; valore: number }[]>([])
+  const [fondoPensione, setFondoPensione] = useState<FondoPensione[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
-  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -55,22 +55,22 @@ export default function PatrimonioPage() {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [liqRes, portRes, movRes, intRes] = await Promise.all([
+      const [liqRes, portRes, movRes, fondoRes] = await Promise.all([
         supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
         supabase.from('portafoglio').select('*').eq('user_id', user.id),
         supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno).eq('categoria', 'INVESTIMENTI'),
-        supabase.from('interessi_storico').select('mese, asset_id, valore').eq('user_id', user.id).eq('anno', anno),
+        supabase.from('fondo_pensione').select('*').eq('user_id', user.id).eq('anno', anno),
       ])
       if (cancelled) return
       setLiquidita(liqRes.data ?? [])
       setPortafoglio(portRes.data ?? [])
       setMovimenti(movRes.data ?? [])
-      setInteressi(intRes.data ?? [])
+      setFondoPensione(fondoRes.data ?? [])
       setLoading(false)
 
       // Prezzi correnti via proxy Yahoo Finance server-side
       const tickers = (portRes.data ?? [])
-        .filter((a: AssetPortafoglio) => a.quantita_attuale && a.quantita_attuale > 0)
+        .filter((a: AssetPortafoglio) => statoAttuale(a).quantita > 0)
         .map((a: AssetPortafoglio) => a.ticker)
       if (tickers.length > 0) {
         try {
@@ -88,89 +88,91 @@ export default function PatrimonioPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [anno, refreshKey])
+  }, [anno])
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-400">Caricamento…</div>
   }
 
   // Liquidità totale: somma saldi di tutti i conti nell'ultimo mese valorizzato dell'anno selezionato
-  const mesiConDati = [...new Set(liquidita.map(l => l.mese))]
-  const ultimoMese = MESI.filter(m => mesiConDati.includes(m)).pop()
+  const mesiConLiquidita = [...new Set(liquidita.map(l => l.mese))]
+  const ultimoMeseLiquidita = MESI.filter(m => mesiConLiquidita.includes(m)).pop()
   const liquiditaTotale = liquidita
-    .filter(l => l.mese === ultimoMese)
+    .filter(l => l.mese === ultimoMeseLiquidita)
     .reduce((sum, l) => sum + (l.saldo ?? 0), 0)
 
-  // Split portafoglio: fondo pensione vs resto, a valore di mercato (prezzo attuale se disponibile, altrimenti carico)
-  const assetInvestiti = portafoglio.filter(a => a.asset !== CATEGORIA_FONDO_PENSIONE && (a.quantita_attuale ?? 0) > 0)
-  const assetFondoPensione = portafoglio.filter(a => a.asset === CATEGORIA_FONDO_PENSIONE && (a.quantita_attuale ?? 0) > 0)
+  // Capitale investito: tutti gli asset in portafoglio (esclusi eventuali residui
+  // legacy taggati come fondo pensione), a valore di mercato attuale
+  const assetInvestiti = portafoglio.filter(
+    a => a.asset !== CATEGORIA_FONDO_PENSIONE_LEGACY && statoAttuale(a).quantita > 0
+  )
 
   function valoreMercato(a: AssetPortafoglio) {
-    const prezzo = prezziAttuali[a.ticker] ?? a.prezzo_carico_attuale ?? 0
-    return prezzo * (a.quantita_attuale ?? 0)
+    const { quantita, prezzoCarico } = statoAttuale(a)
+    const prezzo = prezziAttuali[a.ticker] ?? prezzoCarico
+    return prezzo * quantita
   }
   function valoreCarico(a: AssetPortafoglio) {
-    return (a.prezzo_carico_attuale ?? 0) * (a.quantita_attuale ?? 0)
+    const { quantita, prezzoCarico } = statoAttuale(a)
+    return prezzoCarico * quantita
   }
 
   const capitaleInvestito = assetInvestiti.reduce((sum, a) => sum + valoreMercato(a), 0)
-  const capitaleFondoPensione = assetFondoPensione.reduce((sum, a) => sum + valoreMercato(a), 0)
-
   const carico = assetInvestiti.reduce((sum, a) => sum + valoreCarico(a), 0)
-  const plusMinus = capitaleInvestito - carico
-  const plusMinusPct = carico > 0 ? (plusMinus / carico) * 100 : 0
+  const plusMinusInvestimenti = capitaleInvestito - carico
+
+  // Fondo pensione: somma saldi/interessi di tutti i fondi nell'ultimo mese valorizzato
+  const mesiConFondo = [...new Set(fondoPensione.map(f => f.mese))]
+  const ultimoMeseFondo = MESI.filter(m => mesiConFondo.includes(m)).pop()
+  const fondoPensioneTotale = fondoPensione
+    .filter(f => f.mese === ultimoMeseFondo)
+    .reduce((sum, f) => sum + (f.saldo ?? 0), 0)
+  const fondoPensioneInteressi = fondoPensione
+    .filter(f => f.mese === ultimoMeseFondo)
+    .reduce((sum, f) => sum + (f.interessi ?? 0), 0)
+
+  // KPI "Plus/minus": somma investimenti (mercato - carico) + interessi fondo pensione
+  const plusMinus = plusMinusInvestimenti + fondoPensioneInteressi
+  const plusMinusPct = carico > 0 ? (plusMinusInvestimenti / carico) * 100 : 0
 
   // ===== Storico mensile a pile: Liquidità / Capitale investito / Fondo pensione =====
-  // Capitale investito e fondo pensione: nessuno storico dei prezzi passati, quindi
-  // ricostruiamo il valore "a carico" (versato) cumulato mese per mese:
+  // Capitale investito: nessuno storico dei prezzi passati, quindi ricostruiamo il
+  // valore "a carico" (versato) cumulato mese per mese dai movimenti INVESTIMENTI:
   //   capitale iniziale (a inizio anno) = valore a carico attuale − versamenti netti dell'anno
   //   valore al mese X = capitale iniziale + versamenti netti cumulati fino a X
   const assetById = new Map(portafoglio.map(a => [a.id, a]))
-  const isMovimentoFondoPensione = (m: Movimento) =>
-    m.portafoglio_id != null && assetById.get(m.portafoglio_id)?.asset === CATEGORIA_FONDO_PENSIONE
   const isMovimentoInvestito = (m: Movimento) =>
-    m.portafoglio_id != null && assetById.get(m.portafoglio_id)?.asset !== CATEGORIA_FONDO_PENSIONE
+    m.portafoglio_id != null && assetById.get(m.portafoglio_id)?.asset !== CATEGORIA_FONDO_PENSIONE_LEGACY
 
   const netFlow = (m: Movimento) => (m.entrate ?? 0) - (m.uscite ?? 0)
-
   const flowInvestitoAnno = movimenti.filter(isMovimentoInvestito).reduce((s, m) => s + netFlow(m), 0)
-  const flowFondoAnno = movimenti.filter(isMovimentoFondoPensione).reduce((s, m) => s + netFlow(m), 0)
-
   const capitaleInizialeInvestito = carico - flowInvestitoAnno
-  const capitaleInizialeFondo = assetFondoPensione.reduce((s, a) => s + valoreCarico(a), 0) - flowFondoAnno
-
   let cumInvestito = capitaleInizialeInvestito
-  let cumFondo = capitaleInizialeFondo
 
-  // Mesi da mostrare: fino all'ultimo mese con dati (liquidità o movimenti), per non
-  // proiettare in avanti mesi futuri vuoti
+  // Mesi da mostrare: fino all'ultimo mese con dati (liquidità, movimenti o fondo
+  // pensione), per non proiettare in avanti mesi futuri vuoti
   const mesiConMovimenti = new Set(movimenti.map(m => m.mese))
-  const ultimoMeseConDati = MESI.filter(m => mesiConDati.includes(m) || mesiConMovimenti.has(m)).pop() ?? MESI[0]
+  const ultimoMeseConDati = MESI.filter(
+    m => mesiConLiquidita.includes(m) || mesiConMovimenti.has(m) || mesiConFondo.includes(m)
+  ).pop() ?? MESI[0]
   const idxUltimoMese = MESI.indexOf(ultimoMeseConDati)
   const mesiDaMostrare = MESI.slice(0, idxUltimoMese + 1)
 
   const storicoData = mesiDaMostrare.map(m => {
     cumInvestito += movimenti.filter(mv => mv.mese === m && isMovimentoInvestito(mv)).reduce((s, mv) => s + netFlow(mv), 0)
-    cumFondo += movimenti.filter(mv => mv.mese === m && isMovimentoFondoPensione(mv)).reduce((s, mv) => s + netFlow(mv), 0)
     const liquiditaMese = liquidita.filter(l => l.mese === m).reduce((s, l) => s + (l.saldo ?? 0), 0)
-
-    // Interessi del mese: se esiste una riga aggregata (asset_id null) si usa quella,
-    // altrimenti si sommano le righe per singolo asset. Se non c'è nulla, punto assente.
-    const righeMese = interessi.filter(i => i.mese === m)
-    const aggregata = righeMese.find(i => i.asset_id === null)
-    const perAsset = righeMese.filter(i => i.asset_id !== null)
-    const plusMinusMese = aggregata
-      ? aggregata.valore
-      : perAsset.length > 0
-        ? perAsset.reduce((s, i) => s + i.valore, 0)
-        : null
+    const fondoMese = fondoPensione.filter(f => f.mese === m).reduce((s, f) => s + (f.saldo ?? 0), 0)
+    const righeFondoMese = fondoPensione.filter(f => f.mese === m)
+    const interessiFondoMese = righeFondoMese.length > 0
+      ? righeFondoMese.reduce((s, f) => s + (f.interessi ?? 0), 0)
+      : null
 
     return {
       mese: MESI_LABEL[m],
       'Liquidità': Math.round(liquiditaMese),
       'Capitale investito': Math.round(cumInvestito),
-      'Fondo pensione': Math.round(cumFondo),
-      'Plus/minus': plusMinusMese != null ? Math.round(plusMinusMese) : null,
+      'Fondo pensione': Math.round(fondoMese),
+      'Plus/minus': interessiFondoMese != null ? Math.round(interessiFondoMese) : null,
     }
   })
 
@@ -179,11 +181,11 @@ export default function PatrimonioPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         <KpiCard label="Liquidità totale" value={fmtEuro(liquiditaTotale)} />
         <KpiCard label="Capitale investito" value={fmtEuro(capitaleInvestito)} sub="Valore di mercato" />
-        <KpiCard label="Fondo pensione" value={fmtEuro(capitaleFondoPensione)} />
+        <KpiCard label="Fondo pensione" value={fmtEuro(fondoPensioneTotale)} />
         <KpiCard
           label="Plus/minus non realizzato"
           value={`${plusMinus >= 0 ? '+' : ''}${fmtEuro(plusMinus)}`}
-          sub={`${plusMinusPct >= 0 ? '+' : ''}${plusMinusPct.toFixed(1)}% sul carico`}
+          sub={`Investimenti ${plusMinusPct >= 0 ? '+' : ''}${plusMinusPct.toFixed(1)}% · include interessi fondo pensione`}
           tone={plusMinus >= 0 ? 'positive' : 'negative'}
         />
       </div>
@@ -191,7 +193,9 @@ export default function PatrimonioPage() {
       <div className="bg-white border border-surface-200 rounded-xl p-4">
         <p className="text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
         <p className="text-xs text-gray-400 mb-4">
-          Capitale investito e fondo pensione a valore versato (carico), non a valore di mercato storico
+          Capitale investito a valore versato (carico), non a valore di mercato storico.
+          La linea plus/minus mostra per ora solo gli interessi del fondo pensione: quelli sugli
+          investimenti richiedono uno snapshot mensile automatico, non ancora attivo.
         </p>
         {storicoData.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>
@@ -211,15 +215,6 @@ export default function PatrimonioPage() {
             </ComposedChart>
           </ResponsiveContainer>
         )}
-      </div>
-
-      <div className="mt-4">
-        <InteressiStoricoForm
-          anno={anno}
-          portafoglio={portafoglio}
-          meseCorrente={ultimoMeseConDati}
-          onSaved={() => setRefreshKey(k => k + 1)}
-        />
       </div>
     </div>
   )

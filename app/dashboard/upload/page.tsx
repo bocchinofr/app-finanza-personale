@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { parseMovimentiSheet } from '@/lib/parseXlsx'
-import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv } from '@/lib/parseGoogleSheet'
+import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv, parseFondoPensioneCsv } from '@/lib/parseGoogleSheet'
 import { Movimento } from '@/types'
 
 type Status = 'idle' | 'fetching' | 'parsing' | 'saving' | 'done' | 'error'
@@ -125,6 +125,20 @@ export default function UploadPage() {
         }
       } catch { /* opzionale */ }
 
+      let fondoPensioneCount = 0
+      try {
+        setMessage('Lettura fondo pensione…')
+        const rowsFondo = await fetchSheet(sheetId, 'Fondo Pensione')
+        const fondoPensione = parseFondoPensioneCsv(rowsFondo)
+        if (fondoPensione.length > 0) {
+          await supabase.from('fondo_pensione').delete().eq('user_id', user.id).eq('anno', anno)
+          const rows = fondoPensione.map(f => ({ ...f, user_id: user.id }))
+          const { error } = await supabase.from('fondo_pensione').insert(rows)
+          if (error) throw error
+          fondoPensioneCount = fondoPensione.length
+        }
+      } catch { /* opzionale: foglio non presente per chi non ha un fondo pensione */ }
+
       let portafoglioCount = 0
       try {
         setMessage('Lettura portafoglio…')
@@ -167,6 +181,7 @@ export default function UploadPage() {
       setMessage(
         `✓ Sincronizzazione completata — ${movimenti.length} movimenti` +
         (liquiditaCount > 0 ? `, ${liquiditaCount} righe liquidità` : '') +
+        (fondoPensioneCount > 0 ? `, ${fondoPensioneCount} righe fondo pensione` : '') +
         (portafoglioCount > 0 ? `, ${portafoglioCount} asset portafoglio` : '')
       )
     } catch (err: unknown) {
@@ -184,6 +199,7 @@ export default function UploadPage() {
       if (!user) throw new Error('Non autenticato')
       await supabase.from('movimenti').delete().eq('user_id', user.id).eq('anno', anno)
       await supabase.from('liquidita').delete().eq('user_id', user.id).eq('anno', anno)
+      await supabase.from('fondo_pensione').delete().eq('user_id', user.id).eq('anno', anno)
       setStatus('done')
       setMessage(`✓ Dati del ${anno} cancellati.`)
     } catch (err: unknown) {

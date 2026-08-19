@@ -24,6 +24,17 @@ export interface Liquidita {
   saldo: number
 }
 
+export interface FondoPensione {
+  id?: string
+  user_id?: string
+  anno: number
+  mese: string
+  fondo: string
+  saldo: number
+  interessi: number
+}
+
+
 export interface AssetPortafoglio {
   id?: string
   user_id?: string

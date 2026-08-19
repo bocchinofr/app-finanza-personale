@@ -47,6 +47,7 @@ export default function PatrimonioPage() {
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [fondoPensione, setFondoPensione] = useState<FondoPensione[]>([])
+  const [patrimonioStorico, setPatrimonioStorico] = useState<{ mese: string; capitale_investito: number; plus_minus: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
 
   useEffect(() => {
@@ -55,17 +56,19 @@ export default function PatrimonioPage() {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [liqRes, portRes, movRes, fondoRes] = await Promise.all([
+      const [liqRes, portRes, movRes, fondoRes, storicoRes] = await Promise.all([
         supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
         supabase.from('portafoglio').select('*').eq('user_id', user.id),
         supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno).eq('categoria', 'INVESTIMENTI'),
         supabase.from('fondo_pensione').select('*').eq('user_id', user.id).eq('anno', anno),
+        supabase.from('patrimonio_storico').select('mese, capitale_investito, plus_minus').eq('user_id', user.id).eq('anno', anno),
       ])
       if (cancelled) return
       setLiquidita(liqRes.data ?? [])
       setPortafoglio(portRes.data ?? [])
       setMovimenti(movRes.data ?? [])
       setFondoPensione(fondoRes.data ?? [])
+      setPatrimonioStorico(storicoRes.data ?? [])
       setLoading(false)
 
       // Prezzi correnti via proxy Yahoo Finance server-side
@@ -158,6 +161,8 @@ export default function PatrimonioPage() {
   const idxUltimoMese = MESI.indexOf(ultimoMeseConDati)
   const mesiDaMostrare = MESI.slice(0, idxUltimoMese + 1)
 
+  const storicoPerMese = new Map(patrimonioStorico.map(s => [s.mese, s]))
+
   const storicoData = mesiDaMostrare.map(m => {
     cumInvestito += movimenti.filter(mv => mv.mese === m && isMovimentoInvestito(mv)).reduce((s, mv) => s + netFlow(mv), 0)
     const liquiditaMese = liquidita.filter(l => l.mese === m).reduce((s, l) => s + (l.saldo ?? 0), 0)
@@ -167,12 +172,19 @@ export default function PatrimonioPage() {
       ? righeFondoMese.reduce((s, f) => s + (f.interessi ?? 0), 0)
       : null
 
+    // Se esiste uno snapshot reale per questo mese, ha priorità sulla stima
+    // ricostruita dai movimenti (che è a valore versato, non di mercato)
+    const snapshot = storicoPerMese.get(m)
+    const capitaleInvestitoMese = snapshot ? snapshot.capitale_investito : cumInvestito
+    const plusMinusMese = (snapshot ? snapshot.plus_minus : 0) + (interessiFondoMese ?? 0)
+    const haValorePlusMinus = snapshot != null || interessiFondoMese != null
+
     return {
       mese: MESI_LABEL[m],
       'Liquidità': Math.round(liquiditaMese),
-      'Capitale investito': Math.round(cumInvestito),
+      'Capitale investito': Math.round(capitaleInvestitoMese),
       'Fondo pensione': Math.round(fondoMese),
-      'Plus/minus': interessiFondoMese != null ? Math.round(interessiFondoMese) : null,
+      'Plus/minus': haValorePlusMinus ? Math.round(plusMinusMese) : null,
     }
   })
 
@@ -193,9 +205,8 @@ export default function PatrimonioPage() {
       <div className="bg-white border border-surface-200 rounded-xl p-4">
         <p className="text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
         <p className="text-xs text-gray-400 mb-4">
-          Capitale investito a valore versato (carico), non a valore di mercato storico.
-          La linea plus/minus mostra per ora solo gli interessi del fondo pensione: quelli sugli
-          investimenti richiedono uno snapshot mensile automatico, non ancora attivo.
+          Capitale investito: valore di mercato reale dal mese dello snapshot in poi, stima a
+          valore versato per i mesi precedenti. Linea plus/minus: idem, più interessi fondo pensione.
         </p>
         {storicoData.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>

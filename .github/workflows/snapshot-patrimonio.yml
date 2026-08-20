@@ -13,4 +13,5 @@ jobs:
       - name: Chiama endpoint snapshot
         run: |
           curl -sf -X GET "${{ secrets.APP_URL }}/api/snapshot-patrimonio" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_BYPASS_SECRET }}"

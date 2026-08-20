@@ -3,15 +3,19 @@ import { createAdminClient } from '@/lib/supabaseAdmin'
 import { AssetPortafoglio, MESI, statoAttuale } from '@/types'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 const CATEGORIA_FONDO_PENSIONE_LEGACY = 'Fondo Pensione'
 
 async function fetchPrice(ticker: string): Promise<number | null> {
   try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: controller.signal }
     )
+    clearTimeout(timeout)
     if (!res.ok) return null
     const json = await res.json()
     const price: number | undefined = json?.chart?.result?.[0]?.meta?.regularMarketPrice

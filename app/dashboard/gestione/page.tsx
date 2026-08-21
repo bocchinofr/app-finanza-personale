@@ -261,7 +261,7 @@ export default function DashboardPage() {
       const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
 
       const righe = portafoglio
-        .filter(a => a.id && a.ticker && statoAttuale(a).quantita > 0)
+        .filter(a => a.id && a.ticker)
         .map(a => {
           const { quantita, prezzoCarico } = statoAttuale(a)
           const prezzo = a.ticker && prezzi[a.ticker] ? prezzi[a.ticker].price : prezzoCarico
@@ -1151,7 +1151,7 @@ export default function DashboardPage() {
                   Storico prezzi mensili {anno}
                 </p>
                 {(() => {
-                  const assetAttiviStorico = portafoglio.filter(a => a.id && statoAttuale(a).quantita > 0)
+                  const assetAttiviStorico = portafoglio.filter(a => a.id && a.ticker)
 
                   const prezziPerAsset = new Map<string, Record<string, number>>()
                   for (const r of portafoglioStorico) {

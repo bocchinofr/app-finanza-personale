@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MESI, statoAttuale } from '@/types'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
 import { useAnno } from '@/lib/AnnoContext'
+import { HeatmapCell } from '@/components/charts/HeatmapCell'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, Area, AreaChart
@@ -134,6 +135,11 @@ export default function DashboardPage() {
   type QuoteInfo = { price: number; high52: number | null; changeFromHigh: number | null; changeFromMonth: number | null }
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, QuoteInfo>>({})
   const [loadingPrezzi, setLoadingPrezzi] = useState(false)
+  const [savingSnapshot, setSavingSnapshot] = useState(false)
+  const [snapshotSalvato, setSnapshotSalvato] = useState<number | null>(null)
+  const [portafoglioStorico, setPortafoglioStorico] = useState<
+    { mese: string; portafoglio_id: string; prezzo: number }[]
+  >([])
 
   // Soglie di allerta portafoglio
   const [soglie, setSoglie] = useState<AlertSoglia[]>([])
@@ -219,6 +225,87 @@ export default function DashboardPage() {
       setLoadingPrezzi(false)
     }
   }
+
+  // Il bottone registra sempre la chiusura dell'ULTIMO MESE CONCLUSO, non
+  // quello in corso: se oggi è il 5 agosto, registra il 31/07 (luglio è
+  // l'ultimo mese completo).
+  function meseDaRegistrare() {
+    const oggi = new Date()
+    const meseIdx = oggi.getMonth() // 0=gennaio ... 11=dicembre
+    const meseScorsoIdx = meseIdx === 0 ? 11 : meseIdx - 1
+    const annoScorso = meseIdx === 0 ? oggi.getFullYear() - 1 : oggi.getFullYear()
+    return { mese: MESI[meseScorsoIdx], anno: annoScorso }
+  }
+
+  // Salva prezzo/valore/plus-minus di ogni singolo asset per l'ultimo mese
+  // concluso, per costruire lo storico prezzi e il rendimento per asset.
+  // Riusa i prezzi già in sessione se presenti, altrimenti li recupera ora.
+  async function salvaSnapshotFineMese() {
+    const tickers = [...new Set(portafoglio.map(a => a.ticker).filter(Boolean))]
+    if (tickers.length === 0) return
+
+    setSavingSnapshot(true)
+    setSnapshotSalvato(null)
+    try {
+      let prezzi = prezziAttuali
+      if (Object.keys(prezzi).length === 0) {
+        const res = await fetch(`/api/quote?tickers=${tickers.join(',')}`)
+        if (!res.ok) throw new Error(`API prezzi: ${res.status}`)
+        prezzi = await res.json()
+        setPrezziAttuali(prezzi)
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
+
+      const righe = portafoglio
+        .filter(a => a.id && a.ticker && statoAttuale(a).quantita > 0)
+        .map(a => {
+          const { quantita, prezzoCarico } = statoAttuale(a)
+          const prezzo = a.ticker && prezzi[a.ticker] ? prezzi[a.ticker].price : prezzoCarico
+          return {
+            user_id: user.id,
+            anno: annoTarget,
+            mese: meseTarget,
+            portafoglio_id: a.id!,
+            ticker: a.ticker,
+            quantita,
+            prezzo,
+            prezzo_carico: prezzoCarico,
+            valore_mercato: prezzo * quantita,
+            valore_carico: prezzoCarico * quantita,
+            plus_minus: (prezzo - prezzoCarico) * quantita,
+          }
+        })
+
+      if (righe.length > 0) {
+        await supabase.from('portafoglio_storico').delete().eq('user_id', user.id).eq('anno', annoTarget).eq('mese', meseTarget)
+        const { error } = await supabase.from('portafoglio_storico').insert(righe)
+        if (error) throw error
+        setSnapshotSalvato(righe.length)
+      }
+    } catch (err) {
+      console.error('Errore nel salvataggio dello snapshot', err)
+    } finally {
+      setSavingSnapshot(false)
+    }
+  }
+
+  useEffect(() => {
+    async function loadStoricoPrezzi() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('portafoglio_storico')
+        .select('mese, portafoglio_id, prezzo')
+        .eq('user_id', user.id)
+        .eq('anno', anno)
+      setPortafoglioStorico(data ?? [])
+    }
+    loadStoricoPrezzi()
+  }, [anno, snapshotSalvato])
 
   // Confronta le variazioni appena scaricate con le soglie impostate.
   // Notifica (edge-triggered) solo al passaggio da "non superata" a "superata".
@@ -1021,6 +1108,20 @@ export default function DashboardPage() {
                         ✓ {Object.keys(prezziAttuali).length} prezzi aggiornati
                       </p>
                     )}
+                    <button
+                      onClick={salvaSnapshotFineMese}
+                      disabled={savingSnapshot}
+                      className="btn-primary text-sm mt-2"
+                    >
+                      {savingSnapshot
+                        ? '⟳ Salvataggio…'
+                        : `💾 Registra chiusura ${MESI_LABEL[meseDaRegistrare().mese]}`}
+                    </button>
+                    {snapshotSalvato != null && (
+                      <p className="text-xs text-green-600 mt-2">
+                        ✓ Snapshot salvato per {snapshotSalvato} asset
+                      </p>
+                    )}
                   </div>
                   <div className="mt-4 space-y-1">
                     {[...new Set(portafoglio.map(a => a.asset))].map(cls => {
@@ -1043,6 +1144,99 @@ export default function DashboardPage() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              <div className="card overflow-x-auto mt-4">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+                  Storico prezzi mensili {anno}
+                </p>
+                {(() => {
+                  const assetAttiviStorico = portafoglio.filter(a => a.id && statoAttuale(a).quantita > 0)
+
+                  const prezziPerAsset = new Map<string, Record<string, number>>()
+                  for (const r of portafoglioStorico) {
+                    if (!prezziPerAsset.has(r.portafoglio_id)) prezziPerAsset.set(r.portafoglio_id, {})
+                    prezziPerAsset.get(r.portafoglio_id)![r.mese] = r.prezzo
+                  }
+
+                  let maxAbsPct = 0
+                  const variazioniPerAsset = new Map<string, Record<string, number | null>>()
+                  for (const a of assetAttiviStorico) {
+                    if (!a.id) continue
+                    const prezzi = prezziPerAsset.get(a.id) ?? {}
+                    const rowVar: Record<string, number | null> = {}
+                    let prezzoPrec: number | null = null
+                    for (const m of MESI) {
+                      const p = prezzi[m]
+                      if (p != null && prezzoPrec != null && prezzoPrec !== 0) {
+                        const pct = ((p - prezzoPrec) / prezzoPrec) * 100
+                        rowVar[m] = pct
+                        maxAbsPct = Math.max(maxAbsPct, Math.abs(pct))
+                      } else {
+                        rowVar[m] = null
+                      }
+                      if (p != null) prezzoPrec = p
+                    }
+                    variazioniPerAsset.set(a.id, rowVar)
+                  }
+
+                  if (assetAttiviStorico.length === 0) {
+                    return <p className="text-xs text-gray-400">Nessun asset attivo in portafoglio.</p>
+                  }
+
+                  return (
+                    <table className="min-w-full text-xs border-collapse">
+                      <thead>
+                        <tr>
+                          <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">
+                            Asset
+                          </th>
+                          {MESI.map(m => (
+                            <th key={m} className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">
+                              {MESI_LABEL[m]}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {assetAttiviStorico.map(a => {
+                          if (!a.id) return null
+                          const prezzi = prezziPerAsset.get(a.id) ?? {}
+                          const rowVar = variazioniPerAsset.get(a.id) ?? {}
+                          return (
+                            <tr key={a.id}>
+                              <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white whitespace-nowrap border-b border-surface-200/50">
+                                {a.nome || a.ticker}
+                              </td>
+                              {MESI.map(m => {
+                                const prezzo = prezzi[m]
+                                if (prezzo == null) {
+                                  return (
+                                    <td key={m} className="px-3 py-1.5 text-right text-gray-300 border-b border-surface-200/50">
+                                      –
+                                    </td>
+                                  )
+                                }
+                                const pct = rowVar[m] ?? 0
+                                return (
+                                  <HeatmapCell
+                                    key={m}
+                                    value={Math.abs(pct)}
+                                    max={maxAbsPct}
+                                    isPositive={pct >= 0}
+                                    format={() =>
+                                      `€${prezzo.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    }
+                                  />
+                                )
+                              })}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )
+                })()}
               </div>
 
               {/* Tabella asset con gestione soglie integrata */}

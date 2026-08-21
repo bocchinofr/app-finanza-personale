@@ -227,6 +227,53 @@ export default function PatrimonioPage() {
           </ResponsiveContainer>
         )}
       </div>
+
+      {storicoData.length > 0 && (
+        <div className="bg-white border border-surface-200 rounded-xl p-4 mt-4 overflow-x-auto">
+          <p className="text-sm font-semibold text-gray-900 mb-3">Riepilogo mensile</p>
+          <table className="min-w-full text-xs border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Mese</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Liquidità</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
+                <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
+              </tr>
+            </thead>
+            <tbody>
+              {storicoData.map(row => {
+                const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
+                return (
+                  <tr key={row.mese}>
+                    <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">
+                      {row.mese}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-gray-600 border-b border-surface-200/50">
+                      {fmtEuro(row['Liquidità'])}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-gray-600 border-b border-surface-200/50">
+                      {fmtEuro(row['Capitale investito'])}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-gray-600 border-b border-surface-200/50">
+                      {fmtEuro(row['Fondo pensione'])}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-gray-900 font-semibold border-b border-surface-200/50">
+                      {fmtEuro(totale)}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-medium border-b border-surface-200/50 ${
+                      row['Plus/minus'] == null ? 'text-gray-300' : row['Plus/minus'] >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {row['Plus/minus'] == null ? '–' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

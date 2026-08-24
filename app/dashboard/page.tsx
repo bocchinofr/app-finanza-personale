@@ -26,14 +26,14 @@ function KpiCard({
   label, value, sub, tone = 'neutral',
 }: { label: string; value: string; sub?: string; tone?: 'neutral' | 'positive' | 'negative' }) {
   const toneClass =
-    tone === 'positive' ? 'text-green-600' :
-    tone === 'negative' ? 'text-red-600' :
+    tone === 'positive' ? 'text-green-700' :
+    tone === 'negative' ? 'text-red-700' :
     'text-gray-900'
 
   return (
-    <div className="bg-white border border-surface-200 rounded-xl p-4 flex flex-col gap-1">
+    <div className="card flex flex-col gap-1">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <p className={`num-display text-2xl font-semibold ${toneClass}`}>{value}</p>
       {sub && <p className="text-xs text-gray-400">{sub}</p>}
     </div>
   )
@@ -202,8 +202,8 @@ export default function PatrimonioPage() {
         />
       </div>
 
-      <div className="bg-white border border-surface-200 rounded-xl p-4">
-        <p className="text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
+      <div className="card">
+        <p className="num-display text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
         <p className="text-xs text-gray-400 mb-4">
           Capitale investito: valore di mercato reale dal mese dello snapshot in poi, stima a
           valore versato per i mesi precedenti. Linea plus/minus: idem, più interessi fondo pensione.
@@ -213,81 +213,63 @@ export default function PatrimonioPage() {
         ) : (
           <ResponsiveContainer width="100%" height={340}>
             <ComposedChart data={storicoData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7d8" />
               <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
               <Tooltip formatter={(v: number) => fmtEuro(v)} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#8b5cf6" />
-              <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#0ea5e9" />
-              <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#22c55e" radius={[4, 4, 0, 0]} />
-              <Line yAxisId="right" dataKey="Plus/minus" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" />
+              <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" />
+              <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" radius={[4, 4, 0, 0]} />
+              <Line yAxisId="right" dataKey="Plus/minus" stroke="#3a3a2e" strokeWidth={2} dot={{ r: 3 }} connectNulls />
             </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
 
       {storicoData.length > 0 && (
-        <div className="bg-white border border-surface-200 rounded-xl p-4 mt-4 overflow-x-auto">
-          <p className="text-sm font-semibold text-gray-900 mb-3">Riepilogo mensile</p>
+        <div className="card mt-4 overflow-x-auto">
+          <p className="num-display text-sm font-semibold text-gray-900 mb-3">Riepilogo mensile</p>
           <table className="min-w-full text-xs border-collapse">
             <thead>
               <tr>
-                <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Voce</th>
-                {storicoData.map(row => (
-                  <th key={row.mese} className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">
-                    {row.mese}
-                  </th>
-                ))}
+                <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Mese</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Liquidità</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
+                <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">Liquidità</td>
-                {storicoData.map(row => (
-                  <td key={row.mese} className="px-3 py-1.5 text-right text-gray-600 border-b border-surface-200/50">
-                    {fmtEuro(row['Liquidità'])}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">Capitale investito</td>
-                {storicoData.map(row => (
-                  <td key={row.mese} className="px-3 py-1.5 text-right text-gray-600 border-b border-surface-200/50">
-                    {fmtEuro(row['Capitale investito'])}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">Fondo pensione</td>
-                {storicoData.map(row => (
-                  <td key={row.mese} className="px-3 py-1.5 text-right text-gray-600 border-b border-surface-200/50">
-                    {fmtEuro(row['Fondo pensione'])}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="px-3 py-1.5 text-gray-900 font-semibold sticky left-0 bg-white border-b border-surface-200/50">Totale</td>
-                {storicoData.map(row => (
-                  <td key={row.mese} className="px-3 py-1.5 text-right text-gray-900 font-semibold border-b border-surface-200/50">
-                    {fmtEuro(row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione'])}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white">Plus/minus</td>
-                {storicoData.map(row => (
-                  <td
-                    key={row.mese}
-                    className={`px-3 py-1.5 text-right font-medium ${
-                      row['Plus/minus'] == null ? 'text-gray-300' : row['Plus/minus'] >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}
-                  >
-                    {row['Plus/minus'] == null ? '–' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
-                  </td>
-                ))}
-              </tr>
+              {storicoData.map(row => {
+                const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
+                return (
+                  <tr key={row.mese}>
+                    <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">
+                      {row.mese}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
+                      {fmtEuro(row['Liquidità'])}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
+                      {fmtEuro(row['Capitale investito'])}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
+                      {fmtEuro(row['Fondo pensione'])}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900 font-semibold border-b border-surface-200/50">
+                      {fmtEuro(totale)}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${
+                      row['Plus/minus'] == null ? 'text-gray-300' : row['Plus/minus'] >= 0 ? 'text-green-700' : 'text-red-700'
+                    }`}>
+                      {row['Plus/minus'] == null ? '–' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

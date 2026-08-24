@@ -106,7 +106,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mobile top bar */}
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between bg-white border-b border-surface-200 px-4 py-3">
         <div>
-          <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+          <p className="num-display font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
         </div>
         <div className="flex items-center gap-2">
           <AnnoSelect />
@@ -137,7 +137,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       >
         <div className="px-5 py-5 border-b border-surface-100 flex items-center justify-between">
           <div>
-            <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+            <p className="num-display font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
           </div>
           <button
             onClick={() => setMenuOpen(false)}
@@ -153,7 +153,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 bg-white border-r border-surface-200 flex-col fixed h-full">
         <div className="px-5 py-5 border-b border-surface-100 space-y-3">
-          <p className="font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+          <p className="num-display font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
           <div className="flex items-center gap-2">
             <AnnoSelect />
             <NotificationBell />

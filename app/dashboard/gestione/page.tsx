@@ -41,25 +41,25 @@ const PIE_COLORS = [
   '#a855f7','#eab308','#6366f1','#10b981'
 ]
 
-// Colori base per la heatmap (min saturazione → max saturazione)
+// Colori base per la heatmap (min saturazione → max saturazione), allineati al tema Foglio Vivo
 const HEAT_COLORS: Record<'green' | 'red' | 'blue' | 'amber', { light: string; dark: string; textLight: string; textDark: string }> = {
   green: {
-    light: '#f0fdf4',   // sfondo chiarissimo (min)
-    dark: '#15803d',    // sfondo saturo (max)
-    textLight: '#15803d',
-    textDark: '#0a3a1c',
+    light: '#f4f7ef',   // quasi trasparente sulla carta (min)
+    dark: '#2f5233',    // verde salvia pieno (max) — brand-700
+    textLight: '#3f6b4f',
+    textDark: '#162b19',
   },
   red: {
-    light: '#fef2f2',
-    dark: '#ff7373',
-    textLight: '#b91c1c',
-    textDark: '#6b1616',
+    light: '#faf4f2',
+    dark: '#af4b3a',    // terracotta, coerente con la palette "uscite" scelta nel prototipo
+    textLight: '#af4b3a',
+    textDark: '#5c2419',
   },
   blue: {
-    light: '#eff6ff',
-    dark: '#3e66d2',
-    textLight: '#1d4ed8',
-    textDark: '#0f2664',
+    light: '#eef2f6',
+    dark: '#4a6fa1',    // blu ardesia — accent2, usato per gli investimenti
+    textLight: '#3c5a82',
+    textDark: '#22374f',
   },
   amber: {
     light: '#fffbeb',   // vicino al massimo → colore quasi assente
@@ -103,7 +103,7 @@ function HeatCell({ value, max, palette, format }: {
   return (
     <td className="text-center p-1">
       <div
-        className="py-2 rounded-lg text-xs transition-transform duration-150 hover:scale-105 hover:shadow-md"
+        className="py-2 rounded-lg text-xs font-mono tabular-nums transition-transform duration-150 hover:scale-105 hover:shadow-md"
         style={{ backgroundColor: bg, color: textColor, fontWeight: 500 + Math.round(t * 300) }}
       >
         {format(value)}
@@ -487,9 +487,13 @@ export default function DashboardPage() {
   const cfTotInv = mesiPresenti.map(ms => Object.values(cfInv).reduce((s, r) => s + (r[ms] ?? 0), 0))
   const cfRisparmio = mesiPresenti.map((_, i) => cfTotIn[i] - cfTotOut[i] - cfTotInv[i])
 
-  const maxEntrata = Math.max(...Object.values(cfEntrate).flatMap(r => Object.values(r)), 1)
-  const maxUscita  = Math.max(...Object.values(cfUscite).flatMap(r => Object.values(r)), 1)
-  const maxInv     = Math.max(...Object.values(cfInv).flatMap(r => Object.values(r)), 1)
+  // Ogni riga/categoria ha la propria scala (min→max di quella riga): mette in evidenza le
+  // anomalie della singola categoria, anche quando gli importi assoluti sono piccoli.
+  // La riga "Totale" ha invece una scala propria calcolata sui totali mensili, per far
+  // risaltare i mesi fuori scala sul totale complessivo.
+  const maxTotIn  = Math.max(...cfTotIn, 1)
+  const maxTotOut = Math.max(...cfTotOut, 1)
+  const maxTotInv = Math.max(...cfTotInv, 1)
 
   const entrateTotals = Object.entries(cfEntrate).map(([cat, vals]) => ({ cat, total: Object.values(vals).reduce((a, b) => a + b, 0) })).filter(d => d.total > 0)
   const usciteTotals  = Object.entries(cfUscite).map(([cat, vals]) => ({ cat, total: Object.values(vals).reduce((a, b) => a + b, 0) })).filter(d => d.total > 0)
@@ -616,7 +620,7 @@ export default function DashboardPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
                   <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
                 </div>
-                <p className={`text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                <p className={`num-display text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
                 <div className="mt-2.5">
                   <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
                 </div>
@@ -633,7 +637,7 @@ export default function DashboardPage() {
               </div>
               {ultimaLiquidita ? (
                 <>
-                  <p className="text-xl font-bold tabular-nums text-blue-700">{fmtK(ultimaLiquidita.total)}</p>
+                  <p className="num-display text-xl font-bold tabular-nums text-blue-700">{fmtK(ultimaLiquidita.total)}</p>
                   <div className="mt-2.5">
                     {ultimaLiquidita.conti.length > 1 ? (
                       <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
@@ -645,7 +649,7 @@ export default function DashboardPage() {
                   </div>
                 </>
               ) : (
-                <p className="text-xl font-bold tabular-nums text-gray-300">–</p>
+                <p className="num-display text-xl font-bold tabular-nums text-gray-300">–</p>
               )}
             </div>
           </div>
@@ -745,7 +749,7 @@ export default function DashboardPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
                   <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
                 </div>
-                <p className={`text-2xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                <p className={`num-display text-2xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
                 <div className="mt-3">
                   <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
                 </div>
@@ -757,7 +761,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
             {/* Barre spese - raggruppate per categoria */}
             <div className="card lg:col-span-8">
-              <p className="text-sm font-semibold text-gray-900">Spese per categoria (top 5)</p>
+              <p className="num-display text-sm font-semibold text-gray-900">Spese per categoria (top 5)</p>
               <p className="text-xs text-gray-400 mt-0.5 mb-4">Confronto mensile per categoria di spesa</p>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
@@ -775,7 +779,7 @@ export default function DashboardPage() {
 
             {/* Torta spese - donut con totale al centro + legenda a lista */}
             <div className="card lg:col-span-4 flex flex-col">
-              <p className="text-sm font-semibold text-gray-900">Distribuzione uscite YTD</p>
+              <p className="num-display text-sm font-semibold text-gray-900">Distribuzione uscite YTD</p>
               <p className="text-xs text-gray-400 mt-0.5 mb-4">Spesa complessiva per categoria</p>
               <div className="relative flex items-center justify-center" style={{ height: 220 }}>
                 <ResponsiveContainer width="100%" height={220}>
@@ -788,7 +792,7 @@ export default function DashboardPage() {
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Totale uscite</p>
-                  <p className="text-lg font-bold text-gray-900">{fmtK(ytdOut)}</p>
+                  <p className="num-display text-lg font-bold text-gray-900">{fmtK(ytdOut)}</p>
                 </div>
               </div>
               <div className="mt-4 space-y-2">
@@ -809,7 +813,7 @@ export default function DashboardPage() {
           <div className="card mb-6">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Andamento mensile</p>
+                <p className="num-display text-sm font-semibold text-gray-900">Andamento mensile</p>
                 <p className="text-xs text-gray-400 mt-0.5">Entrate, uscite e risparmio nel tempo</p>
               </div>
               <div className="flex items-center gap-4">
@@ -839,7 +843,7 @@ export default function DashboardPage() {
           {/* Liquidità per conto nel tempo */}
           {liquidita.length > 0 && (
             <div className="card mb-6">
-              <p className="text-sm font-semibold text-gray-900">Andamento liquidità per conto</p>
+              <p className="num-display text-sm font-semibold text-gray-900">Andamento liquidità per conto</p>
               <p className="text-xs text-gray-400 mt-0.5 mb-4">Saldo mensile per conto</p>
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart
@@ -873,7 +877,7 @@ export default function DashboardPage() {
           <div className="card p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Analisi mensile per categoria</p>
+                <p className="num-display text-sm font-semibold text-gray-900">Analisi mensile per categoria</p>
                 <p className="text-xs text-gray-400 mt-0.5">Intensità del colore proporzionale al peso della voce nel mese</p>
               </div>
               <div className="flex items-center gap-3 text-[11px] font-semibold text-gray-400">
@@ -898,17 +902,18 @@ export default function DashboardPage() {
                   </tr>
                   {entrateTotals.map(({ cat, total }) => {
                     const vals = cfEntrate[cat];
+                    const rowMax = Math.max(...Object.values(vals), 1);
                     return (
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={maxEntrata} palette="green" format={fmtK} />)}
+                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={rowMax} palette="green" format={fmtK} />)}
                         <td className="py-1.5 px-3 text-right text-xs font-bold bg-surface-50">{fmtK(total)}</td>
                       </tr>
                     )
                   })}
-                  <tr className="bg-green-50 border-b-2 border-surface-200">
+                  <tr className="border-b-2 border-surface-200">
                     <td className="sticky left-0 z-10 bg-green-50 py-2 px-3 text-xs font-bold text-green-800">Totale entrate</td>
-                    {cfTotIn.map((v, i) => <td key={i} className="py-2 px-2 text-xs font-semibold text-center text-green-800">{fmtK(v)}</td>)}
+                    {cfTotIn.map((v, i) => <HeatCell key={i} value={v} max={maxTotIn} palette="green" format={fmtK} />)}
                     <td className="py-2 px-3 text-xs font-extrabold text-right text-green-900 bg-green-100">{fmtK(ytdIn)}</td>
                   </tr>
 
@@ -918,17 +923,18 @@ export default function DashboardPage() {
                   </tr>
                   {usciteTotals.map(({ cat, total }) => {
                     const vals = cfUscite[cat];
+                    const rowMax = Math.max(...Object.values(vals), 1);
                     return (
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={maxUscita} palette="red" format={fmtK} />)}
+                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={rowMax} palette="red" format={fmtK} />)}
                         <td className="py-1.5 px-3 text-right text-xs font-bold bg-surface-50">{fmtK(total)}</td>
                       </tr>
                     )
                   })}
-                  <tr className="bg-red-50 border-b-2 border-surface-200">
+                  <tr className="border-b-2 border-surface-200">
                     <td className="sticky left-0 z-10 bg-red-50 py-2 px-3 text-xs font-bold text-red-800">Totale uscite</td>
-                    {cfTotOut.map((v, i) => <td key={i} className="py-2 px-2 text-xs font-semibold text-center text-red-800">{fmtK(v)}</td>)}
+                    {cfTotOut.map((v, i) => <HeatCell key={i} value={v} max={maxTotOut} palette="red" format={fmtK} />)}
                     <td className="py-2 px-3 text-xs font-extrabold text-right text-red-900 bg-red-100">{fmtK(ytdOut)}</td>
                   </tr>
 
@@ -939,17 +945,18 @@ export default function DashboardPage() {
                     </tr>
                     {invTotals.map(({ cat, total }) => {
                       const vals = cfInv[cat];
+                      const rowMax = Math.max(...Object.values(vals), 1);
                       return (
                         <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                           <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={maxInv} palette="blue" format={fmtK} />)}
+                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={rowMax} palette="blue" format={fmtK} />)}
                           <td className="py-1.5 px-3 text-right text-xs font-bold bg-surface-50">{fmtK(total)}</td>
                         </tr>
                       )
                     })}
-                    <tr className="bg-blue-50 border-b-2 border-surface-200">
+                    <tr className="border-b-2 border-surface-200">
                       <td className="sticky left-0 z-10 bg-blue-50 py-2 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
-                      {cfTotInv.map((v, i) => <td key={i} className="py-2 px-2 text-xs font-semibold text-center text-blue-800">{fmtK(v)}</td>)}
+                      {cfTotInv.map((v, i) => <HeatCell key={i} value={v} max={maxTotInv} palette="blue" format={fmtK} />)}
                       <td className="py-2 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-100">{fmtK(ytdInv)}</td>
                     </tr>
                   </>}
@@ -1063,7 +1070,7 @@ export default function DashboardPage() {
                           <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
                           <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
                         </div>
-                        <p className={`text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                        <p className={`num-display text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
                         <div className="mt-2.5">
                           <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
                         </div>

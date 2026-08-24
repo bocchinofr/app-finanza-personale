@@ -1122,7 +1122,7 @@ export default function DashboardPage() {
                     >
                       {savingSnapshot
                         ? '⟳ Salvataggio…'
-                        : `💾 Registra chiusura ${MESI_LABEL[meseDaRegistrare().mese]}`}
+                        : `💾 Registra chiusura mese di ${MESI_LABEL[meseDaRegistrare().mese]}`}
                     </button>
                     {snapshotSalvato != null && (
                       <p className="text-xs text-green-600 mt-2">

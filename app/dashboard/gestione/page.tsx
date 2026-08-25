@@ -7,7 +7,7 @@ import { useAnno } from '@/lib/AnnoContext'
 import { HeatmapCell } from '@/components/charts/HeatmapCell'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, Area, AreaChart
+  XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid
 } from 'recharts'
 
 const MESI_LABEL: Record<string, string> = {
@@ -45,15 +45,15 @@ const PIE_COLORS = [
 const HEAT_COLORS: Record<'green' | 'red' | 'blue' | 'amber', { light: string; dark: string; textLight: string; textDark: string }> = {
   green: {
     light: '#f4f7ef',   // quasi trasparente sulla carta (min)
-    dark: '#7ca881',    // verde salvia pieno (max) — brand-700
+    dark: '#7ca881',    // verde salvia più chiaro (max) — brand-500, meno cupo
     textLight: '#3f6b4f',
-    textDark: '#162b19',
+    textDark: '#2f5233',
   },
   red: {
     light: '#faf4f2',
-    dark: '#db8474',    // terracotta, coerente con la palette "uscite" scelta nel prototipo
+    dark: '#db8474',    // terracotta più chiaro (max), meno cupo
     textLight: '#af4b3a',
-    textDark: '#5c2419',
+    textDark: '#8a3a2c',
   },
   blue: {
     light: '#eef2f6',
@@ -489,11 +489,8 @@ export default function DashboardPage() {
 
   // Ogni riga/categoria ha la propria scala (min→max di quella riga): mette in evidenza le
   // anomalie della singola categoria, anche quando gli importi assoluti sono piccoli.
-  // La riga "Totale" ha invece una scala propria calcolata sui totali mensili, per far
-  // risaltare i mesi fuori scala sul totale complessivo.
-  const maxTotIn  = Math.max(...cfTotIn, 1)
-  const maxTotOut = Math.max(...cfTotOut, 1)
-  const maxTotInv = Math.max(...cfTotInv, 1)
+  // Le righe "Totale" restano a colore costante (non heatmap): sommano categorie eterogenee,
+  // quindi un colore piatto è più leggibile di una scala che confronterebbe mele con pere.
 
   const entrateTotals = Object.entries(cfEntrate).map(([cat, vals]) => ({ cat, total: Object.values(vals).reduce((a, b) => a + b, 0) })).filter(d => d.total > 0)
   const usciteTotals  = Object.entries(cfUscite).map(([cat, vals]) => ({ cat, total: Object.values(vals).reduce((a, b) => a + b, 0) })).filter(d => d.total > 0)
@@ -521,14 +518,14 @@ export default function DashboardPage() {
     Entrate: Math.round(cfTotIn[i]),
     Uscite: Math.round(cfTotOut[i]),
     Risparmio: Math.round(cfRisparmio[i]),
-    Liquidità: Math.round(liquidita.filter(l => l.mese === m).reduce((s, l) => s + l.saldo, 0)) || undefined,
+    Investimenti: Math.round(cfTotInv[i]) || undefined,
   }))
 
   const lineSeries: { key: string; color: string; dash?: boolean }[] = [
-    { key: 'Entrate', color: '#22c55e' },
-    { key: 'Uscite', color: '#ef4444' },
-    { key: 'Risparmio', color: '#3b69d6', dash: true },
-    ...(liquidita.length > 0 ? [{ key: 'Liquidità', color: '#8b5cf6' }] : []),
+    { key: 'Entrate', color: '#3f6b4f' },
+    { key: 'Uscite', color: '#af4b3a' },
+    { key: 'Risparmio', color: '#3a3a2e', dash: true },
+    ...(ytdInv > 0 ? [{ key: 'Investimenti', color: '#4a6fa1' }] : []),
   ]
 
   const rawPieData = Object.entries(cfUscite)
@@ -840,39 +837,6 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Liquidità per conto nel tempo */}
-          {liquidita.length > 0 && (
-            <div className="card mb-6">
-              <p className="num-display text-sm font-semibold text-gray-900">Andamento liquidità per conto</p>
-              <p className="text-xs text-gray-400 mt-0.5 mb-4">Saldo mensile per conto</p>
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart
-                  data={mesiPresenti.map(m => {
-                    const row: Record<string, number | string> = { mese: MESI_LABEL[m] }
-                    const conti = [...new Set(liquidita.map(l => l.conto))]
-                    conti.forEach(c => {
-                      row[c] = liquidita.find(l => l.mese === m && l.conto === c)?.saldo ?? 0
-                    })
-                    return row
-                  })}
-                  margin={{ top: 4, right: 16, bottom: 4, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
-                  <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
-                  <Tooltip formatter={(v: number) => fmtK(v)} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {[...new Set(liquidita.map(l => l.conto))].map((conto, i) => (
-                    <Area key={conto} type="monotone" dataKey={conto}
-                      stroke={PIE_COLORS[i % PIE_COLORS.length]}
-                      fill={PIE_COLORS[i % PIE_COLORS.length]}
-                      fillOpacity={0.15} strokeWidth={2} />
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
           {/* Heatmap */}
           <div className="card p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
@@ -911,9 +875,9 @@ export default function DashboardPage() {
                       </tr>
                     )
                   })}
-                  <tr className="border-b-2 border-surface-200">
+                  <tr className="bg-green-50 border-b-2 border-surface-200">
                     <td className="sticky left-0 z-10 bg-green-50 py-2 px-3 text-xs font-bold text-green-800">Totale entrate</td>
-                    {cfTotIn.map((v, i) => <HeatCell key={i} value={v} max={maxTotIn} palette="green" format={fmtK} />)}
+                    {cfTotIn.map((v, i) => <td key={i} className="py-2 px-2 text-xs font-mono tabular-nums font-semibold text-center text-green-800">{fmtK(v)}</td>)}
                     <td className="py-2 px-3 text-xs font-extrabold text-right text-green-900 bg-green-100">{fmtK(ytdIn)}</td>
                   </tr>
 
@@ -932,9 +896,9 @@ export default function DashboardPage() {
                       </tr>
                     )
                   })}
-                  <tr className="border-b-2 border-surface-200">
+                  <tr className="bg-red-50 border-b-2 border-surface-200">
                     <td className="sticky left-0 z-10 bg-red-50 py-2 px-3 text-xs font-bold text-red-800">Totale uscite</td>
-                    {cfTotOut.map((v, i) => <HeatCell key={i} value={v} max={maxTotOut} palette="red" format={fmtK} />)}
+                    {cfTotOut.map((v, i) => <td key={i} className="py-2 px-2 text-xs font-mono tabular-nums font-semibold text-center text-red-800">{fmtK(v)}</td>)}
                     <td className="py-2 px-3 text-xs font-extrabold text-right text-red-900 bg-red-100">{fmtK(ytdOut)}</td>
                   </tr>
 
@@ -954,11 +918,6 @@ export default function DashboardPage() {
                         </tr>
                       )
                     })}
-                    <tr className="border-b-2 border-surface-200">
-                      <td className="sticky left-0 z-10 bg-blue-50 py-2 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
-                      {cfTotInv.map((v, i) => <HeatCell key={i} value={v} max={maxTotInv} palette="blue" format={fmtK} />)}
-                      <td className="py-2 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-100">{fmtK(ytdInv)}</td>
-                    </tr>
                   </>}
                 </tbody>
                 <tfoot>
@@ -1122,7 +1081,7 @@ export default function DashboardPage() {
                     >
                       {savingSnapshot
                         ? '⟳ Salvataggio…'
-                        : `💾 Registra chiusura mese di ${MESI_LABEL[meseDaRegistrare().mese]}`}
+                        : `💾 Registra chiusura ${MESI_LABEL[meseDaRegistrare().mese]}`}
                     </button>
                     {snapshotSalvato != null && (
                       <p className="text-xs text-green-600 mt-2">

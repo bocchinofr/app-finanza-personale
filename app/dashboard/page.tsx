@@ -175,7 +175,10 @@ export default function PatrimonioPage() {
     // Se esiste uno snapshot reale per questo mese, ha priorità sulla stima
     // ricostruita dai movimenti (che è a valore versato, non di mercato)
     const snapshot = storicoPerMese.get(m)
-    const capitaleInvestitoMese = snapshot ? snapshot.capitale_investito : cumInvestito
+    // Capitale investito = versato cumulato (movimenti Investimento, entrate - uscite,
+    // incluse eventuali uscite/prelievi negativi). Non usa mai il valore di mercato dello
+    // snapshot: quello serve solo per il plus/minus.
+    const capitaleInvestitoMese = cumInvestito
     const plusMinusMese = (snapshot ? snapshot.plus_minus : 0) + (interessiFondoMese ?? 0)
     const haValorePlusMinus = snapshot != null || interessiFondoMese != null
 
@@ -205,8 +208,8 @@ export default function PatrimonioPage() {
       <div className="card">
         <p className="num-display text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
         <p className="text-xs text-gray-400 mb-4">
-          Capitale investito: valore di mercato reale dal mese dello snapshot in poi, stima a
-          valore versato per i mesi precedenti. Linea plus/minus: idem, più interessi fondo pensione.
+          Capitale investito: versato cumulato (movimenti Investimento, al netto di eventuali
+          prelievi). Linea plus/minus: rendimento reale da snapshot, più interessi fondo pensione.
         </p>
         {storicoData.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>

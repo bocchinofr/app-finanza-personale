@@ -139,18 +139,66 @@ export default function PatrimonioPage() {
   const plusMinusPct = carico > 0 ? (plusMinusInvestimenti / carico) * 100 : 0
 
   // ===== Storico mensile a pile: Liquidità / Capitale investito / Fondo pensione =====
-  // Capitale investito: nessuno storico dei prezzi passati, quindi ricostruiamo il
-  // valore "a carico" (versato) cumulato mese per mese dai movimenti INVESTIMENTI:
-  //   capitale iniziale (a inizio anno) = valore a carico attuale − versamenti netti dell'anno
-  //   valore al mese X = capitale iniziale + versamenti netti cumulati fino a X
-  const assetById = new Map(portafoglio.map(a => [a.id, a]))
-  const isMovimentoInvestito = (m: Movimento) =>
-    m.portafoglio_id != null && assetById.get(m.portafoglio_id)?.asset !== CATEGORIA_FONDO_PENSIONE_LEGACY
+  // Capitale investito: ricostruito asset per asset a partire dall'anagrafica.
+  //  - Ancora: alla data_acquisto (se cade nell'anno selezionato), il capitale noto
+  //    è prezzo_acquisto × quantita.
+  //  - Dopo l'ancora: si somma il flusso dei movimenti collegati (portafoglio_id),
+  //    con segno invertito rispetto al cash flow: uscita (acquisto) = +, entrata
+  //    (disinvestimento) = −.
+  //  - Prima dell'ancora (stesso anno): si cammina all'indietro sottraendo lo
+  //    stesso flusso; se non ci sono movimenti precedenti, il valore resta 0.
+  //  - Se data_acquisto è di un anno precedente a quello selezionato: nessuno
+  //    storico multi-anno caricato, fallback approssimato (valore attuale meno
+  //    il flusso dell'anno corrente, poi in avanti mese per mese).
+  //  - Se data_acquisto è futura rispetto all'anno selezionato: l'asset non
+  //    esisteva ancora, contributo 0 per tutto l'anno.
+  const netFlowInvestito = (m: Movimento) => (m.uscite ?? 0) - (m.entrate ?? 0)
 
-  const netFlow = (m: Movimento) => (m.entrate ?? 0) - (m.uscite ?? 0)
-  const flowInvestitoAnno = movimenti.filter(isMovimentoInvestito).reduce((s, m) => s + netFlow(m), 0)
-  const capitaleInizialeInvestito = carico - flowInvestitoAnno
-  let cumInvestito = capitaleInizialeInvestito
+  function parseDataAcquisto(v: string): { anno: number; meseIdx: number } | null {
+    const parti = (v ?? '').split('/')
+    if (parti.length !== 3) return null
+    const meseNum = Number(parti[1])
+    const annoNum = Number(parti[2])
+    if (!annoNum || !meseNum || meseNum < 1 || meseNum > 12) return null
+    return { anno: annoNum, meseIdx: meseNum - 1 }
+  }
+
+  function capitaleAssetPerMese(a: AssetPortafoglio): number[] {
+    const risultato = new Array(MESI.length).fill(0)
+    const movimentiAsset = movimenti.filter(m => m.portafoglio_id === a.id)
+    const flussoMese = (idx: number) =>
+      movimentiAsset.filter(m => m.mese === MESI[idx]).reduce((s, m) => s + netFlowInvestito(m), 0)
+    const dataAcq = parseDataAcquisto(a.data_acquisto)
+
+    if (dataAcq && dataAcq.anno === anno) {
+      const ancoraIdx = dataAcq.meseIdx
+      const valoreAncora = a.prezzo_acquisto * a.quantita
+      risultato[ancoraIdx] = valoreAncora
+      let cum = valoreAncora
+      for (let i = ancoraIdx + 1; i < MESI.length; i++) {
+        cum += flussoMese(i)
+        risultato[i] = cum
+      }
+      let cumIndietro = valoreAncora
+      for (let i = ancoraIdx - 1; i >= 0; i--) {
+        cumIndietro -= flussoMese(i + 1)
+        risultato[i] = cumIndietro
+      }
+    } else if (dataAcq && dataAcq.anno < anno) {
+      const { quantita, prezzoCarico } = statoAttuale(a)
+      const flowAnno = movimentiAsset.reduce((s, m) => s + netFlowInvestito(m), 0)
+      let cum = quantita * prezzoCarico - flowAnno
+      for (let i = 0; i < MESI.length; i++) {
+        cum += flussoMese(i)
+        risultato[i] = cum
+      }
+    }
+    // dataAcq.anno > anno (o data mancante/illeggibile): resta 0 ovunque
+
+    return risultato
+  }
+
+  const capitalePerAssetPerMese = assetInvestiti.map(a => capitaleAssetPerMese(a))
 
   // Mesi da mostrare: fino all'ultimo mese con dati (liquidità, movimenti o fondo
   // pensione), per non proiettare in avanti mesi futuri vuoti
@@ -164,7 +212,7 @@ export default function PatrimonioPage() {
   const storicoPerMese = new Map(patrimonioStorico.map(s => [s.mese, s]))
 
   const storicoData = mesiDaMostrare.map(m => {
-    cumInvestito += movimenti.filter(mv => mv.mese === m && isMovimentoInvestito(mv)).reduce((s, mv) => s + netFlow(mv), 0)
+    const idxMese = MESI.indexOf(m)
     const liquiditaMese = liquidita.filter(l => l.mese === m).reduce((s, l) => s + (l.saldo ?? 0), 0)
     const fondoMese = fondoPensione.filter(f => f.mese === m).reduce((s, f) => s + (f.saldo ?? 0), 0)
     const righeFondoMese = fondoPensione.filter(f => f.mese === m)
@@ -172,13 +220,11 @@ export default function PatrimonioPage() {
       ? righeFondoMese.reduce((s, f) => s + (f.interessi ?? 0), 0)
       : null
 
-    // Se esiste uno snapshot reale per questo mese, ha priorità sulla stima
-    // ricostruita dai movimenti (che è a valore versato, non di mercato)
+    // Se esiste uno snapshot reale per questo mese, il plus/minus prende quello
+    // (rendimento di mercato). Il capitale investito è sempre la ricostruzione
+    // per asset da anagrafica + movimenti, mai il valore di mercato dello snapshot.
     const snapshot = storicoPerMese.get(m)
-    // Capitale investito = versato cumulato (movimenti Investimento, entrate - uscite,
-    // incluse eventuali uscite/prelievi negativi). Non usa mai il valore di mercato dello
-    // snapshot: quello serve solo per il plus/minus.
-    const capitaleInvestitoMese = cumInvestito
+    const capitaleInvestitoMese = capitalePerAssetPerMese.reduce((s, arr) => s + arr[idxMese], 0)
     const plusMinusMese = (snapshot ? snapshot.plus_minus : 0) + (interessiFondoMese ?? 0)
     const haValorePlusMinus = snapshot != null || interessiFondoMese != null
 

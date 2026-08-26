@@ -169,7 +169,15 @@ export default function UploadPage() {
               const { error } = await supabase.from('portafoglio').update(riga).eq('id', idEsistente)
               if (error) throw error
             } else {
-              const { error } = await supabase.from('portafoglio').insert(riga)
+              // La colonna quantita_attuale ha un default a 0 sul database: lo
+              // forziamo esplicitamente a null in inserimento, altrimenti "0"
+              // verrebbe trattato come già inizializzato e l'anagrafica (quantita)
+              // non verrebbe mai usata per il calcolo dello stato attuale.
+              const { error } = await supabase.from('portafoglio').insert({
+                ...riga,
+                quantita_attuale: null,
+                prezzo_carico_attuale: null,
+              })
               if (error) throw error
             }
           }

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { AssetPortafoglio, Movimento, statoAttuale } from '@/types'
-import { trovaAssetCorrispondente, estraiQuantitaPrezzo, calcolaNuovoStato, estraiPattern, RegolaMatching } from '@/lib/riconciliazione'
+import { trovaAssetCorrispondente, estraiQuantitaPrezzo, calcolaNuovoStato, estraiPattern, movimentoPrecedeAcquisto, parseDataIt, RegolaMatching } from '@/lib/riconciliazione'
 
 function fmt(n: number) {
   return n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
@@ -46,7 +46,83 @@ export default function RiconciliazionePage() {
     setPortafoglio(port)
     setRegole(reg)
 
-    setRighe(movs.map(m => {
+    // Movimenti precedenti alla data_acquisto dell'asset suggerito: già conteggiati
+    // in anagrafica, non vanno proposti. Si marcano riconciliati senza collegarli.
+    const daAutoIgnorare: string[] = []
+    const movsValidi: Movimento[] = []
+    for (const m of movs) {
+      const suggerito = trovaAssetCorrispondente(m, port, reg)
+      if (suggerito && movimentoPrecedeAcquisto(m, suggerito) && m.id) {
+        daAutoIgnorare.push(m.id)
+      } else {
+        movsValidi.push(m)
+      }
+    }
+    if (daAutoIgnorare.length > 0) {
+      await supabase.from('movimenti').update({ riconciliato: true }).in('id', daAutoIgnorare)
+    }
+
+    // Riconciliazione automatica: movimenti il cui pattern di testo corrisponde
+    // esattamente a una regola già salvata (asset confermato in passato) e per cui
+    // la quantità si estrae in modo affidabile dalla descrizione. Applicati in
+    // ordine cronologico così il prezzo di carico medio resta corretto quando più
+    // movimenti dello stesso asset arrivano insieme.
+    const movsOrdinati = [...movsValidi].sort((a, b) => {
+      const da = parseDataIt(a.data_operazione)?.getTime() ?? 0
+      const db = parseDataIt(b.data_operazione)?.getTime() ?? 0
+      return da - db
+    })
+
+    const statoLocale = new Map(port.map(a => [a.id as string, statoAttuale(a)]))
+    const movimentiAutoConfermati: { id: string; portafoglioId: string }[] = []
+    const righeManuali: Movimento[] = []
+
+    for (const m of movsOrdinati) {
+      const pattern = estraiPattern(`${m.nome_etf} ${m.descrizione}`)
+      const regola = pattern ? reg.find(r => r.pattern === pattern) : undefined
+      const asset = regola ? port.find(a => a.id === regola.portafoglio_id) : undefined
+      const { quantita } = estraiQuantitaPrezzo(m.descrizione)
+
+      if (asset && asset.id && quantita != null && quantita > 0) {
+        const statoCorrente = statoLocale.get(asset.id) ?? statoAttuale(asset)
+        const assetConStato: AssetPortafoglio = {
+          ...asset,
+          quantita_attuale: statoCorrente.quantita,
+          prezzo_carico_attuale: statoCorrente.prezzoCarico,
+        }
+        const risultato = calcolaNuovoStato(assetConStato, m, quantita)
+        if (!risultato.errore) {
+          statoLocale.set(asset.id, { quantita: risultato.nuovaQuantita, prezzoCarico: risultato.nuovoPrezzoCarico })
+          if (m.id) movimentiAutoConfermati.push({ id: m.id, portafoglioId: asset.id })
+          continue
+        }
+      }
+      righeManuali.push(m)
+    }
+
+    if (movimentiAutoConfermati.length > 0) {
+      await Promise.all(
+        Array.from(new Set(movimentiAutoConfermati.map(x => x.portafoglioId))).map(assetId => {
+          const stato = statoLocale.get(assetId)!
+          return supabase.from('portafoglio').update({
+            quantita_attuale: stato.quantita,
+            prezzo_carico_attuale: stato.prezzoCarico,
+            ultimo_aggiornamento_at: new Date().toISOString(),
+          }).eq('id', assetId)
+        })
+      )
+      await Promise.all(
+        movimentiAutoConfermati.map(({ id, portafoglioId }) =>
+          supabase.from('movimenti').update({ riconciliato: true, portafoglio_id: portafoglioId }).eq('id', id)
+        )
+      )
+      setPortafoglio(port.map(a => a.id && statoLocale.has(a.id)
+        ? { ...a, quantita_attuale: statoLocale.get(a.id)!.quantita, prezzo_carico_attuale: statoLocale.get(a.id)!.prezzoCarico }
+        : a))
+      setMessaggio(`✓ ${movimentiAutoConfermati.length} movimento/i riconciliati automaticamente (pattern già noto).`)
+    }
+
+    setRighe(righeManuali.map(m => {
       const suggerito = trovaAssetCorrispondente(m, port, reg)
       const { quantita } = estraiQuantitaPrezzo(m.descrizione)
       return {
@@ -73,6 +149,10 @@ export default function RiconciliazionePage() {
 
     if (!asset) { aggiornaRiga(idx, { errore: 'Seleziona un asset corrispondente.' }); return }
     if (!qta || qta <= 0) { aggiornaRiga(idx, { errore: 'Inserisci una quantità valida.' }); return }
+    if (movimentoPrecedeAcquisto(riga.movimento, asset)) {
+      aggiornaRiga(idx, { errore: 'Questo movimento è precedente alla data di acquisto dell\'asset: è già conteggiato in anagrafica, usa "Ignora".' })
+      return
+    }
 
     const risultato = calcolaNuovoStato(asset, riga.movimento, qta)
     if (risultato.errore) { aggiornaRiga(idx, { errore: risultato.errore }); return }

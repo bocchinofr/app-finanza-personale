@@ -14,6 +14,28 @@ export function normalizza(s: string): string {
     .trim()
 }
 
+export function parseDataIt(v: string): Date | null {
+  const parti = (v ?? '').trim().split(/[^\d]+/).filter(Boolean)
+  if (parti.length !== 3) return null
+  const gg = Number(parti[0])
+  const mm = Number(parti[1])
+  const aaaa = Number(parti[2])
+  if (!aaaa || !mm || mm < 1 || mm > 12 || !gg) return null
+  return new Date(aaaa, mm - 1, gg)
+}
+
+/**
+ * Un movimento datato prima della data_acquisto dell'asset è già conteggiato
+ * nella quantità di anagrafica: non va proposto in riconciliazione né collegato
+ * all'asset (altrimenti verrebbe sommato due volte).
+ */
+export function movimentoPrecedeAcquisto(movimento: Movimento, asset: AssetPortafoglio): boolean {
+  const dataMov = parseDataIt(movimento.data_operazione)
+  const dataAcq = parseDataIt(asset.data_acquisto)
+  if (!dataMov || !dataAcq) return false
+  return dataMov.getTime() < dataAcq.getTime()
+}
+
 export interface RegolaMatching {
   pattern: string
   portafoglio_id: string

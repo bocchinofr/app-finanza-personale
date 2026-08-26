@@ -1,326 +1,312 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-import {
-  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
-} from 'recharts'
-import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, statoAttuale } from '@/types'
-import { useAnno } from '@/lib/AnnoContext'
+import { AssetPortafoglio, Movimento, statoAttuale } from '@/types'
+import { trovaAssetCorrispondente, estraiQuantitaPrezzo, calcolaNuovoStato, estraiPattern, movimentoPrecedeAcquisto, parseDataIt, RegolaMatching } from '@/lib/riconciliazione'
 
-const MESI_LABEL: Record<string, string> = {
-  gen: 'Gen', feb: 'Feb', mar: 'Mar', apr: 'Apr', mag: 'Mag', giu: 'Giu',
-  lug: 'Lug', ago: 'Ago', set: 'Set', ott: 'Ott', nov: 'Nov', dic: 'Dic',
+function fmt(n: number) {
+  return n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 
-// Valore legacy del campo "asset" (grouping) che marcava un asset come fondo
-// pensione nel vecchio approccio. Il fondo pensione ora arriva dal foglio
-// dedicato, ma teniamo questo filtro per sicurezza: se in portafoglio è
-// rimasto un asset con questo tag, non finisce doppio nel capitale investito.
-const CATEGORIA_FONDO_PENSIONE_LEGACY = 'Fondo Pensione'
-
-function fmtEuro(n: number) {
-  return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+interface RigaBozza {
+  movimento: Movimento
+  assetSuggerito: AssetPortafoglio | null
+  assetSelezionatoId: string
+  quantita: string
+  errore?: string
+  ignorato: boolean
 }
 
-function KpiCard({
-  label, value, sub, tone = 'neutral',
-}: { label: string; value: string; sub?: string; tone?: 'neutral' | 'positive' | 'negative' }) {
-  const toneClass =
-    tone === 'positive' ? 'text-green-700' :
-    tone === 'negative' ? 'text-red-700' :
-    'text-gray-900'
-
-  return (
-    <div className="card flex flex-col gap-1">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`num-display text-2xl font-semibold ${toneClass}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400">{sub}</p>}
-    </div>
-  )
-}
-
-export default function PatrimonioPage() {
+export default function RiconciliazionePage() {
   const supabase = createClient()
-  const { anno } = useAnno()
   const [loading, setLoading] = useState(true)
-  const [liquidita, setLiquidita] = useState<Liquidita[]>([])
+  const [salvando, setSalvando] = useState<string | null>(null)
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
-  const [movimenti, setMovimenti] = useState<Movimento[]>([])
-  const [fondoPensione, setFondoPensione] = useState<FondoPensione[]>([])
-  const [patrimonioStorico, setPatrimonioStorico] = useState<{ mese: string; capitale_investito: number; plus_minus: number }[]>([])
-  const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
+  const [regole, setRegole] = useState<RegolaMatching[]>([])
+  const [righe, setRighe] = useState<RigaBozza[]>([])
+  const [messaggio, setMessaggio] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const [liqRes, portRes, movRes, fondoRes, storicoRes] = await Promise.all([
-        supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
-        supabase.from('portafoglio').select('*').eq('user_id', user.id),
-        supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno).eq('categoria', 'INVESTIMENTI'),
-        supabase.from('fondo_pensione').select('*').eq('user_id', user.id).eq('anno', anno),
-        supabase.from('patrimonio_storico').select('mese, capitale_investito, plus_minus').eq('user_id', user.id).eq('anno', anno),
-      ])
-      if (cancelled) return
-      setLiquidita(liqRes.data ?? [])
-      setPortafoglio(portRes.data ?? [])
-      setMovimenti(movRes.data ?? [])
-      setFondoPensione(fondoRes.data ?? [])
-      setPatrimonioStorico(storicoRes.data ?? [])
-      setLoading(false)
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoading(false); return }
 
-      // Prezzi correnti via proxy Yahoo Finance server-side
-      const tickers = (portRes.data ?? [])
-        .filter((a: AssetPortafoglio) => statoAttuale(a).quantita > 0)
-        .map((a: AssetPortafoglio) => a.ticker)
-      if (tickers.length > 0) {
-        try {
-          const res = await fetch(`/api/quote?tickers=${encodeURIComponent(tickers.join(','))}`)
-          const json: Record<string, { price: number }> = await res.json()
-          if (!cancelled) {
-            const prices: Record<string, number> = {}
-            for (const [ticker, q] of Object.entries(json)) prices[ticker] = q.price
-            setPrezziAttuali(prices)
-          }
-        } catch {
-          // silenzioso: la card mostrerà il valore a prezzo di carico se manca la quotazione
+    const [movRes, portRes, regRes] = await Promise.all([
+      supabase.from('movimenti').select('*')
+        .eq('user_id', user.id)
+        .eq('categoria', 'INVESTIMENTI')
+        .eq('riconciliato', false),
+      supabase.from('portafoglio').select('*').eq('user_id', user.id),
+      supabase.from('regole_riconciliazione').select('pattern, portafoglio_id').eq('user_id', user.id),
+    ])
+
+    const port = (portRes.data as AssetPortafoglio[]) ?? []
+    const movs = (movRes.data as Movimento[]) ?? []
+    const reg = (regRes.data as RegolaMatching[]) ?? []
+    setPortafoglio(port)
+    setRegole(reg)
+
+    // Movimenti precedenti alla data_acquisto dell'asset suggerito: già conteggiati
+    // in anagrafica, non vanno proposti. Si marcano riconciliati senza collegarli.
+    const daAutoIgnorare: string[] = []
+    const movsValidi: Movimento[] = []
+    for (const m of movs) {
+      const suggerito = trovaAssetCorrispondente(m, port, reg)
+      if (suggerito && movimentoPrecedeAcquisto(m, suggerito) && m.id) {
+        daAutoIgnorare.push(m.id)
+      } else {
+        movsValidi.push(m)
+      }
+    }
+    if (daAutoIgnorare.length > 0) {
+      await supabase.from('movimenti').update({ riconciliato: true }).in('id', daAutoIgnorare)
+    }
+
+    // Riconciliazione automatica: movimenti il cui pattern di testo corrisponde
+    // esattamente a una regola già salvata (asset confermato in passato) e per cui
+    // la quantità si estrae in modo affidabile dalla descrizione. Applicati in
+    // ordine cronologico così il prezzo di carico medio resta corretto quando più
+    // movimenti dello stesso asset arrivano insieme.
+    const movsOrdinati = [...movsValidi].sort((a, b) => {
+      const da = parseDataIt(a.data_operazione)?.getTime() ?? 0
+      const db = parseDataIt(b.data_operazione)?.getTime() ?? 0
+      return da - db
+    })
+
+    const statoLocale = new Map(port.map(a => [a.id as string, statoAttuale(a)]))
+    const movimentiAutoConfermati: { id: string; portafoglioId: string }[] = []
+    const righeManuali: Movimento[] = []
+
+    for (const m of movsOrdinati) {
+      const pattern = estraiPattern(`${m.nome_etf} ${m.descrizione}`)
+      const regola = pattern ? reg.find(r => r.pattern === pattern) : undefined
+      const asset = regola ? port.find(a => a.id === regola.portafoglio_id) : undefined
+      const { quantita } = estraiQuantitaPrezzo(m.descrizione)
+
+      if (asset && asset.id && quantita != null && quantita > 0) {
+        const statoCorrente = statoLocale.get(asset.id) ?? statoAttuale(asset)
+        const assetConStato: AssetPortafoglio = {
+          ...asset,
+          quantita_attuale: statoCorrente.quantita,
+          prezzo_carico_attuale: statoCorrente.prezzoCarico,
+        }
+        const risultato = calcolaNuovoStato(assetConStato, m, quantita)
+        if (!risultato.errore) {
+          statoLocale.set(asset.id, { quantita: risultato.nuovaQuantita, prezzoCarico: risultato.nuovoPrezzoCarico })
+          if (m.id) movimentiAutoConfermati.push({ id: m.id, portafoglioId: asset.id })
+          continue
         }
       }
+      righeManuali.push(m)
     }
-    load()
-    return () => { cancelled = true }
-  }, [anno])
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-400">Caricamento…</div>
-  }
-
-  // Liquidità totale: somma saldi di tutti i conti nell'ultimo mese valorizzato dell'anno selezionato
-  const mesiConLiquidita = [...new Set(liquidita.map(l => l.mese))]
-  const ultimoMeseLiquidita = MESI.filter(m => mesiConLiquidita.includes(m)).pop()
-  const liquiditaTotale = liquidita
-    .filter(l => l.mese === ultimoMeseLiquidita)
-    .reduce((sum, l) => sum + (l.saldo ?? 0), 0)
-
-  // Capitale investito: tutti gli asset in portafoglio (esclusi eventuali residui
-  // legacy taggati come fondo pensione), a valore di mercato attuale
-  const assetInvestiti = portafoglio.filter(
-    a => a.asset !== CATEGORIA_FONDO_PENSIONE_LEGACY && statoAttuale(a).quantita > 0
-  )
-
-  function valoreMercato(a: AssetPortafoglio) {
-    const { quantita, prezzoCarico } = statoAttuale(a)
-    const prezzo = prezziAttuali[a.ticker] ?? prezzoCarico
-    return prezzo * quantita
-  }
-  function valoreCarico(a: AssetPortafoglio) {
-    const { quantita, prezzoCarico } = statoAttuale(a)
-    return prezzoCarico * quantita
-  }
-
-  const capitaleInvestito = assetInvestiti.reduce((sum, a) => sum + valoreMercato(a), 0)
-  const carico = assetInvestiti.reduce((sum, a) => sum + valoreCarico(a), 0)
-  const plusMinusInvestimenti = capitaleInvestito - carico
-
-  // Fondo pensione: somma saldi/interessi di tutti i fondi nell'ultimo mese valorizzato
-  const mesiConFondo = [...new Set(fondoPensione.map(f => f.mese))]
-  const ultimoMeseFondo = MESI.filter(m => mesiConFondo.includes(m)).pop()
-  const fondoPensioneTotale = fondoPensione
-    .filter(f => f.mese === ultimoMeseFondo)
-    .reduce((sum, f) => sum + (f.saldo ?? 0), 0)
-  const fondoPensioneInteressi = fondoPensione
-    .filter(f => f.mese === ultimoMeseFondo)
-    .reduce((sum, f) => sum + (f.interessi ?? 0), 0)
-
-  // KPI "Plus/minus": somma investimenti (mercato - carico) + interessi fondo pensione
-  const plusMinus = plusMinusInvestimenti + fondoPensioneInteressi
-  const plusMinusPct = carico > 0 ? (plusMinusInvestimenti / carico) * 100 : 0
-
-  // ===== Storico mensile a pile: Liquidità / Capitale investito / Fondo pensione =====
-  // Capitale investito: ricostruito asset per asset a partire dall'anagrafica.
-  //  - Ancora: alla data_acquisto (se cade nell'anno selezionato), il capitale noto
-  //    è prezzo_acquisto × quantita.
-  //  - Dopo l'ancora: si somma il flusso dei movimenti collegati (portafoglio_id),
-  //    con segno invertito rispetto al cash flow: uscita (acquisto) = +, entrata
-  //    (disinvestimento) = −.
-  //  - Prima dell'ancora (stesso anno): si cammina all'indietro sottraendo lo
-  //    stesso flusso; se non ci sono movimenti precedenti, il valore resta 0.
-  //  - Se data_acquisto è di un anno precedente a quello selezionato: nessuno
-  //    storico multi-anno caricato, fallback approssimato (valore attuale meno
-  //    il flusso dell'anno corrente, poi in avanti mese per mese).
-  //  - Se data_acquisto è futura rispetto all'anno selezionato: l'asset non
-  //    esisteva ancora, contributo 0 per tutto l'anno.
-  const netFlowInvestito = (m: Movimento) => (m.uscite ?? 0) - (m.entrate ?? 0)
-
-  function parseDataAcquisto(v: string): { anno: number; meseIdx: number } | null {
-    const parti = (v ?? '').split('/')
-    if (parti.length !== 3) return null
-    const meseNum = Number(parti[1])
-    const annoNum = Number(parti[2])
-    if (!annoNum || !meseNum || meseNum < 1 || meseNum > 12) return null
-    return { anno: annoNum, meseIdx: meseNum - 1 }
-  }
-
-  function capitaleAssetPerMese(a: AssetPortafoglio): number[] {
-    const risultato = new Array(MESI.length).fill(0)
-    const movimentiAsset = movimenti.filter(m => m.portafoglio_id === a.id)
-    const flussoMese = (idx: number) =>
-      movimentiAsset.filter(m => m.mese === MESI[idx]).reduce((s, m) => s + netFlowInvestito(m), 0)
-    const dataAcq = parseDataAcquisto(a.data_acquisto)
-
-    if (dataAcq && dataAcq.anno === anno) {
-      const ancoraIdx = dataAcq.meseIdx
-      const valoreAncora = a.prezzo_acquisto * a.quantita
-      risultato[ancoraIdx] = valoreAncora
-      let cum = valoreAncora
-      for (let i = ancoraIdx + 1; i < MESI.length; i++) {
-        cum += flussoMese(i)
-        risultato[i] = cum
-      }
-      let cumIndietro = valoreAncora
-      for (let i = ancoraIdx - 1; i >= 0; i--) {
-        cumIndietro -= flussoMese(i + 1)
-        risultato[i] = cumIndietro
-      }
-    } else if (dataAcq && dataAcq.anno < anno) {
-      const { quantita, prezzoCarico } = statoAttuale(a)
-      const flowAnno = movimentiAsset.reduce((s, m) => s + netFlowInvestito(m), 0)
-      let cum = quantita * prezzoCarico - flowAnno
-      for (let i = 0; i < MESI.length; i++) {
-        cum += flussoMese(i)
-        risultato[i] = cum
-      }
+    if (movimentiAutoConfermati.length > 0) {
+      await Promise.all(
+        Array.from(new Set(movimentiAutoConfermati.map(x => x.portafoglioId))).map(assetId => {
+          const stato = statoLocale.get(assetId)!
+          return supabase.from('portafoglio').update({
+            quantita_attuale: stato.quantita,
+            prezzo_carico_attuale: stato.prezzoCarico,
+            ultimo_aggiornamento_at: new Date().toISOString(),
+          }).eq('id', assetId)
+        })
+      )
+      await Promise.all(
+        movimentiAutoConfermati.map(({ id, portafoglioId }) =>
+          supabase.from('movimenti').update({ riconciliato: true, portafoglio_id: portafoglioId }).eq('id', id)
+        )
+      )
+      setPortafoglio(port.map(a => a.id && statoLocale.has(a.id)
+        ? { ...a, quantita_attuale: statoLocale.get(a.id)!.quantita, prezzo_carico_attuale: statoLocale.get(a.id)!.prezzoCarico }
+        : a))
+      setMessaggio(`✓ ${movimentiAutoConfermati.length} movimento/i riconciliati automaticamente (pattern già noto).`)
     }
-    // dataAcq.anno > anno (o data mancante/illeggibile): resta 0 ovunque
 
-    return risultato
+    setRighe(righeManuali.map(m => {
+      const suggerito = trovaAssetCorrispondente(m, port, reg)
+      const { quantita } = estraiQuantitaPrezzo(m.descrizione)
+      return {
+        movimento: m,
+        assetSuggerito: suggerito,
+        assetSelezionatoId: suggerito?.id ?? '',
+        quantita: quantita != null ? String(quantita) : '',
+        ignorato: false,
+      }
+    }))
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function aggiornaRiga(idx: number, patch: Partial<RigaBozza>) {
+    setRighe(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r))
   }
 
-  const capitalePerAssetPerMese = assetInvestiti.map(a => capitaleAssetPerMese(a))
+  async function conferma(idx: number) {
+    const riga = righe[idx]
+    const asset = portafoglio.find(a => a.id === riga.assetSelezionatoId)
+    const qta = parseFloat(riga.quantita.replace(',', '.'))
 
-  // Mesi da mostrare: fino all'ultimo mese con dati (liquidità, movimenti o fondo
-  // pensione), per non proiettare in avanti mesi futuri vuoti
-  const mesiConMovimenti = new Set(movimenti.map(m => m.mese))
-  const ultimoMeseConDati = MESI.filter(
-    m => mesiConLiquidita.includes(m) || mesiConMovimenti.has(m) || mesiConFondo.includes(m)
-  ).pop() ?? MESI[0]
-  const idxUltimoMese = MESI.indexOf(ultimoMeseConDati)
-  const mesiDaMostrare = MESI.slice(0, idxUltimoMese + 1)
-
-  const storicoPerMese = new Map(patrimonioStorico.map(s => [s.mese, s]))
-
-  const storicoData = mesiDaMostrare.map(m => {
-    const idxMese = MESI.indexOf(m)
-    const liquiditaMese = liquidita.filter(l => l.mese === m).reduce((s, l) => s + (l.saldo ?? 0), 0)
-    const fondoMese = fondoPensione.filter(f => f.mese === m).reduce((s, f) => s + (f.saldo ?? 0), 0)
-    const righeFondoMese = fondoPensione.filter(f => f.mese === m)
-    const interessiFondoMese = righeFondoMese.length > 0
-      ? righeFondoMese.reduce((s, f) => s + (f.interessi ?? 0), 0)
-      : null
-
-    // Se esiste uno snapshot reale per questo mese, il plus/minus prende quello
-    // (rendimento di mercato). Il capitale investito è sempre la ricostruzione
-    // per asset da anagrafica + movimenti, mai il valore di mercato dello snapshot.
-    const snapshot = storicoPerMese.get(m)
-    const capitaleInvestitoMese = capitalePerAssetPerMese.reduce((s, arr) => s + arr[idxMese], 0)
-    const plusMinusMese = (snapshot ? snapshot.plus_minus : 0) + (interessiFondoMese ?? 0)
-    const haValorePlusMinus = snapshot != null || interessiFondoMese != null
-
-    return {
-      mese: MESI_LABEL[m],
-      'Liquidità': Math.round(liquiditaMese),
-      'Capitale investito': Math.round(capitaleInvestitoMese),
-      'Fondo pensione': Math.round(fondoMese),
-      'Plus/minus': haValorePlusMinus ? Math.round(plusMinusMese) : null,
+    if (!asset) { aggiornaRiga(idx, { errore: 'Seleziona un asset corrispondente.' }); return }
+    if (!qta || qta <= 0) { aggiornaRiga(idx, { errore: 'Inserisci una quantità valida.' }); return }
+    if (movimentoPrecedeAcquisto(riga.movimento, asset)) {
+      aggiornaRiga(idx, { errore: 'Questo movimento è precedente alla data di acquisto dell\'asset: è già conteggiato in anagrafica, usa "Ignora".' })
+      return
     }
-  })
+
+    const risultato = calcolaNuovoStato(asset, riga.movimento, qta)
+    if (risultato.errore) { aggiornaRiga(idx, { errore: risultato.errore }); return }
+
+    setSalvando(riga.movimento.id ?? String(idx))
+    try {
+      const { error: e1 } = await supabase.from('portafoglio').update({
+        quantita_attuale: risultato.nuovaQuantita,
+        prezzo_carico_attuale: risultato.nuovoPrezzoCarico,
+        ultimo_aggiornamento_at: new Date().toISOString(),
+      }).eq('id', asset.id)
+      if (e1) throw e1
+
+      const { error: e2 } = await supabase.from('movimenti').update({
+        riconciliato: true,
+        portafoglio_id: asset.id,
+      }).eq('id', riga.movimento.id)
+      if (e2) throw e2
+
+      // Salva/aggiorna la regola di matching per questo pattern di testo,
+      // così un movimento futuro con la stessa descrizione (quantità diversa)
+      // viene associato automaticamente all'asset.
+      const pattern = estraiPattern(`${riga.movimento.nome_etf} ${riga.movimento.descrizione}`)
+      if (pattern) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          await supabase.from('regole_riconciliazione')
+            .upsert({ user_id: user.id, pattern, portafoglio_id: asset.id }, { onConflict: 'user_id,pattern' })
+          setRegole(prev => {
+            const altre = prev.filter(r => r.pattern !== pattern)
+            return [...altre, { pattern, portafoglio_id: asset.id! }]
+          })
+        }
+      }
+
+      setPortafoglio(prev => prev.map(a => a.id === asset.id
+        ? { ...a, quantita_attuale: risultato.nuovaQuantita, prezzo_carico_attuale: risultato.nuovoPrezzoCarico }
+        : a))
+      setRighe(prev => prev.filter((_, i) => i !== idx))
+      setMessaggio(`✓ ${asset.nome || asset.ticker} aggiornato.`)
+    } catch (err: unknown) {
+      aggiornaRiga(idx, { errore: err instanceof Error ? err.message : 'Errore durante il salvataggio' })
+    } finally {
+      setSalvando(null)
+    }
+  }
+
+  async function ignora(idx: number) {
+    const riga = righe[idx]
+    setSalvando(riga.movimento.id ?? String(idx))
+    try {
+      await supabase.from('movimenti').update({ riconciliato: true }).eq('id', riga.movimento.id)
+      setRighe(prev => prev.filter((_, i) => i !== idx))
+    } finally {
+      setSalvando(null)
+    }
+  }
+
+  if (loading) return <div className="max-w-5xl mx-auto px-4 py-6 text-sm text-gray-400">Caricamento…</div>
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        <KpiCard label="Liquidità totale" value={fmtEuro(liquiditaTotale)} />
-        <KpiCard label="Capitale investito" value={fmtEuro(capitaleInvestito)} sub="Valore di mercato" />
-        <KpiCard label="Fondo pensione" value={fmtEuro(fondoPensioneTotale)} />
-        <KpiCard
-          label="Plus/minus non realizzato"
-          value={`${plusMinus >= 0 ? '+' : ''}${fmtEuro(plusMinus)}`}
-          sub={`Investimenti ${plusMinusPct >= 0 ? '+' : ''}${plusMinusPct.toFixed(1)}% · include interessi fondo pensione`}
-          tone={plusMinus >= 0 ? 'positive' : 'negative'}
-        />
-      </div>
+    <div className="max-w-5xl mx-auto px-4 py-6">
+      <h1 className="text-lg font-semibold text-gray-900 mb-1">Riconciliazione portafoglio</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Movimenti con categoria &quot;INVESTIMENTI&quot; non ancora collegati a un asset del portafoglio.
+        Verifica quantità e asset suggeriti, poi conferma per aggiornare quantità e prezzo di carico.
+      </p>
 
-      <div className="card">
-        <p className="num-display text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
-        <p className="text-xs text-gray-400 mb-4">
-          Capitale investito: versato cumulato (movimenti Investimento, al netto di eventuali
-          prelievi). Linea plus/minus: rendimento reale da snapshot, più interessi fondo pensione.
-        </p>
-        {storicoData.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={340}>
-            <ComposedChart data={storicoData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7d8" />
-              <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v: number) => fmtEuro(v)} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" />
-              <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" />
-              <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" radius={[4, 4, 0, 0]} />
-              <Line yAxisId="right" dataKey="Plus/minus" stroke="#3a3a2e" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+      {messaggio && <div className="mb-4 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">{messaggio}</div>}
 
-      {storicoData.length > 0 && (
-        <div className="card mt-4 overflow-x-auto">
-          <p className="num-display text-sm font-semibold text-gray-900 mb-3">Riepilogo mensile</p>
-          <table className="min-w-full text-xs border-collapse">
-            <thead>
-              <tr>
-                <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Mese</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Liquidità</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
-                <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
-              </tr>
-            </thead>
-            <tbody>
-              {storicoData.map(row => {
-                const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
-                return (
-                  <tr key={row.mese}>
-                    <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">
-                      {row.mese}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
-                      {fmtEuro(row['Liquidità'])}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
-                      {fmtEuro(row['Capitale investito'])}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
-                      {fmtEuro(row['Fondo pensione'])}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900 font-semibold border-b border-surface-200/50">
-                      {fmtEuro(totale)}
-                    </td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${
-                      row['Plus/minus'] == null ? 'text-gray-300' : row['Plus/minus'] >= 0 ? 'text-green-700' : 'text-red-700'
-                    }`}>
-                      {row['Plus/minus'] == null ? '–' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      {righe.length === 0 ? (
+        <div className="card text-sm text-gray-400 text-center py-10">
+          Nessun movimento da riconciliare. ✓
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {righe.map((r, idx) => {
+            const m = r.movimento
+            const isAcquisto = m.uscite > 0
+            const assetSel = portafoglio.find(a => a.id === r.assetSelezionatoId)
+            const stato = assetSel ? statoAttuale(assetSel) : null
+            const anteprima = assetSel && r.quantita
+              ? calcolaNuovoStato(assetSel, m, parseFloat(r.quantita.replace(',', '.')) || 0)
+              : null
+
+            return (
+              <div key={m.id} className="card">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isAcquisto ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>
+                      {isAcquisto ? 'Acquisto (uscita)' : 'Vendita (entrata)'}
+                    </span>
+                    <p className="text-sm text-gray-800 mt-2">{m.descrizione || '—'}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {m.data_operazione} · {m.nome_etf || 'nome ETF non indicato'} · importo €{fmt(isAcquisto ? m.uscite : m.entrate)}
+                    </p>
+                  </div>
+
+                  <div className="flex-1 min-w-64">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Asset corrispondente</label>
+                    <select
+                      className="input w-full mb-2"
+                      value={r.assetSelezionatoId}
+                      onChange={e => aggiornaRiga(idx, { assetSelezionatoId: e.target.value, errore: undefined })}
+                    >
+                      <option value="">— nessuno —</option>
+                      {portafoglio.map(a => (
+                        <option key={a.id} value={a.id}>{a.nome || a.descrizione} {a.ticker ? `(${a.ticker})` : ''}</option>
+                      ))}
+                    </select>
+                    {!r.assetSuggerito && (
+                      <p className="text-xs text-amber-600 mb-2">Nessun match automatico trovato — seleziona a mano.</p>
+                    )}
+
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Quantità quote</label>
+                    <input
+                      className="input w-full"
+                      value={r.quantita}
+                      placeholder="es. 12,5"
+                      onChange={e => aggiornaRiga(idx, { quantita: e.target.value, errore: undefined })}
+                    />
+
+                    {stato && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        Attuale: {fmt(stato.quantita)} quote · carico €{fmt(stato.prezzoCarico)}
+                        {anteprima && !anteprima.errore && (
+                          <> → nuovo: <strong>{fmt(anteprima.nuovaQuantita)}</strong> quote · carico €<strong>{fmt(anteprima.nuovoPrezzoCarico)}</strong></>
+                        )}
+                      </p>
+                    )}
+
+                    {r.errore && <p className="text-xs text-red-600 mt-2">{r.errore}</p>}
+
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        className="btn-primary text-xs"
+                        disabled={salvando === (m.id ?? String(idx))}
+                        onClick={() => conferma(idx)}
+                      >
+                        {salvando === (m.id ?? String(idx)) ? 'Salvo…' : 'Conferma e aggiorna'}
+                      </button>
+                      <button
+                        className="btn-secondary text-xs"
+                        disabled={salvando === (m.id ?? String(idx))}
+                        onClick={() => ignora(idx)}
+                      >
+                        Ignora (non è un movimento ETF)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

@@ -145,16 +145,34 @@ export default function UploadPage() {
         const rowsPort = await fetchSheet(sheetId, 'Anagrafica Portafoglio')
         const portafoglio = parsePortafoglioCsv(rowsPort)
         if (portafoglio.length > 0) {
-          // Upsert per ticker: aggiorna solo i campi di anagrafica (dal foglio),
-          // senza mai toccare quantita_attuale/prezzo_carico_attuale se già
-          // presenti — quei campi sono di competenza della riconciliazione in app.
+          // Upsert manuale per ticker (non tramite ON CONFLICT: l'indice unique su
+          // (user_id, ticker) è parziale — WHERE ticker IS NOT NULL AND ticker <> '' —
+          // e Postgres non lo usa come bersaglio di ON CONFLICT senza ripetere la
+          // stessa clausola WHERE, cosa che il client Supabase non permette di fare).
+          // Aggiorna solo i campi di anagrafica (dal foglio), senza mai toccare
+          // quantita_attuale/prezzo_carico_attuale se già presenti — quei campi sono
+          // di competenza della riconciliazione in app.
           const rows = portafoglio
             .filter(p => p.ticker) // serve un ticker per la chiave stabile
             .map(p => ({ ...p, user_id: user.id }))
-          const { error } = await supabase
+
+          const { data: esistenti, error: errSelect } = await supabase
             .from('portafoglio')
-            .upsert(rows, { onConflict: 'user_id,ticker' })
-          if (error) throw error
+            .select('id, ticker')
+            .eq('user_id', user.id)
+          if (errSelect) throw errSelect
+          const idPerTicker = new Map((esistenti ?? []).map(r => [r.ticker, r.id]))
+
+          for (const riga of rows) {
+            const idEsistente = idPerTicker.get(riga.ticker)
+            if (idEsistente) {
+              const { error } = await supabase.from('portafoglio').update(riga).eq('id', idEsistente)
+              if (error) throw error
+            } else {
+              const { error } = await supabase.from('portafoglio').insert(riga)
+              if (error) throw error
+            }
+          }
 
           // Inizializza lo stato attuale (quantita_attuale/prezzo_carico_attuale)
           // solo per gli asset appena creati dal sync, senza toccare quelli
@@ -175,7 +193,11 @@ export default function UploadPage() {
           }
           portafoglioCount = portafoglio.length
         }
-      } catch { /* opzionale */ }
+      } catch (err: unknown) {
+        setStatus('error')
+        setMessage(`Errore salvataggio portafoglio: ${err instanceof Error ? err.message : 'errore sconosciuto'}`)
+        return
+      }
 
       setStatus('done')
       setMessage(

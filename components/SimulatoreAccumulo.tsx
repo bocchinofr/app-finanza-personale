@@ -248,7 +248,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
             )}
             <div className="col-span-2 sm:col-span-2">
               <label className="text-xs text-gray-500 block mb-1">
-                Prezzo di partenza — il "massimo" da cui parte la discesa (€)
+                Prezzo di partenza — il &ldquo;massimo&rdquo; da cui parte la discesa (€)
               </label>
               <input
                 type="number" min={0.01} step={0.01}

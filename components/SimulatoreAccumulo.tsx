@@ -84,12 +84,20 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
   const [modalita, setModalita] = useState<Modalita>('variabile')
   const [importoFisso, setImportoFisso] = useState<number>(500)
   const [prezzoMassimo, setPrezzoMassimo] = useState<number | null>(null)
+  const [prezzoModificatoManualmente, setPrezzoModificatoManualmente] = useState(false)
   const [risultato, setRisultato] = useState<{ rows: StepRow[]; esaurita: boolean } | null>(null)
 
   const assetSelezionato = assetId !== 'aggregato' ? portafoglio.find(a => a.id === assetId) : null
 
-  // Precompila il prezzo massimo di riferimento quando cambia l'asset selezionato
+  // Precompila il prezzo massimo di riferimento. Riparte da zero (non "manuale")
+  // quando l'utente cambia asset; nel frattempo si aggiorna anche se i prezzi
+  // dal parent arrivano dopo il mount, finché l'utente non lo modifica a mano.
   useEffect(() => {
+    setPrezzoModificatoManualmente(false)
+  }, [assetId])
+
+  useEffect(() => {
+    if (prezzoModificatoManualmente) return
     if (assetSelezionato?.ticker && prezziAttuali[assetSelezionato.ticker]?.high52) {
       setPrezzoMassimo(prezziAttuali[assetSelezionato.ticker].high52)
     } else if (assetSelezionato) {
@@ -107,7 +115,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetId])
+  }, [assetId, prezziAttuali, portafoglio, prezzoModificatoManualmente])
 
   function simula() {
     if (!prezzoMassimo || prezzoMassimo <= 0 || riservaTotale <= 0) { setRisultato(null); return }
@@ -239,13 +247,22 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
               </div>
             )}
             <div className="col-span-2 sm:col-span-2">
-              <label className="text-xs text-gray-500 block mb-1">Prezzo massimo di riferimento (€)</label>
+              <label className="text-xs text-gray-500 block mb-1">
+                Prezzo di partenza — il "massimo" da cui parte la discesa (€)
+              </label>
               <input
                 type="number" min={0.01} step={0.01}
                 value={prezzoMassimo ?? ''}
-                onChange={e => setPrezzoMassimo(Number(e.target.value))}
+                onChange={e => {
+                  setPrezzoModificatoManualmente(true)
+                  setPrezzoMassimo(Number(e.target.value))
+                }}
                 className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5"
               />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Ogni step della simulazione scende del {stepPct}% da questo prezzo (precompilato col massimo a 52
+                settimane). Modificalo per simulare un altro punto di partenza, es. il prezzo attuale.
+              </p>
             </div>
             <div className="col-span-2 sm:col-span-2 flex items-end">
               <button

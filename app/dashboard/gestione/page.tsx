@@ -152,6 +152,18 @@ export default function DashboardPage() {
   const [draftSoglie, setDraftSoglie] = useState<Record<string, { massimo: number; mensile: number; attivo: boolean }>>({})
   const [savingSoglie, setSavingSoglie] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+  const [bannerChiusuraDismissed, setBannerChiusuraDismissed] = useState(false)
+
+  // Sezioni apribili/richiudibili del tab Portafoglio (toggle indipendenti)
+  const [openSection, setOpenSection] = useState({
+    riserva: false,
+    simulatore: false,
+    storico: false,
+    anagrafica: false,
+  })
+  function toggleSection(key: keyof typeof openSection) {
+    setOpenSection(prev => ({ ...prev, [key]: !prev[key] }))
+  }
 
   // Filters
   const [filterComponente, setFilterComponente] = useState('')
@@ -1032,21 +1044,85 @@ export default function DashboardPage() {
                 )
               })()}
 
-              <RiservaAccumulo
-                portafoglio={portafoglio}
-                liquidita={liquidita}
-                soglie={soglie}
-                prezziAttuali={prezziAttuali}
-                behaviorLabel={profilo?.behavior_label ?? null}
-                ddMax={profilo?.dd_max ?? 0.30}
-              />
+              {/* Banner promemoria: mese concluso non ancora registrato */}
+              {(() => {
+                const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
+                const registrato = annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget)
+                if (registrato || bannerChiusuraDismissed) return null
+                return (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 relative flex items-center justify-between gap-3 flex-wrap">
+                    <button
+                      onClick={() => setBannerChiusuraDismissed(true)}
+                      aria-label="Chiudi avviso"
+                      className="absolute top-3 right-3 text-amber-400 hover:text-amber-600 text-sm leading-none"
+                    >
+                      ✕
+                    </button>
+                    <span className="text-sm text-amber-800 pr-6">
+                      📅 Il mese di <strong>{MESI_LABEL[meseTarget]}</strong> {annoTarget !== anno ? annoTarget : ''} è concluso ma non ancora registrato: lo storico prezzi non sarà valorizzato correttamente finché non lo registri.
+                    </span>
+                    <button
+                      onClick={() => setOpenSection(prev => ({ ...prev, storico: true }))}
+                      className="text-xs font-medium text-amber-700 underline shrink-0"
+                    >
+                      Vai a Storico prezzi →
+                    </button>
+                  </div>
+                )
+              })()}
 
-              <SimulatoreAccumulo
-                portafoglio={portafoglio}
-                liquidita={liquidita}
-                prezziAttuali={prezziAttuali}
-                ddMax={profilo?.dd_max ?? 0.30}
-              />
+              {/* Pulsanti sezioni apribili */}
+              {(() => {
+                const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
+                const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
+                const sectionBtns: { key: keyof typeof openSection; label: string; icon: string; badge?: boolean }[] = [
+                  { key: 'riserva', label: 'Riserva accumulo', icon: '🛡️' },
+                  { key: 'simulatore', label: 'Simulatore accumulo', icon: '🧮' },
+                  { key: 'storico', label: 'Storico prezzi', icon: '📈', badge: chiusuraMancante },
+                  { key: 'anagrafica', label: 'Anagrafica portafoglio', icon: '📋' },
+                ]
+                return (
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {sectionBtns.map(b => (
+                      <button
+                        key={b.key}
+                        onClick={() => toggleSection(b.key)}
+                        className={`relative inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                          openSection[b.key]
+                            ? 'bg-brand-600 border-brand-600 text-white'
+                            : 'bg-white border-surface-200 text-gray-600 hover:border-brand-300'
+                        }`}
+                      >
+                        <span>{b.icon}</span>{b.label}
+                        {openSection[b.key] && <span className="ml-0.5">▲</span>}
+                        {b.badge && !openSection[b.key] && (
+                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()}
+
+              {openSection.riserva && (
+                <RiservaAccumulo
+                  portafoglio={portafoglio}
+                  liquidita={liquidita}
+                  soglie={soglie}
+                  prezziAttuali={prezziAttuali}
+                  behaviorLabel={profilo?.behavior_label ?? null}
+                  ddMax={profilo?.dd_max ?? 0.30}
+                />
+              )}
+
+              {openSection.simulatore && (
+                <SimulatoreAccumulo
+                  portafoglio={portafoglio}
+                  liquidita={liquidita}
+                  prezziAttuali={prezziAttuali}
+                  ddMax={profilo?.dd_max ?? 0.30}
+                />
+              )}
 
               {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
               {(() => {
@@ -1089,17 +1165,17 @@ export default function DashboardPage() {
                 )
               })()}
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 {/* Torta allocazione per asset class */}
                 <div className="card">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Allocazione per asset class</p>
                   {!usaValoreMonetario && (
                     <p className="text-[10px] text-gray-400 mb-3">Nessuna quantità inserita: conteggio per numero di asset</p>
                   )}
-                  <ResponsiveContainer width="100%" height={usaValoreMonetario ? 240 : 224}>
+                  <ResponsiveContainer width="100%" height={usaValoreMonetario ? 200 : 184}>
                     <PieChart>
                       <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="40%"
-                        outerRadius={70} innerRadius={35}
+                        outerRadius={65} innerRadius={32}
                         label={({ name, percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
                         {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                       </Pie>
@@ -1107,39 +1183,7 @@ export default function DashboardPage() {
                       <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
                     </PieChart>
                   </ResponsiveContainer>
-                </div>
-
-                {/* Pulsante prezzi attuali */}
-                <div className="card flex flex-col justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Prezzi di mercato</p>
-                    <p className="text-xs text-gray-400 mb-4">
-                      Recupera i prezzi attuali da Yahoo Finance tramite ticker. I prezzi vengono aggiornati solo in sessione (non salvati nel DB).
-                    </p>
-                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-primary text-sm">
-                      {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
-                    </button>
-                    {Object.keys(prezziAttuali).length > 0 && (
-                      <p className="text-xs text-green-600 mt-2">
-                        ✓ {Object.keys(prezziAttuali).length} prezzi aggiornati
-                      </p>
-                    )}
-                    <button
-                      onClick={salvaSnapshotFineMese}
-                      disabled={savingSnapshot}
-                      className="btn-primary text-sm mt-2"
-                    >
-                      {savingSnapshot
-                        ? '⟳ Salvataggio…'
-                        : `💾 Registra chiusura mese di ${MESI_LABEL[meseDaRegistrare().mese]}`}
-                    </button>
-                    {snapshotSalvato != null && (
-                      <p className="text-xs text-green-600 mt-2">
-                        ✓ Snapshot salvato per {snapshotSalvato} asset
-                      </p>
-                    )}
-                  </div>
-                  <div className="mt-4 space-y-1">
+                  <div className="mt-3 space-y-1 border-t border-surface-100 pt-3">
                     {[...new Set(portafoglio.map(a => a.asset))].map(cls => {
                       const assetsInClass = portafoglio.filter(a => a.asset === cls)
                       const tot = assetsInClass.reduce((s, a) => {
@@ -1160,9 +1204,56 @@ export default function DashboardPage() {
                     })}
                   </div>
                 </div>
+
+                {/* Card: Aggiorna prezzi (azione leggera, frequente) */}
+                <div className="card flex flex-col justify-center">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">↻ Aggiorna prezzi</p>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Recupera le quotazioni attuali da Yahoo Finance. Aggiorna solo la sessione corrente, non salva nulla nel database.
+                  </p>
+                  <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-sm">
+                    {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
+                  </button>
+                  {Object.keys(prezziAttuali).length > 0 && (
+                    <p className="text-xs text-green-600 mt-2">
+                      ✓ {Object.keys(prezziAttuali).length} prezzi aggiornati
+                    </p>
+                  )}
+                </div>
+
+                {/* Card: Registra chiusura mese (azione mensile, importante) */}
+                {(() => {
+                  const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
+                  const registrato = annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget)
+                  return (
+                    <div className={`card flex flex-col justify-center border-2 ${registrato ? 'border-surface-100' : 'border-amber-300 bg-amber-50/40'}`}>
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">📅 Registra chiusura mese</p>
+                      <p className="text-xs text-gray-400 mb-4">
+                        Salva prezzo e controvalore di ogni asset per <strong>{MESI_LABEL[meseTarget]}</strong>: è l&apos;unico modo per valorizzare correttamente lo Storico prezzi.
+                      </p>
+                      <button
+                        onClick={salvaSnapshotFineMese}
+                        disabled={savingSnapshot}
+                        className="btn-primary text-sm"
+                      >
+                        {savingSnapshot
+                          ? '⟳ Salvataggio…'
+                          : `💾 Registra ${MESI_LABEL[meseTarget]}`}
+                      </button>
+                      {snapshotSalvato != null && (
+                        <p className="text-xs text-green-600 mt-2">
+                          ✓ Snapshot salvato per {snapshotSalvato} asset
+                        </p>
+                      )}
+                      {registrato && snapshotSalvato == null && (
+                        <p className="text-xs text-gray-400 mt-2">✓ Già registrato</p>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
-              <div className="card overflow-x-auto mt-4">
+              {openSection.storico && <div className="card overflow-x-auto mt-4">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
                   Storico prezzi mensili {anno}
                 </p>
@@ -1253,8 +1344,9 @@ export default function DashboardPage() {
                     </table>
                   )
                 })()}
-              </div>
+              </div>}
 
+              {openSection.anagrafica && <>
               {/* Banner: asset con data acquisto più avanti dei dati mensili caricati.
                   Non è un errore — il capitale investito si aggiornerà da solo appena
                   liquidità/movimenti raggiungono quel mese. */}
@@ -1271,7 +1363,7 @@ export default function DashboardPage() {
                 })
                 if (assetInAnticipo.length === 0) return null
                 return (
-                  <div className="mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
                     <strong>{assetInAnticipo.length} asset</strong> {assetInAnticipo.length === 1 ? 'ha' : 'hanno'} una data di acquisto ({assetInAnticipo.map(a => a.nome || a.asset).join(', ')}) successiva
                     all&apos;ultimo mese con dati di liquidità/movimenti caricati ({ultimoMeseConDati}). Il capitale investito nel grafico &quot;Andamento patrimonio&quot; si aggiornerà
                     automaticamente non appena sincronizzi i mesi successivi.
@@ -1280,7 +1372,7 @@ export default function DashboardPage() {
               })()}
 
               {/* Tabella asset con gestione soglie integrata */}
-              <div className="card p-0 overflow-hidden">
+              <div className="card p-0 overflow-hidden mt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Portafoglio</p>
                   {!showSoglieForm ? (
@@ -1471,6 +1563,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="h-4" />
               </div>
+              </>}
             </>
           )}
         </>

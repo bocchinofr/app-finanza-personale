@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MESI, statoAttuale } from '@/types'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
+import SimulatoreAccumulo from '@/components/SimulatoreAccumulo'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
 import { HeatmapCell } from '@/components/charts/HeatmapCell'
@@ -1037,6 +1038,13 @@ export default function DashboardPage() {
                 soglie={soglie}
                 prezziAttuali={prezziAttuali}
                 behaviorLabel={profilo?.behavior_label ?? null}
+                ddMax={profilo?.dd_max ?? 0.30}
+              />
+
+              <SimulatoreAccumulo
+                portafoglio={portafoglio}
+                liquidita={liquidita}
+                prezziAttuali={prezziAttuali}
                 ddMax={profilo?.dd_max ?? 0.30}
               />
 

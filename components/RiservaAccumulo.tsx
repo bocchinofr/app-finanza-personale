@@ -35,7 +35,7 @@ export default function RiservaAccumulo({
   const supabase = createClient()
   const [contoFlags, setContoFlags] = useState<ContoFlag[]>([])
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [savingConto, setSavingConto] = useState<string | null>(null)
 
   const profiloDinamico = behaviorLabel === PROFILO_DINAMICO_LABEL

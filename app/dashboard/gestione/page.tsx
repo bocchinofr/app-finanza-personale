@@ -1071,30 +1071,35 @@ export default function DashboardPage() {
                 )
               })()}
 
-              {/* Pulsanti sezioni apribili */}
+              {/* Sezioni apribili — card compatte con accento laterale (non pillole colorate,
+                  per non confondersi con i tab sopra o il menu laterale) */}
               {(() => {
                 const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
                 const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
-                const sectionBtns: { key: keyof typeof openSection; label: string; icon: string; badge?: boolean }[] = [
-                  { key: 'riserva', label: 'Riserva accumulo', icon: '🛡️' },
-                  { key: 'simulatore', label: 'Simulatore accumulo', icon: '🧮' },
-                  { key: 'storico', label: 'Storico prezzi', icon: '📈', badge: chiusuraMancante },
-                  { key: 'anagrafica', label: 'Anagrafica portafoglio', icon: '📋' },
+                const sectionBtns: { key: keyof typeof openSection; label: string; sub: string; icon: string; badge?: boolean }[] = [
+                  { key: 'riserva', label: 'Riserva accumulo', sub: 'Capitale svincolato', icon: '🛡️' },
+                  { key: 'simulatore', label: 'Simulatore accumulo', sub: 'Scenari sui ribassi', icon: '🧮' },
+                  { key: 'storico', label: 'Storico prezzi', sub: 'e chiusura mese', icon: '📈', badge: chiusuraMancante },
+                  { key: 'anagrafica', label: 'Anagrafica', sub: 'Asset e prezzi', icon: '📋' },
                 ]
                 return (
-                  <div className="flex flex-wrap gap-2 mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
                     {sectionBtns.map(b => (
                       <button
                         key={b.key}
                         onClick={() => toggleSection(b.key)}
-                        className={`relative inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                        className={`relative flex items-center gap-2.5 text-left px-3 py-2.5 rounded-lg bg-white border-l-4 shadow-sm transition-colors ${
                           openSection[b.key]
-                            ? 'bg-brand-600 border-brand-600 text-white'
-                            : 'bg-white border-surface-200 text-gray-600 hover:border-brand-300'
+                            ? 'border-l-brand-600 ring-1 ring-brand-100'
+                            : 'border-l-surface-200 hover:border-l-brand-300'
                         }`}
                       >
-                        <span>{b.icon}</span>{b.label}
-                        {openSection[b.key] && <span className="ml-0.5">▲</span>}
+                        <span className="text-lg shrink-0">{b.icon}</span>
+                        <span className="min-w-0">
+                          <span className="block text-xs font-semibold text-gray-800 truncate">{b.label}</span>
+                          <span className="block text-[10px] text-gray-400 truncate">{b.sub}</span>
+                        </span>
+                        <span className={`ml-auto text-xs shrink-0 transition-transform ${openSection[b.key] ? 'text-brand-600 rotate-180' : 'text-gray-300'}`}>▾</span>
                         {b.badge && !openSection[b.key] && (
                           <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />
                         )}
@@ -1165,7 +1170,7 @@ export default function DashboardPage() {
                 )
               })()}
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+              <div className="lg:max-w-xl mb-6">
                 {/* Torta allocazione per asset class */}
                 <div className="card">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Allocazione per asset class</p>
@@ -1204,59 +1209,37 @@ export default function DashboardPage() {
                     })}
                   </div>
                 </div>
-
-                {/* Card: Aggiorna prezzi (azione leggera, frequente) */}
-                <div className="card flex flex-col justify-center">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">↻ Aggiorna prezzi</p>
-                  <p className="text-xs text-gray-400 mb-4">
-                    Recupera le quotazioni attuali da Yahoo Finance. Aggiorna solo la sessione corrente, non salva nulla nel database.
-                  </p>
-                  <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-sm">
-                    {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
-                  </button>
-                  {Object.keys(prezziAttuali).length > 0 && (
-                    <p className="text-xs text-green-600 mt-2">
-                      ✓ {Object.keys(prezziAttuali).length} prezzi aggiornati
-                    </p>
-                  )}
-                </div>
-
-                {/* Card: Registra chiusura mese (azione mensile, importante) */}
-                {(() => {
-                  const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
-                  const registrato = annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget)
-                  return (
-                    <div className={`card flex flex-col justify-center border-2 ${registrato ? 'border-surface-100' : 'border-amber-300 bg-amber-50/40'}`}>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">📅 Registra chiusura mese</p>
-                      <p className="text-xs text-gray-400 mb-4">
-                        Salva prezzo e controvalore di ogni asset per <strong>{MESI_LABEL[meseTarget]}</strong>: è l&apos;unico modo per valorizzare correttamente lo Storico prezzi.
-                      </p>
-                      <button
-                        onClick={salvaSnapshotFineMese}
-                        disabled={savingSnapshot}
-                        className="btn-primary text-sm"
-                      >
-                        {savingSnapshot
-                          ? '⟳ Salvataggio…'
-                          : `💾 Registra ${MESI_LABEL[meseTarget]}`}
-                      </button>
-                      {snapshotSalvato != null && (
-                        <p className="text-xs text-green-600 mt-2">
-                          ✓ Snapshot salvato per {snapshotSalvato} asset
-                        </p>
-                      )}
-                      {registrato && snapshotSalvato == null && (
-                        <p className="text-xs text-gray-400 mt-2">✓ Già registrato</p>
-                      )}
-                    </div>
-                  )
-                })()}
               </div>
 
               {openSection.storico && <div className="card overflow-x-auto mt-4">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
-                  Storico prezzi mensili {anno}
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-1">
+                    Storico prezzi mensili {anno}
+                  </p>
+                  {(() => {
+                    const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
+                    const registrato = annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget)
+                    return (
+                      <div className={`rounded-lg px-3 py-2 flex items-center gap-3 flex-wrap ${registrato ? 'bg-surface-50' : 'bg-amber-50 border border-amber-200'}`}>
+                        <span className="text-xs text-gray-600">
+                          📅 Chiusura <strong>{MESI_LABEL[meseTarget]}</strong>{annoTarget !== anno ? ` ${annoTarget}` : ''}
+                        </span>
+                        <button
+                          onClick={salvaSnapshotFineMese}
+                          disabled={savingSnapshot}
+                          className="btn-primary text-xs px-3 py-1.5"
+                        >
+                          {savingSnapshot ? '⟳ Salvataggio…' : registrato ? '💾 Aggiorna registrazione' : '💾 Registra chiusura'}
+                        </button>
+                        {snapshotSalvato != null ? (
+                          <span className="text-xs text-green-600">✓ Salvato per {snapshotSalvato} asset</span>
+                        ) : registrato ? (
+                          <span className="text-xs text-gray-400">✓ Già registrato</span>
+                        ) : null}
+                      </div>
+                    )
+                  })()}
+                </div>
                 {(() => {
                   const assetAttiviStorico = portafoglio.filter(a => a.id && a.ticker)
 
@@ -1374,7 +1357,15 @@ export default function DashboardPage() {
               {/* Tabella asset con gestione soglie integrata */}
               <div className="card p-0 overflow-hidden mt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Portafoglio</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Anagrafica portafoglio</p>
+                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
+                      {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
+                    </button>
+                    {Object.keys(prezziAttuali).length > 0 && (
+                      <span className="text-xs text-green-600">✓ {Object.keys(prezziAttuali).length} aggiornati</span>
+                    )}
+                  </div>
                   {!showSoglieForm ? (
                     <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
                       ✎ Modifica soglie

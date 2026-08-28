@@ -43,7 +43,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
   const supabase = createClient()
   const [contoFlags, setContoFlags] = useState<ContoFlag[]>([])
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
 
   useEffect(() => {
     async function load() {

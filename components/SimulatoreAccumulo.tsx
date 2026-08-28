@@ -17,12 +17,16 @@ type Modalita = 'fisso' | 'variabile'
 interface StepRow {
   step: number
   drawdownPct: number
-  prezzo: number
   importoStep: number
   cumInvestito: number
-  cumQuantita: number
-  prezzoMedioCarico: number
   riservaResidua: number
+  // Solo modalità asset singolo (prezzo reale disponibile)
+  prezzo?: number
+  cumQuantita?: number
+  prezzoMedioCarico?: number
+  // Solo modalità aggregato (nessun prezzo reale: puro calcolo % di recupero)
+  valoreRecuperoStep?: number
+  cumValoreRecupero?: number
 }
 
 function fmtEuro(n: number) {
@@ -103,33 +107,27 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
     } else if (assetSelezionato) {
       setPrezzoMassimo(assetSelezionato.prezzo_acquisto)
     } else {
-      // Aggregato: media dei massimi pesata per valore attuale
-      const conTicker = assetConTicker.filter(a => prezziAttuali[a.ticker]?.high52)
-      const valoreTotale = conTicker.reduce((s, a) => s + valoreAttualeAsset(a, prezziAttuali), 0)
-      if (valoreTotale > 0) {
-        const mediaPesata = conTicker.reduce((s, a) => {
-          const peso = valoreAttualeAsset(a, prezziAttuali) / valoreTotale
-          return s + (prezziAttuali[a.ticker].high52 as number) * peso
-        }, 0)
-        setPrezzoMassimo(Math.round(mediaPesata * 100) / 100)
-      }
+      setPrezzoMassimo(null) // aggregato: non serve, si lavora in %
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId, prezziAttuali, portafoglio, prezzoModificatoManualmente])
 
+  const isAggregato = assetId === 'aggregato'
+
   function simula() {
-    if (!prezzoMassimo || prezzoMassimo <= 0 || riservaTotale <= 0) { setRisultato(null); return }
+    if (riservaTotale <= 0) { setRisultato(null); return }
+    if (!isAggregato && (!prezzoMassimo || prezzoMassimo <= 0)) { setRisultato(null); return }
 
     const rows: StepRow[] = []
     let cumInvestito = 0
     let cumQuantita = 0
+    let cumValoreRecupero = 0
     let esaurita = false
     const MAX_STEP = 60
     const CAP_DRAWDOWN = 0.9 // sicurezza: non simulare oltre -90% dal massimo
 
     for (let i = 1; i <= MAX_STEP; i++) {
       const drawdown = Math.min((i * stepPct) / 100, CAP_DRAWDOWN)
-      const prezzo = prezzoMassimo * (1 - drawdown)
 
       let importoStep: number
       if (modalita === 'fisso') {
@@ -142,20 +140,37 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
 
       if (importoStep <= 0) { esaurita = true; break }
 
-      const quantitaStep = importoStep / prezzo
       cumInvestito += importoStep
-      cumQuantita += quantitaStep
 
-      rows.push({
-        step: i,
-        drawdownPct: drawdown * 100,
-        prezzo,
-        importoStep,
-        cumInvestito,
-        cumQuantita,
-        prezzoMedioCarico: cumInvestito / cumQuantita,
-        riservaResidua: Math.max(riservaTotale - cumInvestito, 0),
-      })
+      if (isAggregato) {
+        // Nessun prezzo reale: se il mercato recupera al livello di partenza,
+        // un importo investito a drawdown D vale importo / (1 - D).
+        const valoreRecuperoStep = importoStep / (1 - drawdown)
+        cumValoreRecupero += valoreRecuperoStep
+        rows.push({
+          step: i,
+          drawdownPct: drawdown * 100,
+          importoStep,
+          cumInvestito,
+          valoreRecuperoStep,
+          cumValoreRecupero,
+          riservaResidua: Math.max(riservaTotale - cumInvestito, 0),
+        })
+      } else {
+        const prezzo = (prezzoMassimo as number) * (1 - drawdown)
+        const quantitaStep = importoStep / prezzo
+        cumQuantita += quantitaStep
+        rows.push({
+          step: i,
+          drawdownPct: drawdown * 100,
+          prezzo,
+          importoStep,
+          cumInvestito,
+          cumQuantita,
+          prezzoMedioCarico: cumInvestito / cumQuantita,
+          riservaResidua: Math.max(riservaTotale - cumInvestito, 0),
+        })
+      }
 
       if (cumInvestito >= riservaTotale - 0.5) { esaurita = true; break }
       if (drawdown >= CAP_DRAWDOWN) break
@@ -167,9 +182,10 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
   if (loading) return null
 
   const ultimoStep = risultato?.rows[risultato.rows.length - 1]
-  const pnlRecupero = ultimoStep && prezzoMassimo
-    ? ultimoStep.cumQuantita * prezzoMassimo - ultimoStep.cumInvestito
+  const valoreAlRecupero = ultimoStep
+    ? (isAggregato ? ultimoStep.cumValoreRecupero : (ultimoStep.cumQuantita ?? 0) * (prezzoMassimo ?? 0))
     : null
+  const pnlRecupero = ultimoStep && valoreAlRecupero != null ? valoreAlRecupero - ultimoStep.cumInvestito : null
   const pnlRecuperoPct = pnlRecupero != null && ultimoStep && ultimoStep.cumInvestito > 0
     ? (pnlRecupero / ultimoStep.cumInvestito) * 100
     : null
@@ -246,24 +262,33 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                 />
               </div>
             )}
-            <div className="col-span-2 sm:col-span-2">
-              <label className="text-xs text-gray-500 block mb-1">
-                Prezzo di partenza — il &ldquo;massimo&rdquo; da cui parte la discesa (€)
-              </label>
-              <input
-                type="number" min={0.01} step={0.01}
-                value={prezzoMassimo ?? ''}
-                onChange={e => {
-                  setPrezzoModificatoManualmente(true)
-                  setPrezzoMassimo(Number(e.target.value))
-                }}
-                className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5"
-              />
-              <p className="text-[11px] text-gray-400 mt-1">
-                Ogni step della simulazione scende del {stepPct}% da questo prezzo (precompilato col massimo a 52
-                settimane). Modificalo per simulare un altro punto di partenza, es. il prezzo attuale.
-              </p>
-            </div>
+            {!isAggregato ? (
+              <div className="col-span-2 sm:col-span-2">
+                <label className="text-xs text-gray-500 block mb-1">
+                  Prezzo di partenza — il &ldquo;massimo&rdquo; da cui parte la discesa (€)
+                </label>
+                <input
+                  type="number" min={0.01} step={0.01}
+                  value={prezzoMassimo ?? ''}
+                  onChange={e => {
+                    setPrezzoModificatoManualmente(true)
+                    setPrezzoMassimo(Number(e.target.value))
+                  }}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Ogni step della simulazione scende del {stepPct}% da questo prezzo (precompilato col massimo a 52
+                  settimane). Modificalo per simulare un altro punto di partenza, es. il prezzo attuale.
+                </p>
+              </div>
+            ) : (
+              <div className="col-span-2 sm:col-span-2 flex items-end">
+                <p className="text-[11px] text-gray-400">
+                  Modalità aggregato: nessun prezzo (un paniere di asset non ha un prezzo unico). Ogni euro investito
+                  a un drawdown D vale, se il mercato recupera, importo / (1 − D).
+                </p>
+              </div>
+            )}
             <div className="col-span-2 sm:col-span-2 flex items-end">
               <button
                 onClick={simula}
@@ -286,19 +311,25 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                   <p className="text-xs font-semibold text-red-700 mb-1">Scenario: discesa continua</p>
                   <p className="text-xs text-red-700">
                     {risultato.esaurita ? 'Riserva esaurita' : 'Riserva non esaurita nel range simulato'} allo step{' '}
-                    <strong>{ultimoStep.step}</strong> (drawdown <strong>-{ultimoStep.drawdownPct.toFixed(1)}%</strong>,
-                    prezzo <strong>{fmtEuro(ultimoStep.prezzo)}</strong>).
+                    <strong>{ultimoStep.step}</strong> (drawdown <strong>-{ultimoStep.drawdownPct.toFixed(1)}%</strong>
+                    {!isAggregato && ultimoStep.prezzo != null ? <>, prezzo <strong>{fmtEuro(ultimoStep.prezzo)}</strong></> : null}).
                   </p>
                   <p className="text-xs text-red-700 mt-1">
-                    Capitale investito: <strong>{fmtEuro(ultimoStep.cumInvestito)}</strong> · Prezzo medio carico:{' '}
-                    <strong>{fmtEuro(ultimoStep.prezzoMedioCarico)}</strong>
+                    Capitale investito: <strong>{fmtEuro(ultimoStep.cumInvestito)}</strong>
+                    {!isAggregato && ultimoStep.prezzoMedioCarico != null && (
+                      <> · Prezzo medio carico: <strong>{fmtEuro(ultimoStep.prezzoMedioCarico)}</strong></>
+                    )}
                   </p>
                 </div>
                 <div className="rounded-lg bg-brand-50 p-3">
                   <p className="text-xs font-semibold text-brand-800 mb-1">Scenario: recupero ai massimi</p>
                   <p className="text-xs text-brand-800">
-                    Se il prezzo torna a <strong>{fmtEuro(prezzoMassimo ?? 0)}</strong>, il valore della posizione
-                    accumulata sarebbe <strong>{fmtEuro((ultimoStep.cumQuantita) * (prezzoMassimo ?? 0))}</strong>.
+                    {isAggregato
+                      ? <>Se tutti gli asset tornano al livello di partenza, il valore della posizione accumulata
+                          sarebbe <strong>{fmtEuro(valoreAlRecupero ?? 0)}</strong>.</>
+                      : <>Se il prezzo torna a <strong>{fmtEuro(prezzoMassimo ?? 0)}</strong>, il valore della
+                          posizione accumulata sarebbe <strong>{fmtEuro(valoreAlRecupero ?? 0)}</strong>.</>
+                    }
                   </p>
                   <p className="text-xs text-brand-800 mt-1">
                     P&amp;L: <strong className={pnlRecupero != null && pnlRecupero >= 0 ? 'text-green-700' : 'text-red-700'}>
@@ -316,10 +347,13 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                     <tr className="text-gray-500 border-b border-gray-100">
                       <th className="text-left py-1.5 pr-2">Step</th>
                       <th className="text-right py-1.5 px-2">Drawdown</th>
-                      <th className="text-right py-1.5 px-2">Prezzo</th>
+                      {!isAggregato && <th className="text-right py-1.5 px-2">Prezzo</th>}
                       <th className="text-right py-1.5 px-2">Investito step</th>
                       <th className="text-right py-1.5 px-2">Cumulato</th>
-                      <th className="text-right py-1.5 px-2">Prezzo medio</th>
+                      {isAggregato
+                        ? <th className="text-right py-1.5 px-2">Valore cum. se recupero</th>
+                        : <th className="text-right py-1.5 px-2">Prezzo medio</th>
+                      }
                       <th className="text-right py-1.5 pl-2">Riserva residua</th>
                     </tr>
                   </thead>
@@ -328,10 +362,15 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                       <tr key={r.step} className="border-b border-gray-50 tabular-nums">
                         <td className="py-1.5 pr-2 text-gray-700">{r.step}</td>
                         <td className="text-right py-1.5 px-2 text-red-600">-{r.drawdownPct.toFixed(1)}%</td>
-                        <td className="text-right py-1.5 px-2 text-gray-700">{fmtEuro(r.prezzo)}</td>
+                        {!isAggregato && (
+                          <td className="text-right py-1.5 px-2 text-gray-700">{fmtEuro(r.prezzo ?? 0)}</td>
+                        )}
                         <td className="text-right py-1.5 px-2 text-gray-700">{fmtEuro(r.importoStep)}</td>
                         <td className="text-right py-1.5 px-2 font-medium text-gray-900">{fmtEuro(r.cumInvestito)}</td>
-                        <td className="text-right py-1.5 px-2 text-gray-700">{fmtEuro(r.prezzoMedioCarico)}</td>
+                        {isAggregato
+                          ? <td className="text-right py-1.5 px-2 text-green-700">{fmtEuro(r.cumValoreRecupero ?? 0)}</td>
+                          : <td className="text-right py-1.5 px-2 text-gray-700">{fmtEuro(r.prezzoMedioCarico ?? 0)}</td>
+                        }
                         <td className="text-right py-1.5 pl-2 text-gray-500">{fmtEuro(r.riservaResidua)}</td>
                       </tr>
                     ))}

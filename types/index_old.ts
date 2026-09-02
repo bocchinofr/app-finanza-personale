@@ -24,17 +24,6 @@ export interface Liquidita {
   saldo: number
 }
 
-export interface FondoPensione {
-  id?: string
-  user_id?: string
-  anno: number
-  mese: string
-  fondo: string
-  saldo: number
-  interessi: number
-}
-
-
 export interface AssetPortafoglio {
   id?: string
   user_id?: string
@@ -54,12 +43,6 @@ export interface AssetPortafoglio {
   quantita_attuale?: number | null
   prezzo_carico_attuale?: number | null
   ultimo_aggiornamento_at?: string | null
-  // Classificazione per il rapporto azionario/obbligazionario e per la
-  // riserva di accumulo. Nullo finché l'utente non lo imposta.
-  classe_rischio?: 'azionario' | 'obbligazionario' | 'altro' | null
-  // Capitale "libero": se true, il valore attuale dell'asset concorre
-  // al calcolo del capitale disponibile per accumulo sui crolli.
-  svincolato?: boolean
 }
 
 export interface AlertSoglia {
@@ -89,27 +72,7 @@ export interface Profilo {
   google_sheet_id: string | null
   nome_visualizzato: string | null
   updated_at?: string
-  // Dimensioni del profilo di rischio (questionario in /dashboard/profilo)
-  risk_profile_label?: string | null
-  behavior_label?: string | null
-  equity_pct?: number | null
-  // Drawdown massimo considerato nella formula di scaling per il capitale
-  // suggerito in accumulo (default 0.30 = 30%)
-  dd_max?: number
 }
-
-// Flag di svincolo per conto di liquidità: decoupled dalla riga mensile
-// (altrimenti andrebbe re-impostato ogni mese al sync).
-export interface ContoFlag {
-  id?: string
-  user_id?: string
-  conto: string
-  svincolata: boolean
-}
-
-// Un asset o conto è considerato "in profilo dinamico" (accumulo attivabile)
-// solo se il comportamento dichiarato è "accumula sui crolli".
-export const PROFILO_DINAMICO_LABEL = 'Contrarian (accumula sui crolli)'
 
 export const MESI = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'] as const
 export type Mese = typeof MESI[number]

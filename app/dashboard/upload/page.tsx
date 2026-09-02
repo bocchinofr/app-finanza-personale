@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { parseMovimentiSheet } from '@/lib/parseXlsx'
-import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv } from '@/lib/parseGoogleSheet'
+import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv, parseFondoPensioneCsv } from '@/lib/parseGoogleSheet'
 import { Movimento } from '@/types'
 
 type Status = 'idle' | 'fetching' | 'parsing' | 'saving' | 'done' | 'error'
@@ -125,24 +125,93 @@ export default function UploadPage() {
         }
       } catch { /* opzionale */ }
 
+      let fondoPensioneCount = 0
+      try {
+        setMessage('Lettura fondo pensione…')
+        const rowsFondo = await fetchSheet(sheetId, 'Fondo Pensione')
+        const fondoPensione = parseFondoPensioneCsv(rowsFondo)
+        if (fondoPensione.length > 0) {
+          await supabase.from('fondo_pensione').delete().eq('user_id', user.id).eq('anno', anno)
+          const rows = fondoPensione.map(f => ({ ...f, user_id: user.id }))
+          const { error } = await supabase.from('fondo_pensione').insert(rows)
+          if (error) throw error
+          fondoPensioneCount = fondoPensione.length
+        }
+      } catch { /* opzionale: foglio non presente per chi non ha un fondo pensione */ }
+
       let portafoglioCount = 0
       try {
         setMessage('Lettura portafoglio…')
         const rowsPort = await fetchSheet(sheetId, 'Anagrafica Portafoglio')
         const portafoglio = parsePortafoglioCsv(rowsPort)
         if (portafoglio.length > 0) {
-          await supabase.from('portafoglio').delete().eq('user_id', user.id)
-          const rows = portafoglio.map(p => ({ ...p, user_id: user.id }))
-          const { error } = await supabase.from('portafoglio').insert(rows)
-          if (error) throw error
+          // Upsert manuale per ticker (non tramite ON CONFLICT: l'indice unique su
+          // (user_id, ticker) è parziale — WHERE ticker IS NOT NULL AND ticker <> '' —
+          // e Postgres non lo usa come bersaglio di ON CONFLICT senza ripetere la
+          // stessa clausola WHERE, cosa che il client Supabase non permette di fare).
+          // Aggiorna solo i campi di anagrafica (dal foglio), senza mai toccare
+          // quantita_attuale/prezzo_carico_attuale se già presenti — quei campi sono
+          // di competenza della riconciliazione in app.
+          const rows = portafoglio
+            .filter(p => p.ticker) // serve un ticker per la chiave stabile
+            .map(p => ({ ...p, user_id: user.id }))
+
+          const { data: esistenti, error: errSelect } = await supabase
+            .from('portafoglio')
+            .select('id, ticker')
+            .eq('user_id', user.id)
+          if (errSelect) throw errSelect
+          const idPerTicker = new Map((esistenti ?? []).map(r => [r.ticker, r.id]))
+
+          for (const riga of rows) {
+            const idEsistente = idPerTicker.get(riga.ticker)
+            if (idEsistente) {
+              const { error } = await supabase.from('portafoglio').update(riga).eq('id', idEsistente)
+              if (error) throw error
+            } else {
+              // La colonna quantita_attuale ha un default a 0 sul database: lo
+              // forziamo esplicitamente a null in inserimento, altrimenti "0"
+              // verrebbe trattato come già inizializzato e l'anagrafica (quantita)
+              // non verrebbe mai usata per il calcolo dello stato attuale.
+              const { error } = await supabase.from('portafoglio').insert({
+                ...riga,
+                quantita_attuale: null,
+                prezzo_carico_attuale: null,
+              })
+              if (error) throw error
+            }
+          }
+
+          // Inizializza lo stato attuale (quantita_attuale/prezzo_carico_attuale)
+          // solo per gli asset appena creati dal sync, senza toccare quelli
+          // già riconciliati in precedenza. Va fatto riga per riga perché il
+          // valore iniziale dipende dai dati anagrafici di ciascun asset.
+          const { data: righeSenzaStato } = await supabase
+            .from('portafoglio')
+            .select('id, ticker, prezzo_acquisto, quantita')
+            .eq('user_id', user.id)
+            .is('quantita_attuale', null)
+          if (righeSenzaStato && righeSenzaStato.length > 0) {
+            for (const r of righeSenzaStato) {
+              await supabase.from('portafoglio').update({
+                quantita_attuale: r.quantita,
+                prezzo_carico_attuale: r.prezzo_acquisto,
+              }).eq('id', r.id)
+            }
+          }
           portafoglioCount = portafoglio.length
         }
-      } catch { /* opzionale */ }
+      } catch (err: unknown) {
+        setStatus('error')
+        setMessage(`Errore salvataggio portafoglio: ${err instanceof Error ? err.message : 'errore sconosciuto'}`)
+        return
+      }
 
       setStatus('done')
       setMessage(
         `✓ Sincronizzazione completata — ${movimenti.length} movimenti` +
         (liquiditaCount > 0 ? `, ${liquiditaCount} righe liquidità` : '') +
+        (fondoPensioneCount > 0 ? `, ${fondoPensioneCount} righe fondo pensione` : '') +
         (portafoglioCount > 0 ? `, ${portafoglioCount} asset portafoglio` : '')
       )
     } catch (err: unknown) {
@@ -160,6 +229,7 @@ export default function UploadPage() {
       if (!user) throw new Error('Non autenticato')
       await supabase.from('movimenti').delete().eq('user_id', user.id).eq('anno', anno)
       await supabase.from('liquidita').delete().eq('user_id', user.id).eq('anno', anno)
+      await supabase.from('fondo_pensione').delete().eq('user_id', user.id).eq('anno', anno)
       setStatus('done')
       setMessage(`✓ Dati del ${anno} cancellati.`)
     } catch (err: unknown) {

@@ -1,0 +1,17 @@
+name: Snapshot patrimonio mensile
+
+on:
+  schedule:
+    # Giorno 1 di ogni mese, ore 06:00 UTC
+    - cron: '0 6 1 * *'
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chiama endpoint snapshot
+        run: |
+          curl -sf -X GET "${{ secrets.APP_URL }}/api/snapshot-patrimonio" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_BYPASS_SECRET }}"

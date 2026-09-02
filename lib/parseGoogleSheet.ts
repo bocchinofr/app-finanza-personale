@@ -113,7 +113,8 @@ export function parseMovimentiCsv(rows: string[][], anno: number): Movimento[] {
 // ============================================================
 // Parser foglio Liquidità
 // ============================================================
-import { Liquidita, AssetPortafoglio } from '@/types'
+import { Liquidita, AssetPortafoglio, FondoPensione } from '@/types'
+
 
 export function parseLiquiditaCsv(rows: string[][]): Liquidita[] {
   if (rows.length < 2) return []
@@ -143,6 +144,44 @@ export function parseLiquiditaCsv(rows: string[][]): Liquidita[] {
     if (!anno || !mese || !conto) continue
 
     result.push({ anno, mese, conto, saldo })
+  }
+
+  return result
+}
+
+export function parseFondoPensioneCsv(rows: string[][]): FondoPensione[] {
+  if (rows.length < 2) return []
+
+  const headerIdx = findHeaderRow(rows, ['ANNO', 'MESE', 'FONDO', 'SALDO'])
+  if (headerIdx === -1) return []
+
+  const header = rows[headerIdx].map(h => (h ?? '').trim().toUpperCase())
+  const col = (name: string) => header.indexOf(name)
+
+  const iAnno      = col('ANNO')
+  const iMese      = col('MESE')
+  const iFondo     = col('FONDO')
+  const iSaldo     = col('SALDO')
+  const iInteressi = col('INTERESSI')
+
+  const result: FondoPensione[] = []
+
+  for (let r = headerIdx + 1; r < rows.length; r++) {
+    const row = rows[r]
+    if (!row) continue
+
+    const anno = parseInt(row[iAnno] ?? '')
+    const mese = (row[iMese] ?? '').toLowerCase().trim()
+    const fondo = (row[iFondo] ?? '').trim()
+    const saldo = parseAmt(row[iSaldo] ?? '')
+    const interessiRaw = (row[iInteressi] ?? '').trim()
+    const interessi = interessiRaw
+      ? (parseFloat(interessiRaw.replace(',', '.').replace(/[^\d.-]/g, '')) || 0)
+      : 0
+
+    if (!anno || !mese || !fondo) continue
+
+    result.push({ anno, mese, fondo, saldo, interessi })
   }
 
   return result

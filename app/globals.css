@@ -4,6 +4,8 @@
 
 @layer base {
   * { box-sizing: border-box; }
+  html { font-size: 118%; }
+  html, body { overflow-x: hidden; }
   body { font-family: var(--font-inter), system-ui, sans-serif; }
 }
 
@@ -17,7 +19,7 @@
            hover:bg-surface-50 active:scale-95 transition-all;
   }
   .card {
-    @apply bg-white rounded-xl border border-surface-200 p-5;
+    @apply bg-white rounded-lg border border-surface-200 p-5;
   }
   .input {
     @apply w-full border border-surface-200 rounded-lg px-3 py-2 text-sm
@@ -29,5 +31,9 @@
   }
   .table-td {
     @apply px-3 py-2 text-sm text-gray-700 border-b border-surface-100;
+  }
+  /* Numeri "in vista" (hero, KPI, totali): serif per dare peso editoriale ai valori chiave */
+  .num-display {
+    @apply font-serif;
   }
 }

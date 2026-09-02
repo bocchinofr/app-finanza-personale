@@ -207,14 +207,10 @@ export default function ProfiloPage() {
 
     let riskScore = null
     let riskLabelFinal = null
-    let behaviorScoreFinal = null
-    let behaviorLabelFinal = null
     if (Object.keys(riskAnswers).length === RISK_QUESTIONS.length) {
       const result = calculateRiskProfile()
       riskScore = result.score
       riskLabelFinal = result.label
-      behaviorScoreFinal = result.behaviorScore
-      behaviorLabelFinal = result.behaviorLabel
     }
 
     setSaving(true)
@@ -236,8 +232,6 @@ export default function ProfiloPage() {
           risk_answers: Object.keys(riskAnswers).length > 0 ? riskAnswers : null,  // aggiunto
           risk_profile_score: riskScore,
           risk_profile_label: riskLabelFinal,
-          behavior_score: behaviorScoreFinal,
-          behavior_label: behaviorLabelFinal,
           updated_at: new Date().toISOString(),
         })
 

@@ -9,9 +9,14 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-    - name: Check keepalive
+    - name: Ping Supabase
       run: |
-        curl -sS \
-          "${{ secrets.SUPABASE_URL }}/rest/v1/keepalive?select=*" \
+        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+        curl -sS -w "\nHTTP_STATUS:%{http_code}\n" \
+          -X PATCH "${{ secrets.SUPABASE_URL }}/rest/v1/keepalive?id=eq.1" \
           -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Content-Type: application/json" \
+          -H "Prefer: return=representation" \
+          -d "{\"last_ping\":\"$TIMESTAMP\"}"

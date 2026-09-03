@@ -18,7 +18,25 @@ const CAT_ENTRATE = new Set(CATEGORIE_ENTRATE)
 
 function parseAmt(v: string): number {
   if (!v) return 0
-  const n = parseFloat(v.replace(',', '.').replace(/[^\d.-]/g, ''))
+  let s = v.trim().replace(/[^\d.,-]/g, '')
+
+  const lastComma = s.lastIndexOf(',')
+  const lastDot = s.lastIndexOf('.')
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    // Entrambi presenti: l'ultimo dei due è il separatore decimale, l'altro è migliaia
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, '').replace(',', '.')
+    } else {
+      s = s.replace(/,/g, '')
+    }
+  } else if (lastComma !== -1) {
+    // Solo virgola: separatore decimale (formato IT)
+    s = s.replace(',', '.')
+  }
+  // Solo punto (o nessuno): già valido come decimale JS
+
+  const n = parseFloat(s)
   return isNaN(n) ? 0 : Math.abs(n)
 }
 
@@ -174,10 +192,7 @@ export function parseFondoPensioneCsv(rows: string[][]): FondoPensione[] {
     const mese = (row[iMese] ?? '').toLowerCase().trim()
     const fondo = (row[iFondo] ?? '').trim()
     const saldo = parseAmt(row[iSaldo] ?? '')
-    const interessiRaw = (row[iInteressi] ?? '').trim()
-    const interessi = interessiRaw
-      ? (parseFloat(interessiRaw.replace(',', '.').replace(/[^\d.-]/g, '')) || 0)
-      : 0
+    const interessi = parseAmt(row[iInteressi] ?? '')
 
     if (!anno || !mese || !fondo) continue
 

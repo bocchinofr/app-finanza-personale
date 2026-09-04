@@ -47,19 +47,19 @@ const PIE_COLORS = [
 const HEAT_COLORS: Record<'green' | 'red' | 'blue' | 'amber', { light: string; dark: string; textLight: string; textDark: string }> = {
   green: {
     light: '#f4f7ef',   // quasi trasparente sulla carta (min)
-    dark: '#7ca881',    // verde salvia pieno (max) — brand-700
+    dark: '#a5d0aa',    // verde salvia pieno (max) — brand-700
     textLight: '#3f6b4f',
     textDark: '#162b19',
   },
   red: {
     light: '#faf4f2',
-    dark: '#db8474',    // terracotta, coerente con la palette "uscite" scelta nel prototipo
+    dark: '#e09b8f',    // terracotta, coerente con la palette "uscite" scelta nel prototipo
     textLight: '#af4b3a',
     textDark: '#5c2419',
   },
   blue: {
     light: '#eef2f6',
-    dark: '#7a9cc7',    // blu ardesia — accent2, usato per gli investimenti
+    dark: '#8da6c6',    // blu ardesia — accent2, usato per gli investimenti
     textLight: '#3c5a82',
     textDark: '#22374f',
   },

@@ -47,13 +47,13 @@ const PIE_COLORS = [
 const HEAT_COLORS: Record<'green' | 'red' | 'blue' | 'amber', { light: string; dark: string; textLight: string; textDark: string }> = {
   green: {
     light: '#f4f7ef',   // quasi trasparente sulla carta (min)
-    dark: '#a5d0aa',    // verde salvia pieno (max) — brand-700
+    dark: '#afe0b4',    // verde salvia pieno (max) — brand-700
     textLight: '#3f6b4f',
     textDark: '#162b19',
   },
   red: {
     light: '#faf4f2',
-    dark: '#e09b8f',    // terracotta, coerente con la palette "uscite" scelta nel prototipo
+    dark: '#d5a39a',    // terracotta, coerente con la palette "uscite" scelta nel prototipo
     textLight: '#af4b3a',
     textDark: '#5c2419',
   },
@@ -96,8 +96,8 @@ function HeatCell({ value, max, palette, format }: {
     );
   }
 
-  // Soglia: non colorare se inferiore al 15% del massimo (personalizzabile)
-  const THRESHOLD = 0.25;
+  // Soglia: non colorare se inferiore al x% del massimo (personalizzabile)
+  const THRESHOLD = 0.45;
   if (value < THRESHOLD * max) {
     return (
       <td className="text-center p-1">

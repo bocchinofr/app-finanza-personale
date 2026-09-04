@@ -96,6 +96,16 @@ function HeatCell({ value, max, palette, format }: {
     );
   }
 
+  // Soglia: non colorare se inferiore al 15% del massimo (personalizzabile)
+  const THRESHOLD = 0.25;
+  if (value < THRESHOLD * max) {
+    return (
+      <td className="text-center p-1">
+        <div className="bg-surface-50 text-gray-400 py-2 rounded-lg text-xs">{format(value)}</div>
+      </td>
+    );
+  }
+
   const min = 1;
   const clampedMax = Math.max(max, min + 1); // evita divisione per 0 se max <= 1
   const t = (value - min) / (clampedMax - min); // 0 → 1

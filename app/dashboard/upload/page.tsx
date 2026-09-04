@@ -79,9 +79,59 @@ export default function UploadPage() {
     }
   }
 
-  async function saveMovimenti(movimenti: Movimento[], userId: string) {
-    await supabase.from('movimenti').delete().eq('user_id', userId).eq('anno', anno)
-    const rows = movimenti.map(m => ({ ...m, user_id: userId }))
+  // Chiave "naturale" di un movimento, usata per riconoscere la stessa riga tra
+  // un sync e l'altro senza affidarsi all'id. Non include mese/componente perché
+  // derivati da data_operazione/categoria e quindi ridondanti.
+  function chiaveMovimento(m: Movimento): string {
+    const round2 = (n: number) => Math.round((n || 0) * 100) / 100
+    return [
+      (m.data_operazione || '').trim(),
+      (m.descrizione || '').trim().toUpperCase(),
+      round2(m.entrate),
+      round2(m.uscite),
+      (m.categoria || '').trim().toUpperCase(),
+      (m.nome_etf || '').trim().toUpperCase(),
+    ].join('|')
+  }
+
+  // Sync "a diff" invece di delete+insert: le righe già presenti (stessa chiave
+  // naturale) non vengono toccate, così restano intatti riconciliato/portafoglio_id
+  // per i movimenti già gestiti. Si inseriscono solo le righe nuove del foglio e si
+  // eliminano solo quelle non più presenti nel foglio.
+  async function saveMovimenti(movimentiFoglio: Movimento[], userId: string) {
+    const { data: esistenti, error: errSelect } = await supabase
+      .from('movimenti').select('*').eq('user_id', userId).eq('anno', anno)
+    if (errSelect) throw errSelect
+
+    const esistentiPerChiave = new Map<string, Movimento[]>()
+    for (const m of (esistenti ?? []) as Movimento[]) {
+      const k = chiaveMovimento(m)
+      const arr = esistentiPerChiave.get(k) ?? []
+      arr.push(m)
+      esistentiPerChiave.set(k, arr)
+    }
+
+    const daInserire: Movimento[] = []
+    for (const m of movimentiFoglio) {
+      const k = chiaveMovimento(m)
+      const arr = esistentiPerChiave.get(k)
+      if (arr && arr.length > 0) {
+        arr.shift() // già presente in DB con la stessa chiave: non toccarla
+      } else {
+        daInserire.push(m)
+      }
+    }
+
+    // Ciò che resta nella mappa non è più presente nel foglio: rimosso.
+    const daEliminare: string[] = []
+    for (const arr of esistentiPerChiave.values()) {
+      for (const r of arr) if (r.id) daEliminare.push(r.id)
+    }
+    if (daEliminare.length > 0) {
+      await supabase.from('movimenti').delete().in('id', daEliminare)
+    }
+
+    const rows = daInserire.map(m => ({ ...m, user_id: userId }))
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await supabase.from('movimenti').insert(rows.slice(i, i + 500))
       if (error) throw error

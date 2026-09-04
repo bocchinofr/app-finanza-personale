@@ -232,23 +232,6 @@ export default function UploadPage() {
             }
           }
 
-          // Inizializza lo stato attuale (quantita_attuale/prezzo_carico_attuale)
-          // solo per gli asset appena creati dal sync, senza toccare quelli
-          // già riconciliati in precedenza. Va fatto riga per riga perché il
-          // valore iniziale dipende dai dati anagrafici di ciascun asset.
-          const { data: righeSenzaStato } = await supabase
-            .from('portafoglio')
-            .select('id, ticker, prezzo_acquisto, quantita')
-            .eq('user_id', user.id)
-            .is('quantita_attuale', null)
-          if (righeSenzaStato && righeSenzaStato.length > 0) {
-            for (const r of righeSenzaStato) {
-              await supabase.from('portafoglio').update({
-                quantita_attuale: r.quantita,
-                prezzo_carico_attuale: r.prezzo_acquisto,
-              }).eq('id', r.id)
-            }
-          }
           portafoglioCount = portafoglio.length
         }
       } catch (err: unknown) {

@@ -202,6 +202,14 @@ export function parseFondoPensioneCsv(rows: string[][]): FondoPensione[] {
   return result
 }
 
+function parseClasseRischio(val: string): 'azionario' | 'obbligazionario' | 'altro' | null {
+  const v = val.trim().toLowerCase()
+  if (v.startsWith('azion')) return 'azionario'
+  if (v.startsWith('obblig')) return 'obbligazionario'
+  if (v.startsWith('altro')) return 'altro'
+  return null
+}
+
 // ============================================================
 // Parser foglio Anagrafica Portafoglio
 // ============================================================
@@ -222,8 +230,8 @@ export function parsePortafoglioCsv(rows: string[][]): AssetPortafoglio[] {
   const iData    = col('DATA ACQUISTO')
   const iPrezzo  = col('PREZZO ACQUISTO')
   const iQta     = col('QUANTITÀ') !== -1 ? col('QUANTITÀ') : col('QUANTITA')
-  const iPac     = col('PAC (S/N)') !== -1 ? col('PAC (S/N)') : col('PAC')
-  const iPacVers = col('PAC VERSAMENTO')
+  const iClasse  = col('CLASSE')
+  const iSvinc   = col('SVINCOLATO')
 
   const result: AssetPortafoglio[] = []
 
@@ -243,8 +251,8 @@ export function parsePortafoglioCsv(rows: string[][]): AssetPortafoglio[] {
       data_acquisto: parseDate(row[iData] ?? ''),
       prezzo_acquisto: parseAmt(row[iPrezzo] ?? ''),
       quantita: parseAmt(row[iQta] ?? ''),
-      pac: (row[iPac] ?? '').trim().toUpperCase() === 'S',
-      pac_versamento: parseAmt(row[iPacVers] ?? ''),
+      classe_rischio: parseClasseRischio(row[iClasse] ?? ''),
+      svincolato: (row[iSvinc] ?? '').trim().toUpperCase() === 'S',
     })
   }
 

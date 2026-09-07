@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MESI, statoAttuale } from '@/types'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
@@ -15,6 +15,18 @@ import {
 const MESI_LABEL: Record<string, string> = {
   gen:'Gen',feb:'Feb',mar:'Mar',apr:'Apr',mag:'Mag',giu:'Giu',
   lug:'Lug',ago:'Ago',set:'Set',ott:'Ott',nov:'Nov',dic:'Dic'
+}
+
+const CLASSE_LABEL: Record<'azionario' | 'obbligazionario' | 'altro', string> = {
+  azionario: 'Azionario', obbligazionario: 'Obbligazionario', altro: 'Altro'
+}
+const CLASSE_BADGE: Record<'azionario' | 'obbligazionario' | 'altro', string> = {
+  azionario: 'bg-[#3f6b4f]/10 text-[#3f6b4f]',
+  obbligazionario: 'bg-[#4a6fa1]/10 text-[#4a6fa1]',
+  altro: 'bg-[#a67c3d]/10 text-[#a67c3d]',
+}
+const CLASSE_COLOR: Record<'azionario' | 'obbligazionario' | 'altro' | 'non classificato', string> = {
+  azionario: '#3f6b4f', obbligazionario: '#4a6fa1', altro: '#a67c3d', 'non classificato': '#c9c9b8'
 }
 
 const CATEGORIE_ENTRATE = new Set([
@@ -174,6 +186,47 @@ export default function DashboardPage() {
   function toggleSection(key: keyof typeof openSection) {
     setOpenSection(prev => ({ ...prev, [key]: !prev[key] }))
   }
+
+  // Valore attuale di ogni asset (fallback al valore di carico se manca la quotazione live)
+  const assetValori = useMemo(() => {
+    return portafoglio.map(a => {
+      const { quantita: qtaAttuale, prezzoCarico } = statoAttuale(a)
+      const quote = a.ticker ? prezziAttuali[a.ticker] : undefined
+      const prezzoAtt = quote?.price ?? prezzoCarico
+      return { asset: a, valore: prezzoAtt * qtaAttuale }
+    }).filter(v => v.valore > 0)
+  }, [portafoglio, prezziAttuali])
+
+  const totaleValori = useMemo(() => assetValori.reduce((s, v) => s + v.valore, 0), [assetValori])
+
+  // Allocazione per classe (donut)
+  const allocazioneClasse = useMemo(() => {
+    const gruppi: Record<'azionario' | 'obbligazionario' | 'altro' | 'non classificato', number> = {
+      azionario: 0, obbligazionario: 0, altro: 0, 'non classificato': 0,
+    }
+    for (const { asset, valore } of assetValori) {
+      const key = asset.classe_rischio ?? 'non classificato'
+      gruppi[key] += valore
+    }
+    return (Object.entries(gruppi) as [keyof typeof gruppi, number][])
+      .filter(([, value]) => value > 0)
+      .map(([key, value]) => ({
+        name: key === 'non classificato' ? 'Non classificato' : CLASSE_LABEL[key],
+        value,
+        color: CLASSE_COLOR[key],
+      }))
+  }, [assetValori])
+
+  // Peso % di ogni asset sul totale investito (barre)
+  const pesoAsset = useMemo(() => {
+    return assetValori
+      .map(({ asset, valore }) => ({
+        nome: asset.nome || asset.asset,
+        peso: totaleValori > 0 ? (valore / totaleValori) * 100 : 0,
+      }))
+      .sort((a, b) => b.peso - a.peso)
+      .slice(0, 12)
+  }, [assetValori, totaleValori])
 
   // Filters
   const [filterComponente, setFilterComponente] = useState('')
@@ -864,6 +917,39 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
+          {/* Liquidità per conto nel tempo */}
+          {liquidita.length > 0 && (
+            <div className="card mb-6">
+              <p className="num-display text-sm font-semibold text-gray-900">Andamento liquidità per conto</p>
+              <p className="text-xs text-gray-400 mt-0.5 mb-4">Saldo mensile per conto</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart
+                  data={mesiPresenti.map(m => {
+                    const row: Record<string, number | string> = { mese: MESI_LABEL[m] }
+                    const conti = [...new Set(liquidita.map(l => l.conto))]
+                    conti.forEach(c => {
+                      row[c] = liquidita.find(l => l.mese === m && l.conto === c)?.saldo ?? 0
+                    })
+                    return row
+                  })}
+                  margin={{ top: 4, right: 16, bottom: 4, left: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
+                  <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
+                  <Tooltip formatter={(v: number) => fmtK(v)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {[...new Set(liquidita.map(l => l.conto))].map((conto, i) => (
+                    <Area key={conto} type="monotone" dataKey={conto}
+                      stroke={PIE_COLORS[i % PIE_COLORS.length]}
+                      fill={PIE_COLORS[i % PIE_COLORS.length]}
+                      fillOpacity={0.15} strokeWidth={2} />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           {/* Heatmap */}
           <div className="card p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
@@ -1331,6 +1417,49 @@ export default function DashboardPage() {
                 )
               })()}
 
+              {/* Grafici allocazione portafoglio */}
+              {assetValori.length > 0 && (
+                <div className="card p-4 mt-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per classe</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie
+                            data={allocazioneClasse}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={2}
+                          >
+                            {allocazioneClasse.map((d, i) => (
+                              <Cell key={i} fill={d.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => fmtK(v)} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
+                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
+                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
+                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
+                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                          <Bar dataKey="peso" fill="#3f6b4f" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Tabella asset con gestione soglie integrata */}
               <div className="card p-0 overflow-hidden mt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
@@ -1393,11 +1522,10 @@ export default function DashboardPage() {
                         <th className="table-th w-28 text-right">Valore carico</th>
                         <th className="table-th w-28 text-right">Valore att.</th>
                         <th className="table-th w-24 text-right">+/–</th>
-                        <th className="table-th w-10 text-center">PAC</th>
-                        <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo storico">Max %</th>
-                        <th className="table-th w-14 px-1 text-center" title="Soglia di scostamento dal massimo mensile">Mese %</th>
                         <th className="table-th w-28 text-center">Classe</th>
                         <th className="table-th w-24 text-center">Svincolato</th>
+                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
+                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1463,8 +1591,21 @@ export default function DashboardPage() {
                             <td className={`table-td text-right text-xs font-medium tabular-nums ${pm ? (pm >= 0 ? 'text-green-700' : 'text-red-600') : ''}`}>
                               {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
                             </td>
-                            <td className="table-td text-center text-xs">{a.pac ? '✓' : ''}</td>
                             <td className="table-td text-center px-1">
+                              {a.classe_rischio ? (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${CLASSE_BADGE[a.classe_rischio]}`}>
+                                  {CLASSE_LABEL[a.classe_rischio]}
+                                </span>
+                              ) : <span className="text-gray-300 text-xs">–</span>}
+                            </td>
+                            <td className="table-td text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                {a.svincolato ? 'Sì' : 'No'}
+                              </span>
+                            </td>
+                            <td className="table-td text-center px-1 bg-amber-50/40">
                               {showSoglieForm && a.id ? (
                                 <div className="flex items-center justify-center gap-1">
                                   <input type="number" min={0} step={0.5}
@@ -1480,7 +1621,7 @@ export default function DashboardPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="table-td text-center px-1">
+                            <td className="table-td text-center px-1 bg-amber-50/40">
                               {showSoglieForm && a.id ? (
                                 <input type="number" min={0} step={0.5}
                                   value={dSoglia?.mensile ?? globalSogliaMese}
@@ -1491,37 +1632,6 @@ export default function DashboardPage() {
                                   {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
                                 </span>
                               )}
-                            </td>
-                            <td className="table-td text-center px-1">
-                              <select
-                                value={a.classe_rischio ?? ''}
-                                onChange={async e => {
-                                  if (!a.id) return
-                                  const val = e.target.value as 'azionario' | 'obbligazionario' | 'altro' | ''
-                                  await supabase.from('portafoglio').update({ classe_rischio: val || null }).eq('id', a.id)
-                                  loadData()
-                                }}
-                                className="rounded-md border border-surface-200 text-xs py-1 px-1 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                              >
-                                <option value="">–</option>
-                                <option value="azionario">Azionario</option>
-                                <option value="obbligazionario">Obbligazionario</option>
-                                <option value="altro">Altro</option>
-                              </select>
-                            </td>
-                            <td className="table-td text-center">
-                              <button
-                                onClick={async () => {
-                                  if (!a.id) return
-                                  await supabase.from('portafoglio').update({ svincolato: !a.svincolato }).eq('id', a.id)
-                                  loadData()
-                                }}
-                                className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                                  a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
-                                }`}
-                              >
-                                {a.svincolato ? 'Sì' : 'No'}
-                              </button>
                             </td>
                           </tr>
                         )

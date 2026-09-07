@@ -46,8 +46,6 @@ export interface AssetPortafoglio {
   data_acquisto: string
   prezzo_acquisto: number
   quantita: number
-  pac: boolean
-  pac_versamento: number
   // Stato attuale gestito dall'app (mai sovrascritto dal sync col foglio Google
   // dopo la prima inizializzazione). Fallback ai campi "anagrafica" sopra
   // finché non c'è stata almeno una riconciliazione.
@@ -55,10 +53,12 @@ export interface AssetPortafoglio {
   prezzo_carico_attuale?: number | null
   ultimo_aggiornamento_at?: string | null
   // Classificazione per il rapporto azionario/obbligazionario e per la
-  // riserva di accumulo. Nullo finché l'utente non lo imposta.
+  // riserva di accumulo. Campo anagrafico: proviene dal foglio Google
+  // (colonna "Classe") e viene sovrascritto ad ogni sync.
   classe_rischio?: 'azionario' | 'obbligazionario' | 'altro' | null
   // Capitale "libero": se true, il valore attuale dell'asset concorre
   // al calcolo del capitale disponibile per accumulo sui crolli.
+  // Campo anagrafico: proviene dal foglio Google (colonna "Svincolato").
   svincolato?: boolean
 }
 

@@ -141,6 +141,13 @@ export default function PatrimonioPage() {
   const carico = assetInvestiti.reduce((sum, a) => sum + valoreCarico(a), 0)
   const plusMinusInvestimenti = capitaleInvestito - carico
 
+  // Ticker per cui la quotazione live non è disponibile: valoreMercato ricade
+  // sul prezzo di carico (plus/minus = 0 per quell'asset), quindi il totale
+  // può risultare più basso del reale se una o più quotazioni non arrivano.
+  const tickerSenzaPrezzoLive = [...new Set(
+    assetInvestiti.filter(a => a.ticker && prezziAttuali[a.ticker] == null).map(a => a.ticker)
+  )]
+
   // Fondo pensione: somma saldi/interessi di tutti i fondi nell'ultimo mese valorizzato
   const mesiConFondo = [...new Set(fondoPensione.map(f => f.mese))]
   const ultimoMeseFondo = MESI.filter(m => mesiConFondo.includes(m)).pop()
@@ -205,6 +212,15 @@ export default function PatrimonioPage() {
     ? (plusMinusInvestPerMese.get(mesePrecCapitale) ?? 0) + (interessiFondoMesePrec ?? 0)
     : null
   const deltaPlusMinus = delta(plusMinus, plusMinusPrec)
+
+  // Patrimonio totale: liquidità + capitale investito (mercato) + fondo pensione.
+  // Il plus/minus non si somma a parte: è già incluso nel valore di mercato del
+  // capitale investito, sommarlo di nuovo sarebbe un doppio conteggio.
+  const patrimonioTotale = liquiditaTotale + capitaleInvestito + fondoPensioneTotale
+  const deltaPatrimonioTotale =
+    deltaLiquidita && deltaCapitale && deltaFondo
+      ? delta(patrimonioTotale, patrimonioTotale - (deltaLiquidita.value + deltaCapitale.value + deltaFondo.value))
+      : null
 
   // ===== Storico mensile a pile: Liquidità / Capitale investito / Fondo pensione =====
   // Capitale investito: ricostruito asset per asset a partire dall'anagrafica.
@@ -338,6 +354,19 @@ export default function PatrimonioPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="card flex flex-col gap-1 mb-3">
+        <p className="text-xs text-gray-500">Patrimonio totale</p>
+        <p className="num-display text-3xl font-semibold text-gray-900">{fmtEuro(patrimonioTotale)}</p>
+        {deltaPatrimonioTotale !== null ? (
+          <p className={`text-xs font-medium ${deltaPatrimonioTotale.value >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+            {deltaPatrimonioTotale.value >= 0 ? '+' : ''}{fmtEuro(deltaPatrimonioTotale.value)}
+            {deltaPatrimonioTotale.pct != null && ` (${deltaPatrimonioTotale.pct >= 0 ? '+' : ''}${deltaPatrimonioTotale.pct.toFixed(1)}%)`} ultimo mese
+          </p>
+        ) : (
+          <p className="text-xs text-gray-300">N/D ultimo mese</p>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         <KpiCard
           label="Liquidità totale"
@@ -347,7 +376,14 @@ export default function PatrimonioPage() {
         <KpiCard
           label="Capitale investito"
           value={fmtEuro(capitaleInvestito)}
-          sub={<p className="text-xs text-gray-400">Valore di mercato</p>}
+          sub={
+            <p className="text-xs text-gray-400">
+              Valore di mercato
+              {tickerSenzaPrezzoLive.length > 0 && (
+                <span className="text-amber-600"> · quotazione non disp.: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</span>
+              )}
+            </p>
+          }
           delta={deltaCapitale}
         />
         <KpiCard

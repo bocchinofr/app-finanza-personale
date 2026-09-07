@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase'
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
-import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, statoAttuale } from '@/types'
+import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, type Mese, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
 
 const MESI_LABEL: Record<string, string> = {
@@ -157,9 +157,9 @@ export default function PatrimonioPage() {
   const fondoPensionePct = fondoPensioneTotale > 0 ? (fondoPensioneInteressi / fondoPensioneTotale) * 100 : 0
 
   // ===== Variazioni vs mese precedente (per le KPI card) =====
-  const mesePrecedente = (mese: string | undefined | null): string | null => {
+  const mesePrecedente = (mese: Mese | undefined | null): Mese | null => {
     if (!mese) return null
-    const idx = MESI.indexOf(mese as any)
+    const idx = MESI.indexOf(mese)
     return idx > 0 ? MESI[idx - 1] : null
   }
   const delta = (attuale: number, precedente: number | null) =>

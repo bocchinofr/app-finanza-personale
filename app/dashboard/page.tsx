@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
@@ -23,8 +23,14 @@ function fmtEuro(n: number) {
 }
 
 function KpiCard({
-  label, value, sub, tone = 'neutral',
-}: { label: string; value: string; sub?: string; tone?: 'neutral' | 'positive' | 'negative' }) {
+  label, value, sub, tone = 'neutral', delta,
+}: {
+  label: string
+  value: string
+  sub?: ReactNode
+  tone?: 'neutral' | 'positive' | 'negative'
+  delta?: { value: number; pct: number | null } | null
+}) {
   const toneClass =
     tone === 'positive' ? 'text-green-700' :
     tone === 'negative' ? 'text-red-700' :
@@ -34,7 +40,17 @@ function KpiCard({
     <div className="card flex flex-col gap-1">
       <p className="text-xs text-gray-500">{label}</p>
       <p className={`num-display text-2xl font-semibold ${toneClass}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400">{sub}</p>}
+      {sub}
+      {delta !== undefined && (
+        delta === null ? (
+          <p className="text-xs text-gray-300">N/D ultimo mese</p>
+        ) : (
+          <p className={`text-xs font-medium ${delta.value >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+            {delta.value >= 0 ? '+' : ''}{fmtEuro(delta.value)}
+            {delta.pct != null && ` (${delta.pct >= 0 ? '+' : ''}${delta.pct.toFixed(1)}%)`} ultimo mese
+          </p>
+        )
+      )}
     </div>
   )
 }
@@ -47,7 +63,7 @@ export default function PatrimonioPage() {
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [fondoPensione, setFondoPensione] = useState<FondoPensione[]>([])
-  const [portafoglioStorico, setPortafoglioStorico] = useState<{ mese: string; plus_minus: number }[]>([])
+  const [portafoglioStorico, setPortafoglioStorico] = useState<{ mese: string; plus_minus: number; valore_mercato: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
   const [vistaPercentuale, setVistaPercentuale] = useState(false)
 
@@ -62,7 +78,7 @@ export default function PatrimonioPage() {
         supabase.from('portafoglio').select('*').eq('user_id', user.id),
         supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno).eq('categoria', 'INVESTIMENTI'),
         supabase.from('fondo_pensione').select('*').eq('user_id', user.id).eq('anno', anno),
-        supabase.from('portafoglio_storico').select('mese, plus_minus').eq('user_id', user.id).eq('anno', anno),
+        supabase.from('portafoglio_storico').select('mese, plus_minus, valore_mercato').eq('user_id', user.id).eq('anno', anno),
       ])
       if (cancelled) return
       setLiquidita(liqRes.data ?? [])
@@ -138,6 +154,57 @@ export default function PatrimonioPage() {
   // KPI "Plus/minus": somma investimenti (mercato - carico) + interessi fondo pensione
   const plusMinus = plusMinusInvestimenti + fondoPensioneInteressi
   const plusMinusPct = carico > 0 ? (plusMinusInvestimenti / carico) * 100 : 0
+  const fondoPensionePct = fondoPensioneTotale > 0 ? (fondoPensioneInteressi / fondoPensioneTotale) * 100 : 0
+
+  // ===== Variazioni vs mese precedente (per le KPI card) =====
+  const mesePrecedente = (mese: string | undefined | null): string | null => {
+    if (!mese) return null
+    const idx = MESI.indexOf(mese as any)
+    return idx > 0 ? MESI[idx - 1] : null
+  }
+  const delta = (attuale: number, precedente: number | null) =>
+    precedente == null ? null : {
+      value: attuale - precedente,
+      pct: precedente !== 0 ? ((attuale - precedente) / Math.abs(precedente)) * 100 : null,
+    }
+
+  // Liquidità: confronto diretto coi saldi del mese precedente
+  const mesePrecLiquidita = mesePrecedente(ultimoMeseLiquidita)
+  const liquiditaPrec = mesePrecLiquidita && mesiConLiquidita.includes(mesePrecLiquidita)
+    ? liquidita.filter(l => l.mese === mesePrecLiquidita).reduce((s, l) => s + (l.saldo ?? 0), 0)
+    : null
+  const deltaLiquidita = delta(liquiditaTotale, liquiditaPrec)
+
+  // Fondo pensione: confronto diretto coi saldi del mese precedente
+  const mesePrecFondo = mesePrecedente(ultimoMeseFondo)
+  const fondoPrec = mesePrecFondo && mesiConFondo.includes(mesePrecFondo)
+    ? fondoPensione.filter(f => f.mese === mesePrecFondo).reduce((s, f) => s + (f.saldo ?? 0), 0)
+    : null
+  const deltaFondo = delta(fondoPensioneTotale, fondoPrec)
+
+  // Capitale investito e Plus/minus: serve lo storico per-asset da "Registra
+  // chiusura mese" (portafoglio_storico), unica fonte con valore di mercato
+  // e plus/minus per mese passato.
+  const mesiConSnapshotArr = MESI.filter(m => portafoglioStorico.some(r => r.mese === m))
+  const ultimoMeseSnapshot = mesiConSnapshotArr[mesiConSnapshotArr.length - 1]
+  const capitaleMercatoPerMese = new Map<string, number>()
+  const plusMinusInvestPerMese = new Map<string, number>()
+  for (const r of portafoglioStorico) {
+    capitaleMercatoPerMese.set(r.mese, (capitaleMercatoPerMese.get(r.mese) ?? 0) + (r.valore_mercato ?? 0))
+    plusMinusInvestPerMese.set(r.mese, (plusMinusInvestPerMese.get(r.mese) ?? 0) + (r.plus_minus ?? 0))
+  }
+
+  const mesePrecCapitale = mesePrecedente(ultimoMeseSnapshot)
+  const capitaleInvestitoPrec = mesePrecCapitale ? capitaleMercatoPerMese.get(mesePrecCapitale) ?? null : null
+  const deltaCapitale = delta(capitaleInvestito, capitaleInvestitoPrec)
+
+  const interessiFondoMesePrec = mesePrecFondo
+    ? fondoPensione.filter(f => f.mese === mesePrecFondo).reduce((s, f) => s + (f.interessi ?? 0), 0)
+    : null
+  const plusMinusPrec = mesePrecCapitale && capitaleInvestitoPrec != null
+    ? (plusMinusInvestPerMese.get(mesePrecCapitale) ?? 0) + (interessiFondoMesePrec ?? 0)
+    : null
+  const deltaPlusMinus = delta(plusMinus, plusMinusPrec)
 
   // ===== Storico mensile a pile: Liquidità / Capitale investito / Fondo pensione =====
   // Capitale investito: ricostruito asset per asset a partire dall'anagrafica.
@@ -272,14 +339,35 @@ export default function PatrimonioPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        <KpiCard label="Liquidità totale" value={fmtEuro(liquiditaTotale)} />
-        <KpiCard label="Capitale investito" value={fmtEuro(capitaleInvestito)} sub="Valore di mercato" />
-        <KpiCard label="Fondo pensione" value={fmtEuro(fondoPensioneTotale)} />
+        <KpiCard
+          label="Liquidità totale"
+          value={fmtEuro(liquiditaTotale)}
+          delta={deltaLiquidita}
+        />
+        <KpiCard
+          label="Capitale investito"
+          value={fmtEuro(capitaleInvestito)}
+          sub={<p className="text-xs text-gray-400">Valore di mercato</p>}
+          delta={deltaCapitale}
+        />
+        <KpiCard
+          label="Fondo pensione"
+          value={fmtEuro(fondoPensioneTotale)}
+          delta={deltaFondo}
+        />
         <KpiCard
           label="Plus/minus non realizzato"
           value={`${plusMinus >= 0 ? '+' : ''}${fmtEuro(plusMinus)}`}
-          sub={`Investimenti ${plusMinusPct >= 0 ? '+' : ''}${plusMinusPct.toFixed(1)}% · include interessi fondo pensione`}
           tone={plusMinus >= 0 ? 'positive' : 'negative'}
+          sub={
+            <p className="text-xs text-gray-400">
+              Fondo pensione {fondoPensioneInteressi >= 0 ? '+' : ''}{fmtEuro(fondoPensioneInteressi)}
+              {' ('}{fondoPensionePct >= 0 ? '+' : ''}{fondoPensionePct.toFixed(1)}%{') · '}
+              Investimenti {plusMinusInvestimenti >= 0 ? '+' : ''}{fmtEuro(plusMinusInvestimenti)}
+              {' ('}{plusMinusPct >= 0 ? '+' : ''}{plusMinusPct.toFixed(1)}%{')'}
+            </p>
+          }
+          delta={deltaPlusMinus}
         />
       </div>
 

@@ -354,20 +354,12 @@ export default function PatrimonioPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="card flex flex-col gap-1 mb-3">
-        <p className="text-xs text-gray-500">Patrimonio totale</p>
-        <p className="num-display text-3xl font-semibold text-gray-900">{fmtEuro(patrimonioTotale)}</p>
-        {deltaPatrimonioTotale !== null ? (
-          <p className={`text-xs font-medium ${deltaPatrimonioTotale.value >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-            {deltaPatrimonioTotale.value >= 0 ? '+' : ''}{fmtEuro(deltaPatrimonioTotale.value)}
-            {deltaPatrimonioTotale.pct != null && ` (${deltaPatrimonioTotale.pct >= 0 ? '+' : ''}${deltaPatrimonioTotale.pct.toFixed(1)}%)`} ultimo mese
-          </p>
-        ) : (
-          <p className="text-xs text-gray-300">N/D ultimo mese</p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
+        <KpiCard
+          label="Patrimonio totale"
+          value={fmtEuro(patrimonioTotale)}
+          delta={deltaPatrimonioTotale}
+        />
         <KpiCard
           label="Liquidità totale"
           value={fmtEuro(liquiditaTotale)}

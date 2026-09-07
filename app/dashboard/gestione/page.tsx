@@ -864,39 +864,6 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Liquidità per conto nel tempo */}
-          {liquidita.length > 0 && (
-            <div className="card mb-6">
-              <p className="num-display text-sm font-semibold text-gray-900">Andamento liquidità per conto</p>
-              <p className="text-xs text-gray-400 mt-0.5 mb-4">Saldo mensile per conto</p>
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart
-                  data={mesiPresenti.map(m => {
-                    const row: Record<string, number | string> = { mese: MESI_LABEL[m] }
-                    const conti = [...new Set(liquidita.map(l => l.conto))]
-                    conti.forEach(c => {
-                      row[c] = liquidita.find(l => l.mese === m && l.conto === c)?.saldo ?? 0
-                    })
-                    return row
-                  })}
-                  margin={{ top: 4, right: 16, bottom: 4, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
-                  <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
-                  <Tooltip formatter={(v: number) => fmtK(v)} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {[...new Set(liquidita.map(l => l.conto))].map((conto, i) => (
-                    <Area key={conto} type="monotone" dataKey={conto}
-                      stroke={PIE_COLORS[i % PIE_COLORS.length]}
-                      fill={PIE_COLORS[i % PIE_COLORS.length]}
-                      fillOpacity={0.15} strokeWidth={2} />
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
           {/* Heatmap */}
           <div className="card p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-4 pb-2">

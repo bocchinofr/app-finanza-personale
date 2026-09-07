@@ -131,7 +131,8 @@ export default function RiservaAccumulo({
       <div className="flex items-center justify-between mb-3">
         <div>
           <p className="text-sm font-semibold text-gray-900">Riserva Accumulo</p>
-          <p className="text-xs text-gray-500">Capitale svincolato disponibile per acquisti sui crolli</p>
+          <p className="text-xs text-gray-500">Utilizzare la sezione per vedere e definire il capitale svincolato, ovvero quel capitale da utilizzare come riserva di accumulo durante i crolli di mercato.</p>
+          <p className="text-xs text-gray-500">Gli asset utilizzabili come riserva sono stati definiti nel file sincronizzato</p>
         </div>
         {conti.length > 0 && (
           <button

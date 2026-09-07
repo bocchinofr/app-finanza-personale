@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
-  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
+  ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
 import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
@@ -255,7 +255,7 @@ export default function PatrimonioPage() {
         <p className="num-display text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
         <p className="text-xs text-gray-400 mb-4">
           Capitale investito: versato cumulato (movimenti Investimento, al netto di eventuali
-          prelievi). Linea plus/minus: rendimento reale da snapshot, più interessi fondo pensione.
+          prelievi). Plus/minus: rendimento reale da snapshot, più interessi fondo pensione.
         </p>
         {storicoData.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>
@@ -265,13 +265,12 @@ export default function PatrimonioPage() {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7d8" />
               <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
               <Tooltip formatter={(v: number) => fmtEuro(v)} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" />
               <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" />
-              <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" radius={[4, 4, 0, 0]} />
-              <Line yAxisId="right" dataKey="Plus/minus" stroke="#3a3a2e" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" />
+              <Bar yAxisId="left" dataKey="Plus/minus" stackId="patrimonio" fill="#c65d3b" radius={[4, 4, 0, 0]} />
             </ComposedChart>
           </ResponsiveContainer>
         )}

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
-  ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
+  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
 import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
@@ -49,6 +49,7 @@ export default function PatrimonioPage() {
   const [fondoPensione, setFondoPensione] = useState<FondoPensione[]>([])
   const [patrimonioStorico, setPatrimonioStorico] = useState<{ mese: string; capitale_investito: number; plus_minus: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
+  const [vistaPercentuale, setVistaPercentuale] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -225,15 +226,40 @@ export default function PatrimonioPage() {
     // per asset da anagrafica + movimenti, mai il valore di mercato dello snapshot.
     const snapshot = storicoPerMese.get(m)
     const capitaleInvestitoMese = capitalePerAssetPerMese.reduce((s, arr) => s + arr[idxMese], 0)
-    const plusMinusMese = (snapshot ? snapshot.plus_minus : 0) + (interessiFondoMese ?? 0)
-    const haValorePlusMinus = snapshot != null || interessiFondoMese != null
+    // Plus/minus considerato solo per i mesi con snapshot investimenti registrato:
+    // senza snapshot la parte investimenti è ignota, quindi il totale resta N/D
+    // (niente fallback a 0, che nasconderebbe il dato mancante).
+    const haValorePlusMinus = snapshot != null
+    const plusMinusMese = haValorePlusMinus ? snapshot!.plus_minus + (interessiFondoMese ?? 0) : null
+
+    const liquiditaRound = Math.round(liquiditaMese)
+    const capitaleRound = Math.round(capitaleInvestitoMese)
+    const fondoRound = Math.round(fondoMese)
+    const plusMinusRound = plusMinusMese != null ? Math.round(plusMinusMese) : null
 
     return {
       mese: MESI_LABEL[m],
-      'Liquidità': Math.round(liquiditaMese),
-      'Capitale investito': Math.round(capitaleInvestitoMese),
-      'Fondo pensione': Math.round(fondoMese),
-      'Plus/minus': haValorePlusMinus ? Math.round(plusMinusMese) : null,
+      'Liquidità': liquiditaRound,
+      'Capitale investito': capitaleRound,
+      'Fondo pensione': fondoRound,
+      'Plus/minus': plusMinusRound,
+      Totale: liquiditaRound + capitaleRound + fondoRound + (plusMinusRound ?? 0),
+    }
+  })
+
+  // Vista percentuale: ogni categoria in % del patrimonio "base" del mese
+  // (liquidità + capitale investito + fondo pensione, plus/minus escluso dal
+  // denominatore perché è una variazione, non una componente di patrimonio).
+  const chartData = storicoData.map(r => {
+    if (!vistaPercentuale) return r
+    const base = r['Liquidità'] + r['Capitale investito'] + r['Fondo pensione']
+    if (base === 0) return { ...r, 'Liquidità': 0, 'Capitale investito': 0, 'Fondo pensione': 0, 'Plus/minus': null }
+    return {
+      ...r,
+      'Liquidità': +(r['Liquidità'] / base * 100).toFixed(1),
+      'Capitale investito': +(r['Capitale investito'] / base * 100).toFixed(1),
+      'Fondo pensione': +(r['Fondo pensione'] / base * 100).toFixed(1),
+      'Plus/minus': r['Plus/minus'] == null ? null : +(r['Plus/minus'] / base * 100).toFixed(1),
     }
   })
 
@@ -252,25 +278,69 @@ export default function PatrimonioPage() {
       </div>
 
       <div className="card">
-        <p className="num-display text-sm font-semibold text-gray-900 mb-1">Andamento patrimonio {anno}</p>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <p className="num-display text-sm font-semibold text-gray-900">Andamento patrimonio {anno}</p>
+          <div className="flex items-center rounded-full bg-surface-100 p-0.5 text-xs shrink-0">
+            <button
+              type="button"
+              onClick={() => setVistaPercentuale(false)}
+              className={`px-2.5 py-1 rounded-full font-medium transition-colors ${
+                !vistaPercentuale ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'
+              }`}
+            >
+              €
+            </button>
+            <button
+              type="button"
+              onClick={() => setVistaPercentuale(true)}
+              className={`px-2.5 py-1 rounded-full font-medium transition-colors ${
+                vistaPercentuale ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'
+              }`}
+            >
+              %
+            </button>
+          </div>
+        </div>
         <p className="text-xs text-gray-400 mb-4">
           Capitale investito: versato cumulato (movimenti Investimento, al netto di eventuali
-          prelievi). Plus/minus: rendimento reale da snapshot, più interessi fondo pensione.
+          prelievi). Plus/minus: rendimento reale da snapshot, più interessi fondo pensione
+          (N/D nei mesi senza snapshot registrato).
         </p>
         {storicoData.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>
         ) : (
           <ResponsiveContainer width="100%" height={340}>
-            <ComposedChart data={storicoData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 22, right: 8, bottom: 4, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7d8" />
               <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v: number) => fmtEuro(v)} />
+              <YAxis
+                yAxisId="left"
+                tick={{ fontSize: 11 }}
+                domain={vistaPercentuale ? [0, 100] : undefined}
+                tickFormatter={v => vistaPercentuale ? `${v}%` : `${Math.round(v / 1000)}k`}
+              />
+              <Tooltip
+                formatter={(v: number, name: string) =>
+                  name === 'Totale' ? [fmtEuro(v), name] : vistaPercentuale ? [`${v}%`, name] : [fmtEuro(v), name]
+                }
+              />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" />
               <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" />
               <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" />
               <Bar yAxisId="left" dataKey="Plus/minus" stackId="patrimonio" fill="#c65d3b" radius={[4, 4, 0, 0]} />
+              {!vistaPercentuale && (
+                <Line
+                  yAxisId="left"
+                  dataKey="Totale"
+                  stroke="none"
+                  dot={false}
+                  activeDot={false}
+                  legendType="none"
+                  isAnimationActive={false}
+                  label={{ position: 'top', fontSize: 11, fill: '#3a3a2e', formatter: (v: number) => fmtEuro(v) }}
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         )}
@@ -313,7 +383,7 @@ export default function PatrimonioPage() {
                     <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${
                       row['Plus/minus'] == null ? 'text-gray-300' : row['Plus/minus'] >= 0 ? 'text-green-700' : 'text-red-700'
                     }`}>
-                      {row['Plus/minus'] == null ? '–' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
+                      {row['Plus/minus'] == null ? 'N/D' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
                     </td>
                   </tr>
                 )

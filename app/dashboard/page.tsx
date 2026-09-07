@@ -47,7 +47,7 @@ export default function PatrimonioPage() {
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [fondoPensione, setFondoPensione] = useState<FondoPensione[]>([])
-  const [patrimonioStorico, setPatrimonioStorico] = useState<{ mese: string; capitale_investito: number; plus_minus: number }[]>([])
+  const [portafoglioStorico, setPortafoglioStorico] = useState<{ mese: string; plus_minus: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
   const [vistaPercentuale, setVistaPercentuale] = useState(false)
 
@@ -62,14 +62,14 @@ export default function PatrimonioPage() {
         supabase.from('portafoglio').select('*').eq('user_id', user.id),
         supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno).eq('categoria', 'INVESTIMENTI'),
         supabase.from('fondo_pensione').select('*').eq('user_id', user.id).eq('anno', anno),
-        supabase.from('patrimonio_storico').select('mese, capitale_investito, plus_minus').eq('user_id', user.id).eq('anno', anno),
+        supabase.from('portafoglio_storico').select('mese, plus_minus').eq('user_id', user.id).eq('anno', anno),
       ])
       if (cancelled) return
       setLiquidita(liqRes.data ?? [])
       setPortafoglio(portRes.data ?? [])
       setMovimenti(movRes.data ?? [])
       setFondoPensione(fondoRes.data ?? [])
-      setPatrimonioStorico(storicoRes.data ?? [])
+      setPortafoglioStorico(storicoRes.data ?? [])
       setLoading(false)
 
       // Prezzi correnti via proxy Yahoo Finance server-side
@@ -201,16 +201,20 @@ export default function PatrimonioPage() {
 
   const capitalePerAssetPerMese = assetInvestiti.map(a => capitaleAssetPerMese(a))
 
-  // Mesi da mostrare: fino all'ultimo mese con dati (liquidità, movimenti o fondo
-  // pensione), per non proiettare in avanti mesi futuri vuoti
+  // Mesi da mostrare: fino all'ultimo mese con dati (liquidità, movimenti, fondo
+  // pensione o snapshot portafoglio), per non proiettare in avanti mesi futuri vuoti
   const mesiConMovimenti = new Set(movimenti.map(m => m.mese))
+  const mesiConSnapshot = new Set(portafoglioStorico.map(r => r.mese))
   const ultimoMeseConDati = MESI.filter(
-    m => mesiConLiquidita.includes(m) || mesiConMovimenti.has(m) || mesiConFondo.includes(m)
+    m => mesiConLiquidita.includes(m) || mesiConMovimenti.has(m) || mesiConFondo.includes(m) || mesiConSnapshot.has(m)
   ).pop() ?? MESI[0]
   const idxUltimoMese = MESI.indexOf(ultimoMeseConDati)
   const mesiDaMostrare = MESI.slice(0, idxUltimoMese + 1)
 
-  const storicoPerMese = new Map(patrimonioStorico.map(s => [s.mese, s]))
+  const storicoPerMese = new Map<string, number>()
+  for (const r of portafoglioStorico) {
+    storicoPerMese.set(r.mese, (storicoPerMese.get(r.mese) ?? 0) + (r.plus_minus ?? 0))
+  }
 
   const storicoData = mesiDaMostrare.map(m => {
     const idxMese = MESI.indexOf(m)
@@ -221,16 +225,18 @@ export default function PatrimonioPage() {
       ? righeFondoMese.reduce((s, f) => s + (f.interessi ?? 0), 0)
       : null
 
-    // Se esiste uno snapshot reale per questo mese, il plus/minus prende quello
-    // (rendimento di mercato). Il capitale investito è sempre la ricostruzione
-    // per asset da anagrafica + movimenti, mai il valore di mercato dello snapshot.
-    const snapshot = storicoPerMese.get(m)
+    // Se esiste uno snapshot reale per questo mese ("Registra chiusura mese",
+    // salvato per asset in portafoglio_storico e sommato qui), il plus/minus
+    // investimenti prende quello. Il capitale investito resta sempre la
+    // ricostruzione per asset da anagrafica + movimenti, mai il valore di
+    // mercato dello snapshot.
+    const haSnapshot = mesiConSnapshot.has(m)
     const capitaleInvestitoMese = capitalePerAssetPerMese.reduce((s, arr) => s + arr[idxMese], 0)
     // Plus/minus considerato solo per i mesi con snapshot investimenti registrato:
     // senza snapshot la parte investimenti è ignota, quindi il totale resta N/D
     // (niente fallback a 0, che nasconderebbe il dato mancante).
-    const haValorePlusMinus = snapshot != null
-    const plusMinusMese = haValorePlusMinus ? snapshot!.plus_minus + (interessiFondoMese ?? 0) : null
+    const haValorePlusMinus = haSnapshot
+    const plusMinusMese = haValorePlusMinus ? (storicoPerMese.get(m) ?? 0) + (interessiFondoMese ?? 0) : null
 
     const liquiditaRound = Math.round(liquiditaMese)
     const capitaleRound = Math.round(capitaleInvestitoMese)

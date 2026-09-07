@@ -886,37 +886,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Andamento mensile - full width, legenda in header, punti "hollow" */}
-          <div className="card mb-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div>
-                <p className="num-display text-sm font-semibold text-gray-900">Andamento mensile</p>
-                <p className="text-xs text-gray-400 mt-0.5">Entrate, uscite e risparmio nel tempo</p>
-              </div>
-              <div className="flex items-center gap-4">
-                {lineSeries.map(s => (
-                  <span key={s.key} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: s.color }}>
-                    <span className="w-3 inline-block" style={{ borderTop: `2px ${s.dash ? 'dashed' : 'solid'} ${s.color}` }} />
-                    {s.key}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={lineData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
-                <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `€${(v/1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => fmtK(v)} />
-                {lineSeries.map(s => (
-                  <Line key={s.key} type="monotone" dataKey={s.key} stroke={s.color} strokeWidth={2}
-                    strokeDasharray={s.dash ? '4 2' : undefined}
-                    dot={{ r: 4, fill: '#fff', strokeWidth: 2 }} connectNulls />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
           {/* Liquidità per conto nel tempo */}
           {liquidita.length > 0 && (
             <div className="card mb-6">

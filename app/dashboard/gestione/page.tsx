@@ -217,12 +217,13 @@ export default function DashboardPage() {
       }))
   }, [assetValori])
 
-  // Peso % di ogni asset sul totale investito (barre)
+  // Peso % di ogni asset sul totale investito (barre), colorate per classe di rischio
   const pesoAsset = useMemo(() => {
     return assetValori
       .map(({ asset, valore }) => ({
         nome: asset.nome || asset.asset,
         peso: totaleValori > 0 ? (valore / totaleValori) * 100 : 0,
+        classe: asset.classe_rischio ?? 'non classificato',
       }))
       .sort((a, b) => b.peso - a.peso)
       .slice(0, 12)
@@ -1132,70 +1133,7 @@ export default function DashboardPage() {
                 )
               })()}
 
-              {/* Grafici allocazione portafoglio — sempre visibili */}
-              {assetValori.length > 0 && (
-                <div className="card p-4 mb-6">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Per classe</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie
-                            data={allocazioneClasse}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={50}
-                            outerRadius={80}
-                            paddingAngle={2}
-                          >
-                            {allocazioneClasse.map((d, i) => (
-                              <Cell key={i} fill={d.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(v: number) => fmtK(v)} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
-                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
-                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
-                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
-                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
-                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                          <Bar dataKey="peso" fill="#3f6b4f" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {openSection.riserva && (
-                <RiservaAccumulo
-                  portafoglio={portafoglio}
-                  liquidita={liquidita}
-                  soglie={soglie}
-                  prezziAttuali={prezziAttuali}
-                  behaviorLabel={profilo?.behavior_label ?? null}
-                  ddMax={profilo?.dd_max ?? 0.30}
-                />
-              )}
-
-              {openSection.simulatore && (
-                <SimulatoreAccumulo
-                  portafoglio={portafoglio}
-                  liquidita={liquidita}
-                  prezziAttuali={prezziAttuali}
-                  ddMax={profilo?.dd_max ?? 0.30}
-                />
-              )}
-
-              {/* Summary cards - stile Stitch (icona, valore, badge con metrica reale) */}
+              {/* KPI - subito dopo i pulsanti */}
               {(() => {
                 const hasPrezzi = Object.keys(prezziAttuali).length > 0
                 const pctPlusMinus = valoreCaricoTotale > 0 ? (plusminus / valoreCaricoTotale) * 100 : 0
@@ -1236,46 +1174,90 @@ export default function DashboardPage() {
                 )
               })()}
 
-              <div className="lg:max-w-xl mb-6">
-                {/* Torta allocazione per asset class */}
-                <div className="card">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Allocazione per asset class</p>
-                  {!usaValoreMonetario && (
-                    <p className="text-[10px] text-gray-400 mb-3">Nessuna quantità inserita: conteggio per numero di asset</p>
-                  )}
-                  <ResponsiveContainer width="100%" height={usaValoreMonetario ? 200 : 184}>
-                    <PieChart>
-                      <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="40%"
-                        outerRadius={65} innerRadius={32}
-                        label={({ name, percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
-                        {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip formatter={(v: number) => usaValoreMonetario ? fmtK(v) : `${v} asset`} />
-                      <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="mt-3 space-y-1 border-t border-surface-100 pt-3">
-                    {[...new Set(portafoglio.map(a => a.asset))].map(cls => {
-                      const assetsInClass = portafoglio.filter(a => a.asset === cls)
-                      const tot = assetsInClass.reduce((s, a) => {
-                        const p = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : a.prezzo_acquisto
-                        return s + p * a.quantita
-                      }, 0)
-                      const pct = valoreAttualeTotale > 0 ? (tot / valoreAttualeTotale * 100).toFixed(1) : '0'
-                      return (
-                        <div key={cls} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-600">{cls}</span>
-                          <span className="font-medium">
-                            {usaValoreMonetario
-                              ? <>{fmtK(tot)} <span className="text-gray-400">({pct}%)</span></>
-                              : <span className="text-gray-400">{assetsInClass.length} asset</span>}
-                          </span>
-                        </div>
-                      )
-                    })}
+              {/* Grafici allocazione portafoglio — i 3 sulla stessa riga */}
+              {assetValori.length > 0 && (
+                <div className="card p-4 mb-6">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per classe di rischio</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie
+                            data={allocazioneClasse}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={2}
+                          >
+                            {allocazioneClasse.map((d, i) => (
+                              <Cell key={i} fill={d.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => fmtK(v)} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
+                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
+                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
+                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
+                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                          <Bar dataKey="peso" radius={[0, 4, 4, 0]}>
+                            {pesoAsset.map((d, i) => (
+                              <Cell key={i} fill={CLASSE_COLOR[d.classe]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per categoria</p>
+                      {!usaValoreMonetario && (
+                        <p className="text-[10px] text-gray-400 mb-1">Conteggio per numero di asset</p>
+                      )}
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="45%"
+                            outerRadius={65} innerRadius={32}
+                            label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
+                            {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => usaValoreMonetario ? fmtK(v) : `${v} asset`} />
+                          <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Sezione aperta (riserva o simulatore) */}
+              {openSection.riserva && (
+                <RiservaAccumulo
+                  portafoglio={portafoglio}
+                  liquidita={liquidita}
+                  soglie={soglie}
+                  prezziAttuali={prezziAttuali}
+                  behaviorLabel={profilo?.behavior_label ?? null}
+                  ddMax={profilo?.dd_max ?? 0.30}
+                />
+              )}
+
+              {openSection.simulatore && (
+                <SimulatoreAccumulo
+                  portafoglio={portafoglio}
+                  liquidita={liquidita}
+                  prezziAttuali={prezziAttuali}
+                  ddMax={profilo?.dd_max ?? 0.30}
+                />
+              )}
 
               {openSection.storico && <div className="card overflow-x-auto mt-4">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-3">

@@ -63,7 +63,7 @@ export default function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-80 max-w-[85vw] max-h-96 overflow-y-auto bg-white border border-surface-200 rounded-xl shadow-lg z-50">
+          <div className="absolute left-0 mt-2 w-80 max-w-[85vw] max-h-96 overflow-y-auto bg-white border border-surface-200 rounded-xl shadow-lg z-50">
             <div className="px-4 py-3 border-b border-surface-100 sticky top-0 bg-white">
               <p className="text-sm font-semibold text-gray-900">Notifiche</p>
               <p className="text-xs text-gray-400">Ultime {notifiche.length} (max 20)</p>

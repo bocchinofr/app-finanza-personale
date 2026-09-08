@@ -886,6 +886,37 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Andamento mensile - full width, legenda in header, punti "hollow" */}
+          <div className="card mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div>
+                <p className="num-display text-sm font-semibold text-gray-900">Andamento mensile</p>
+                <p className="text-xs text-gray-400 mt-0.5">Entrate, uscite e risparmio nel tempo</p>
+              </div>
+              <div className="flex items-center gap-4">
+                {lineSeries.map(s => (
+                  <span key={s.key} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: s.color }}>
+                    <span className="w-3 inline-block" style={{ borderTop: `2px ${s.dash ? 'dashed' : 'solid'} ${s.color}` }} />
+                    {s.key}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={lineData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
+                <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `€${(v/1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v: number) => fmtK(v)} />
+                {lineSeries.map(s => (
+                  <Line key={s.key} type="monotone" dataKey={s.key} stroke={s.color} strokeWidth={2}
+                    strokeDasharray={s.dash ? '4 2' : undefined}
+                    dot={{ r: 4, fill: '#fff', strokeWidth: 2 }} connectNulls />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
           {/* Liquidità per conto nel tempo */}
           {liquidita.length > 0 && (
             <div className="card mb-6">
@@ -1141,6 +1172,49 @@ export default function DashboardPage() {
                 )
               })()}
 
+              {/* Grafici allocazione portafoglio — sempre visibili */}
+              {assetValori.length > 0 && (
+                <div className="card p-4 mb-6">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per classe</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie
+                            data={allocazioneClasse}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={2}
+                          >
+                            {allocazioneClasse.map((d, i) => (
+                              <Cell key={i} fill={d.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => fmtK(v)} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
+                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
+                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
+                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
+                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                          <Bar dataKey="peso" fill="#3f6b4f" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {openSection.riserva && (
                 <RiservaAccumulo
                   portafoglio={portafoglio}
@@ -1385,49 +1459,6 @@ export default function DashboardPage() {
                   </div>
                 )
               })()}
-
-              {/* Grafici allocazione portafoglio */}
-              {assetValori.length > 0 && (
-                <div className="card p-4 mt-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Per classe</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie
-                            data={allocazioneClasse}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={50}
-                            outerRadius={80}
-                            paddingAngle={2}
-                          >
-                            {allocazioneClasse.map((d, i) => (
-                              <Cell key={i} fill={d.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(v: number) => fmtK(v)} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
-                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
-                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
-                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
-                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
-                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                          <Bar dataKey="peso" fill="#3f6b4f" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Tabella asset con gestione soglie integrata */}
               <div className="card p-0 overflow-hidden mt-4">

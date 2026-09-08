@@ -1457,8 +1457,6 @@ export default function DashboardPage() {
                         <th className="table-th">Nome / Ticker</th>
                         <th className="table-th">ISIN</th>
                         <th className="table-th w-20 text-right">Qtà</th>
-                        <th className="table-th w-28 text-right">P. acquisto</th>
-                        <th className="table-th w-28 text-right">P. attuale</th>
                         <th className="table-th w-24 text-center">Da massimo</th>
                         <th className="table-th w-24 text-center">Var. mese</th>
                         <th className="table-th w-28 text-right">Valore carico</th>
@@ -1501,10 +1499,6 @@ export default function DashboardPage() {
                             </td>
                             <td className="table-td text-xs text-gray-400 font-mono">{a.isin || '–'}</td>
                             <td className="table-td text-right text-xs tabular-nums">{qtaAttuale.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
-                            <td className="table-td text-right text-xs tabular-nums">{fmtPrice(prezzoCarico)}</td>
-                            <td className="table-td text-right text-xs tabular-nums">
-                              {prezzoAtt ? fmtPrice(prezzoAtt) : <span className="text-gray-300">–</span>}
-                            </td>
                             <td className="table-td text-center">
                               {quote?.changeFromHigh != null ? (
                                 <span

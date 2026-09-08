@@ -295,7 +295,6 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(`API prezzi: ${res.status}`)
       const json = await res.json()
       setPrezziAttuali(json)
-      await checkSoglieBreach(json)
     } catch (err) {
       console.error('Errore nel recupero dei prezzi', err)
     } finally {
@@ -384,67 +383,9 @@ export default function DashboardPage() {
     loadStoricoPrezzi()
   }, [anno, snapshotSalvato])
 
-  // Confronta le variazioni appena scaricate con le soglie impostate.
-  // Notifica (edge-triggered) solo al passaggio da "non superata" a "superata".
-  async function checkSoglieBreach(quotes: Record<string, QuoteInfo>) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const updates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
-    const nuoveNotifiche: { user_id: string; portafoglio_id: string; tipo: string; messaggio: string }[] = []
-
-    for (const a of portafoglio) {
-      if (!a.id || !a.ticker) continue
-      const quote = quotes[a.ticker]
-      if (!quote) continue
-      const nomeAsset = a.nome || a.descrizione || a.ticker
-
-      const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico')
-      if (sMax?.id && sMax.attivo && quote.changeFromHigh != null) {
-        const breach = quote.changeFromHigh <= -sMax.soglia_pct
-        if (breach && !sMax.in_breach) {
-          updates.push({ id: sMax.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
-          nuoveNotifiche.push({
-            user_id: user.id, portafoglio_id: a.id, tipo: 'storico',
-            messaggio: `${nomeAsset}: ${quote.changeFromHigh.toFixed(1)}% dal massimo (soglia ${sMax.soglia_pct}%)`,
-          })
-        } else if (!breach && sMax.in_breach) {
-          updates.push({ id: sMax.id, in_breach: false })
-        }
-      }
-
-      const sMese = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile')
-      if (sMese?.id && sMese.attivo && quote.changeFromMonth != null) {
-        const breach = quote.changeFromMonth <= -sMese.soglia_pct
-        if (breach && !sMese.in_breach) {
-          updates.push({ id: sMese.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
-          nuoveNotifiche.push({
-            user_id: user.id, portafoglio_id: a.id, tipo: 'mensile',
-            messaggio: `${nomeAsset}: ${quote.changeFromMonth.toFixed(1)}% nel mese (soglia ${sMese.soglia_pct}%)`,
-          })
-        } else if (!breach && sMese.in_breach) {
-          updates.push({ id: sMese.id, in_breach: false })
-        }
-      }
-    }
-
-    if (nuoveNotifiche.length > 0) {
-      await supabase.from('notifiche').insert(nuoveNotifiche)
-    }
-    for (const u of updates) {
-      await supabase.from('alert_soglie')
-        .update(u.ultima_notifica_at ? { in_breach: u.in_breach, ultima_notifica_at: u.ultima_notifica_at } : { in_breach: u.in_breach })
-        .eq('id', u.id)
-    }
-    if (updates.length > 0) {
-      const { data } = await supabase.from('alert_soglie').select('*').eq('user_id', user.id)
-      setSoglie((data as AlertSoglia[]) ?? [])
-    }
-    if (nuoveNotifiche.length > 0) {
-      window.dispatchEvent(new Event('notifiche:refresh'))
-      setBannerDismissed(false)
-    }
-  }
+  // Il check soglie + insert notifiche + invio email è gestito server-side
+  // dalla route /api/check-alerts (chiamata via cron GitHub Actions).
+  // Il bottone "Aggiorna prezzi" qui serve solo per la visualizzazione in UI.
 
   // Applica i due valori globali a tutti gli asset nel form (prima di salvare)
   function applicaSoglieATutti() {

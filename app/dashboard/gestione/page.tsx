@@ -295,6 +295,25 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(`API prezzi: ${res.status}`)
       const json = await res.json()
       setPrezziAttuali(json)
+
+      // Check soglie on-demand: inserisce eventuali notifiche + invia email,
+      // poi aggiorna il campanello in UI senza bisogno di ricaricare la pagina.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        const alertRes = await fetch('/api/check-alerts-now', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (alertRes.ok) {
+          const alertJson = await alertRes.json()
+          if (alertJson.nuoveNotifiche > 0) {
+            const { data } = await supabase.from('alert_soglie').select('*').eq('user_id', session.user.id)
+            setSoglie((data as AlertSoglia[]) ?? [])
+            window.dispatchEvent(new Event('notifiche:refresh'))
+            setBannerDismissed(false)
+          }
+        }
+      }
     } catch (err) {
       console.error('Errore nel recupero dei prezzi', err)
     } finally {

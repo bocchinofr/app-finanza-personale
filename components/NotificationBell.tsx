@@ -71,14 +71,19 @@ export default function NotificationBell() {
             {notifiche.length === 0 ? (
               <p className="text-xs text-gray-400 px-4 py-6 text-center">Nessuna notifica</p>
             ) : (
-              <ul className="divide-y divide-surface-100">
-                {notifiche.map(n => (
-                  <li key={n.id} className="px-4 py-3">
-                    <p className="text-xs text-gray-700">{n.messaggio}</p>
-                    <p className="text-[10px] text-gray-400 mt-1">{fmtTime(n.created_at)}</p>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="divide-y divide-surface-100">
+                  {notifiche.map(n => (
+                    <li key={n.id} className="px-4 py-3">
+                      <p className="text-xs text-gray-700">{n.messaggio}</p>
+                      <p className="text-[10px] text-gray-400 mt-1">{fmtTime(n.created_at)}</p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="px-4 py-2 text-[10px] text-gray-400 border-t border-surface-100 bg-surface-50">
+                  📧 Ogni notifica viene inviata anche via email — se non la vedi, controlla lo spam.
+                </p>
+              </>
             )}
           </div>
         </>

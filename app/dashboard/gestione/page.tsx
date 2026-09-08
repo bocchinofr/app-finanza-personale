@@ -223,7 +223,7 @@ export default function DashboardPage() {
       .map(({ asset, valore }) => ({
         nome: asset.nome || asset.asset,
         peso: totaleValori > 0 ? (valore / totaleValori) * 100 : 0,
-        classe: asset.classe_rischio ?? 'non classificato',
+        classe: (asset.classe_rischio ?? 'non classificato') as keyof typeof CLASSE_COLOR,
       }))
       .sort((a, b) => b.peso - a.peso)
       .slice(0, 12)

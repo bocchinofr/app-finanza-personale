@@ -1254,6 +1254,7 @@ export default function DashboardPage() {
                 <SimulatoreAccumulo
                   portafoglio={portafoglio}
                   liquidita={liquidita}
+                  soglie={soglie}
                   prezziAttuali={prezziAttuali}
                   ddMax={profilo?.dd_max ?? 0.30}
                 />

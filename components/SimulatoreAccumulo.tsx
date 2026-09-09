@@ -1,13 +1,15 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { AssetPortafoglio, Liquidita, ContoFlag, statoAttuale } from '@/types'
+import { AssetPortafoglio, AlertSoglia, Liquidita, ContoFlag, statoAttuale } from '@/types'
+import { calcolaBudgetPerAsset, calcolaFrazioneSbloccata } from '@/lib/accumuloFormula'
 
 type QuoteInfo = { price: number; high52: number | null; changeFromHigh: number | null; changeFromMonth: number | null }
 
 interface Props {
   portafoglio: AssetPortafoglio[]
   liquidita: Liquidita[]
+  soglie: AlertSoglia[]
   prezziAttuali: Record<string, QuoteInfo>
   ddMax: number
 }
@@ -39,7 +41,7 @@ function valoreAttualeAsset(a: AssetPortafoglio, prezzi: Record<string, QuoteInf
   return p * quantita
 }
 
-export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttuali, ddMax }: Props) {
+export default function SimulatoreAccumulo({ portafoglio, liquidita, soglie, prezziAttuali, ddMax }: Props) {
   const supabase = createClient()
   const [contoFlags, setContoFlags] = useState<ContoFlag[]>([])
   const [loading, setLoading] = useState(true)
@@ -82,6 +84,19 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
 
   const assetConTicker = portafoglio.filter(a => a.ticker)
 
+  // Budget per asset, identico a quello usato dagli alert: la riserva è divisa
+  // tra gli asset con soglia attiva, pesando per l'aggressività della soglia minima.
+  const budgetPerAsset = useMemo(() => {
+    const sogliePerAsset = new Map<string, number[]>()
+    for (const s of soglie) {
+      if (!s.attivo) continue
+      const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
+      arr.push(s.soglia_pct)
+      sogliePerAsset.set(s.portafoglio_id, arr)
+    }
+    return calcolaBudgetPerAsset(riservaTotale, sogliePerAsset)
+  }, [soglie, riservaTotale])
+
   // --- Parametri simulazione ---
   const [assetId, setAssetId] = useState<string>('aggregato')
   const [stepPct, setStepPct] = useState<number>(5)
@@ -89,9 +104,17 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
   const [importoFisso, setImportoFisso] = useState<number>(500)
   const [prezzoMassimo, setPrezzoMassimo] = useState<number | null>(null)
   const [prezzoModificatoManualmente, setPrezzoModificatoManualmente] = useState(false)
+  const [ddAlPmcAggregato, setDdAlPmcAggregato] = useState<number>(15) // solo modalità aggregato, in %
   const [risultato, setRisultato] = useState<{ rows: StepRow[]; esaurita: boolean } | null>(null)
 
   const assetSelezionato = assetId !== 'aggregato' ? portafoglio.find(a => a.id === assetId) : null
+
+  // Budget effettivo per la simulazione: se l'asset scelto ha soglie attive
+  // reali usa la sua fetta di riserva calcolata come per gli alert; altrimenti
+  // (asset scelto solo per esplorare) usa l'intera riserva, segnalandolo.
+  const budgetAssetSelezionato = assetSelezionato?.id ? budgetPerAsset.get(assetSelezionato.id) : undefined
+  const budgetUsatoAssetSingolo = budgetAssetSelezionato ?? riservaTotale
+  const assetSenzaSoglieProprie = !!assetSelezionato && budgetAssetSelezionato == null
 
   // Precompila il prezzo massimo di riferimento. Riparte da zero (non "manuale")
   // quando l'utente cambia asset; nel frattempo si aggiorna anche se i prezzi
@@ -126,15 +149,31 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
     const MAX_STEP = 60
     const CAP_DRAWDOWN = 0.9 // sicurezza: non simulare oltre -90% dal massimo
 
+    // Budget e PMC di riferimento per la curva a due fasi (identica a quella
+    // usata dagli alert reali). In modalità aggregato il "PMC" è un parametro
+    // impostabile (drawdown equivalente), perché un paniere di asset diversi
+    // non ha un PMC unico.
+    const budget = isAggregato ? riservaTotale : budgetUsatoAssetSingolo
+    const pmcEquivalente = isAggregato ? 1 - ddAlPmcAggregato / 100 : (assetSelezionato?.prezzo_acquisto ?? 0)
+    const massimoEquivalente = isAggregato ? 1 : (prezzoMassimo as number)
+
     for (let i = 1; i <= MAX_STEP; i++) {
       const drawdown = Math.min((i * stepPct) / 100, CAP_DRAWDOWN)
+      const prezzoEquivalente = massimoEquivalente * (1 - drawdown)
 
       let importoStep: number
       if (modalita === 'fisso') {
         importoStep = Math.min(importoFisso, Math.max(riservaTotale - cumInvestito, 0))
       } else {
-        // Variabile: la riserva si deploya linearmente dal drawdown 0 a ddMax.
-        const targetCumulato = riservaTotale * Math.min(drawdown / ddMax, 1)
+        // Variabile: rampa lineare dal massimo al PMC, poi accelerazione
+        // convessa sotto il PMC — stessa curva usata nelle email di alert.
+        const frazione = calcolaFrazioneSbloccata({
+          prezzoAttuale: prezzoEquivalente,
+          prezzoMassimo: massimoEquivalente,
+          pmc: pmcEquivalente,
+          ddMaxSottoPmc: ddMax,
+        })
+        const targetCumulato = budget * frazione
         importoStep = Math.max(targetCumulato - cumInvestito, 0)
       }
 
@@ -157,7 +196,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
           riservaResidua: Math.max(riservaTotale - cumInvestito, 0),
         })
       } else {
-        const prezzo = (prezzoMassimo as number) * (1 - drawdown)
+        const prezzo = prezzoEquivalente
         const quantitaStep = importoStep / prezzo
         cumQuantita += quantitaStep
         rows.push({
@@ -172,7 +211,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
         })
       }
 
-      if (cumInvestito >= riservaTotale - 0.5) { esaurita = true; break }
+      if (cumInvestito >= budget - 0.5) { esaurita = true; break }
       if (drawdown >= CAP_DRAWDOWN) break
     }
 
@@ -238,7 +277,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                 onChange={e => setModalita(e.target.value as Modalita)}
                 className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5"
               >
-                <option value="variabile">Variabile (∝ drawdown, come alert)</option>
+                <option value="variabile">Variabile (curva a 2 fasi, come alert)</option>
                 <option value="fisso">Fisso per step</option>
               </select>
             </div>
@@ -262,6 +301,17 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                 />
               </div>
             )}
+            {modalita === 'variabile' && isAggregato && (
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Drawdown equivalente al PMC (%)</label>
+                <input
+                  type="number" min={1} max={90} step={1}
+                  value={ddAlPmcAggregato}
+                  onChange={e => setDdAlPmcAggregato(Number(e.target.value))}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5"
+                />
+              </div>
+            )}
             {!isAggregato ? (
               <div className="col-span-2 sm:col-span-2">
                 <label className="text-xs text-gray-500 block mb-1">
@@ -278,8 +328,15 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
                 />
                 <p className="text-[11px] text-gray-400 mt-1">
                   Ogni step della simulazione scende del {stepPct}% da questo prezzo (precompilato col massimo a 52
-                  settimane). Modificalo per simulare un altro punto di partenza, es. il prezzo attuale.
+                  settimane). Modalità variabile: rampa lineare fino al PMC ({assetSelezionato ? fmtEuro(assetSelezionato.prezzo_acquisto) : '–'}),
+                  poi accelerazione sotto il PMC.
                 </p>
+                {assetSenzaSoglieProprie && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Questo asset non ha soglie attive configurate: nel sistema reale non riceverebbe una fetta
+                    dedicata di riserva. Qui, solo per esplorare, uso l&apos;intera riserva come budget.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="col-span-2 sm:col-span-2 flex items-end">
@@ -300,7 +357,10 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, prezziAttua
           </div>
 
           <p className="text-xs text-gray-500">
-            Riserva disponibile per la simulazione: <strong>{fmtEuro(riservaTotale)}</strong>
+            Riserva totale: <strong>{fmtEuro(riservaTotale)}</strong>
+            {!isAggregato && (
+              <> · Budget per questo asset: <strong>{fmtEuro(budgetUsatoAssetSingolo)}</strong></>
+            )}
           </p>
 
           {risultato && risultato.rows.length > 0 && ultimoStep && (

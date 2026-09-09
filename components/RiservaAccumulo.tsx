@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { AssetPortafoglio, AlertSoglia, Liquidita, ContoFlag, statoAttuale, PROFILO_DINAMICO_LABEL } from '@/types'
 import { calcolaBudgetPerAsset, calcolaImportoConsigliato } from '@/lib/accumuloFormula'
+import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 
 type QuoteInfo = { price: number; high52: number | null; changeFromHigh: number | null; changeFromMonth: number | null }
 
@@ -189,7 +190,10 @@ export default function RiservaAccumulo({
 
       {profiloDinamico && suggerimenti.length > 0 && (
         <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 p-3">
-          <p className="text-xs font-semibold text-brand-800 mb-2">Investimento suggerito sulle soglie attive</p>
+          <div className="flex items-center gap-1.5 mb-2">
+            <p className="text-xs font-semibold text-brand-800">Investimento suggerito sulle soglie attive</p>
+            <InfoAccumuloModal ddMax={ddMax} />
+          </div>
           <ul className="space-y-1">
             {suggerimenti.map(({ soglia, asset, importo, drawdown }) => (
               <li key={soglia.id} className="text-xs text-brand-800">

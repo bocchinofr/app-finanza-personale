@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { AssetPortafoglio, AlertSoglia, Liquidita, ContoFlag, statoAttuale } from '@/types'
 import { calcolaBudgetPerAsset, calcolaFrazioneSbloccata } from '@/lib/accumuloFormula'
+import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 
 type QuoteInfo = { price: number; high52: number | null; changeFromHigh: number | null; changeFromMonth: number | null }
 
@@ -232,9 +233,12 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, soglie, pre
   return (
     <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between mb-3">
-        <div>
-          <p className="text-sm font-semibold text-gray-900">Simulatore Accumulo</p>
-          <p className="text-xs text-gray-500">Cosa succede se il prezzo scende e continuo a comprare</p>
+        <div className="flex items-center gap-1.5">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Simulatore Accumulo</p>
+            <p className="text-xs text-gray-500">Cosa succede se il prezzo scende e continuo a comprare</p>
+          </div>
+          <InfoAccumuloModal ddMax={ddMax} />
         </div>
         <button
           onClick={() => setExpanded(e => !e)}

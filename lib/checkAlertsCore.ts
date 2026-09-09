@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { fetchQuote } from '@/lib/fetchQuote'
 import { sendAlertEmail, AlertEmailRiga } from '@/lib/sendEmail'
+import { calcolaBudgetPerAsset, calcolaImportoConsigliato } from '@/lib/accumuloFormula'
 
 const PROFILO_DINAMICO_LABEL = 'Contrarian (accumula sui crolli)'
 
@@ -178,11 +179,19 @@ export async function checkAlertsForUser(
     return { nuoveNotifiche: 0, emailInviata: false }
   }
 
-  // Asset attualmente in breach (per dividere la riserva, come in RiservaAccumulo.tsx)
-  const numBreachAttivi = Math.max(
-    [...finalState.values()].filter(v => v.inBreach && v.drawdown != null).length,
-    1
-  )
+  // Budget per asset: la riserva totale è divisa tra tutti gli asset con
+  // almeno una soglia attiva, pesando per l'aggressività della soglia più
+  // bassa impostata (soglia più bassa = vuole iniziare ad accumulare prima).
+  let budgetPerAsset = new Map<string, number>()
+  if (profiloDinamico && riservaTotale > 0) {
+    const sogliePerAsset = new Map<string, number[]>()
+    for (const s of soglie) {
+      const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
+      arr.push(s.soglia_pct)
+      sogliePerAsset.set(s.portafoglio_id, arr)
+    }
+    budgetPerAsset = calcolaBudgetPerAsset(riservaTotale, sogliePerAsset)
+  }
 
   // Conteggio attivazioni storiche per asset+tipo (per il testo "attivazione #N")
   const { data: notificheStoricheData } = await admin
@@ -204,9 +213,16 @@ export async function checkAlertsForUser(
 
     let importoConsigliato: number | undefined
     let nuovoPesoAzionario: number | undefined
-    if (profiloDinamico && riservaTotale > 0) {
-      const ddPct = Math.min(Math.abs(drawdown) / 100 / ddMax, 1)
-      importoConsigliato = (riservaTotale / numBreachAttivi) * ddPct
+    const quote = asset.ticker ? quotes[asset.ticker] : undefined
+    const budgetAsset = budgetPerAsset.get(s.portafoglio_id) ?? 0
+    if (profiloDinamico && budgetAsset > 0 && quote?.high52) {
+      importoConsigliato = calcolaImportoConsigliato({
+        prezzoAttuale: quote.price,
+        prezzoMassimo: quote.high52,
+        pmc: asset.prezzo_acquisto,
+        budgetAsset,
+        ddMaxSottoPmc: ddMax,
+      })
       if (asset.classe_rischio === 'azionario' || asset.classe_rischio === 'obbligazionario') {
         const nuovoAzionario = valoreAzionario + (asset.classe_rischio === 'azionario' ? importoConsigliato : 0)
         const nuovoTotale = totaleClassificato + importoConsigliato

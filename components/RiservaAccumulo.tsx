@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { AssetPortafoglio, AlertSoglia, Liquidita, ContoFlag, statoAttuale, PROFILO_DINAMICO_LABEL } from '@/types'
+import { calcolaBudgetPerAsset, calcolaImportoConsigliato } from '@/lib/accumuloFormula'
 
-type QuoteInfo = { price: number; changeFromHigh: number | null; changeFromMonth: number | null }
+type QuoteInfo = { price: number; high52: number | null; changeFromHigh: number | null; changeFromMonth: number | null }
 
 interface Props {
   portafoglio: AssetPortafoglio[]
@@ -108,19 +109,41 @@ export default function RiservaAccumulo({
       const asset = portafoglio.find(a => a.id === s.portafoglio_id)
       const quote = asset?.ticker ? prezziAttuali[asset.ticker] : undefined
       const drawdown = s.tipo === 'storico' ? quote?.changeFromHigh : quote?.changeFromMonth
-      return { soglia: s, asset, drawdown }
+      return { soglia: s, asset, quote, drawdown }
     })
     .filter(x => x.asset && x.drawdown != null)
 
-  // Capitale suggerito: proporzionale al drawdown (0% → DD_max), riserva
-  // divisa in parti uguali tra le soglie attive in questo momento per non
-  // suggerire l'intera riserva più volte in contemporanea.
-  const numBreachAttivi = breachesConDrawdown.length || 1
-  const suggerimenti = breachesConDrawdown.map(({ soglia, asset, drawdown }) => {
-    const ddPct = Math.min(Math.abs(drawdown ?? 0) / 100 / ddMax, 1)
-    const importo = (riservaTotale / numBreachAttivi) * ddPct
-    return { soglia, asset, importo, drawdown }
-  })
+  // Budget per asset: la riserva è divisa tra tutti gli asset con almeno una
+  // soglia attiva, pesando per l'aggressività della soglia più bassa impostata
+  // (soglia più bassa = si vuole iniziare ad accumulare prima = fetta maggiore).
+  const budgetPerAsset = useMemo(() => {
+    const sogliePerAsset = new Map<string, number[]>()
+    for (const s of soglie) {
+      if (!s.attivo) continue
+      const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
+      arr.push(s.soglia_pct)
+      sogliePerAsset.set(s.portafoglio_id, arr)
+    }
+    return calcolaBudgetPerAsset(riservaTotale, sogliePerAsset)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soglie, riservaTotale])
+
+  // Importo consigliato: rampa lineare dal massimo al PMC, poi accelerazione
+  // convessa sotto il PMC (stessa formula usata nelle email di alert).
+  const suggerimenti = breachesConDrawdown
+    .map(({ soglia, asset, quote, drawdown }) => {
+      const budgetAsset = budgetPerAsset.get(soglia.portafoglio_id) ?? 0
+      if (!asset || !quote?.high52 || budgetAsset <= 0) return null
+      const importo = calcolaImportoConsigliato({
+        prezzoAttuale: quote.price,
+        prezzoMassimo: quote.high52,
+        pmc: asset.prezzo_acquisto,
+        budgetAsset,
+        ddMaxSottoPmc: ddMax,
+      })
+      return { soglia, asset, importo, drawdown }
+    })
+    .filter((x): x is NonNullable<typeof x> => x != null)
 
   const conti = [...new Set(liquidita.map(l => l.conto))]
 
@@ -175,6 +198,9 @@ export default function RiservaAccumulo({
               </li>
             ))}
           </ul>
+          <p className="text-[10px] text-brand-700/70 mt-2">
+            Budget diviso tra gli asset con soglia attiva in base all&apos;aggressività della soglia; l&apos;importo cresce mano a mano che il prezzo scende verso il PMC e accelera sotto il PMC.
+          </p>
         </div>
       )}
 

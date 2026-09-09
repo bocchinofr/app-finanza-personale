@@ -28,12 +28,13 @@ function KpiCard({
   label: string
   value: string
   sub?: ReactNode
-  tone?: 'neutral' | 'positive' | 'negative'
+  tone?: 'neutral' | 'positive' | 'negative' | 'warning'
   delta?: { value: number; pct: number | null } | null
 }) {
   const toneClass =
     tone === 'positive' ? 'text-green-700' :
     tone === 'negative' ? 'text-red-700' :
+    tone === 'warning' ? 'text-amber-600' :
     'text-gray-900'
 
   return (
@@ -386,7 +387,11 @@ export default function PatrimonioPage() {
         <KpiCard
           label="Plus/minus non realizzato"
           value={`${plusMinus >= 0 ? '+' : ''}${fmtEuro(plusMinus)}`}
-          tone={plusMinus >= 0 ? 'positive' : 'negative'}
+          tone={
+            plusMinus < 0 ? 'negative'
+            : deltaPlusMinus && deltaPlusMinus.value < 0 ? 'warning'
+            : 'positive'
+          }
           sub={
             <p className="text-xs text-gray-400">
               Fondo pensione {fondoPensioneInteressi >= 0 ? '+' : ''}{fmtEuro(fondoPensioneInteressi)}
@@ -479,12 +484,25 @@ export default function PatrimonioPage() {
                 <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
                 <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
                 <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. mese</th>
+                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. %</th>
                 <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
               </tr>
             </thead>
             <tbody>
-              {storicoData.map(row => {
+              {storicoData.map((row, i) => {
                 const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
+                const rowPrec = i > 0 ? storicoData[i - 1] : null
+                const totalePrec = rowPrec ? rowPrec['Liquidità'] + rowPrec['Capitale investito'] + rowPrec['Fondo pensione'] : null
+                const varAssoluta = totalePrec != null ? totale - totalePrec : null
+                const varPct = totalePrec != null && totalePrec !== 0 ? (varAssoluta! / Math.abs(totalePrec)) * 100 : null
+                const varTone = varAssoluta == null ? 'text-gray-300' : varAssoluta >= 0 ? 'text-green-700' : 'text-red-700'
+                const plusMinusPrec = rowPrec ? rowPrec['Plus/minus'] : null
+                const plusMinusTone =
+                  row['Plus/minus'] == null ? 'text-gray-300'
+                  : row['Plus/minus'] < 0 ? 'text-red-700'
+                  : plusMinusPrec == null ? 'text-green-700'
+                  : row['Plus/minus'] >= plusMinusPrec ? 'text-green-700' : 'text-amber-600'
                 return (
                   <tr key={row.mese}>
                     <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">
@@ -502,9 +520,13 @@ export default function PatrimonioPage() {
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900 font-semibold border-b border-surface-200/50">
                       {fmtEuro(totale)}
                     </td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${
-                      row['Plus/minus'] == null ? 'text-gray-300' : row['Plus/minus'] >= 0 ? 'text-green-700' : 'text-red-700'
-                    }`}>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${varTone}`}>
+                      {varAssoluta == null ? '–' : `${varAssoluta >= 0 ? '+' : ''}${fmtEuro(varAssoluta)}`}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${varTone}`}>
+                      {varPct == null ? '–' : `${varPct >= 0 ? '+' : ''}${varPct.toFixed(1)}%`}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${plusMinusTone}`}>
                       {row['Plus/minus'] == null ? 'N/D' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
                     </td>
                   </tr>
@@ -512,6 +534,12 @@ export default function PatrimonioPage() {
               })}
             </tbody>
           </table>
+          <p className="text-[11px] text-gray-400 mt-2">
+            Var. mese/%: variazione del patrimonio totale rispetto al mese precedente.
+            Plus/minus: <span className="text-green-700 font-medium">verde</span> se positivo e in crescita,{' '}
+            <span className="text-amber-600 font-medium">giallo</span> se positivo ma in calo rispetto al mese prima,{' '}
+            <span className="text-red-700 font-medium">rosso</span> se negativo.
+          </p>
         </div>
       )}
     </div>

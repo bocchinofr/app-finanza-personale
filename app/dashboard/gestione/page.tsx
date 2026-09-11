@@ -96,8 +96,13 @@ function interpolateColor(color1: string, color2: string, t: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-function HeatCell({ value, max, palette, format }: { 
-  value: number; max: number; palette: 'green' | 'red' | 'blue'; format: (n: number) => string 
+// Scostamento minimo del picco di riga/colonna rispetto alla media, sotto il quale
+// consideriamo i valori "comparabili" e non li coloriamo (es. 121 vs 110 → nessun colore).
+// Aumenta per colorare solo scostamenti più marcati, diminuisci per colorare anche variazioni lievi.
+const PEAK_DEVIATION_THRESHOLD = 0.35
+
+function HeatCell({ value, values, palette, format }: {
+  value: number; values: number[]; palette: 'green' | 'red' | 'blue'; format: (n: number) => string
 }) {
   // Ignora valori <= 1
   if (value <= 1) {
@@ -108,9 +113,14 @@ function HeatCell({ value, max, palette, format }: {
     );
   }
 
-  // Soglia: non colorare se inferiore al x% del massimo (personalizzabile)
-  const THRESHOLD = 0.45;
-  if (value < THRESHOLD * max) {
+  const nonZero = values.filter(v => v > 1)
+  const mean = nonZero.length > 0 ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length : 0
+  const max = nonZero.length > 0 ? Math.max(...nonZero) : 0
+  const peakDeviation = mean > 0 ? (max - mean) / mean : 0
+  const isFlat = peakDeviation < PEAK_DEVIATION_THRESHOLD
+
+  // Riga/colonna "piatta" (nessun valore fuori scala) o valore nella norma → nessuna colorazione
+  if (isFlat || value <= mean) {
     return (
       <td className="text-center p-0.5">
         <div className="bg-surface-50 text-gray-700 py-1 rounded-lg text-xs font-medium">{format(value)}</div>
@@ -118,10 +128,9 @@ function HeatCell({ value, max, palette, format }: {
     );
   }
 
-  const min = 1;
-  const clampedMax = Math.max(max, min + 1); // evita divisione per 0 se max <= 1
-  const t = (value - min) / (clampedMax - min); // 0 → 1
-  const bg = interpolateColor(HEAT_COLORS[palette].light, HEAT_COLORS[palette].dark, Math.min(t, 1));
+  // Intensità proporzionale a quanto il valore supera la media, verso il picco della riga/colonna
+  const t = Math.min((value - mean) / (max - mean), 1);
+  const bg = interpolateColor(HEAT_COLORS[palette].light, HEAT_COLORS[palette].dark, t);
   const textColor = t > 0.5 ? HEAT_COLORS[palette].textDark : HEAT_COLORS[palette].textLight;
 
   return (
@@ -1005,55 +1014,58 @@ export default function DashboardPage() {
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-50 min-w-[90px]">Totale</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-200">Totale</th>
                   </tr>
                 </thead>
                 <tbody>
                   {/* Entrate */}
-                  <tr className="bg-green-50/60">
-                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-green-700 border-y border-green-100">Entrate</td>
+                  <tr>
+                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
                   </tr>
                   {entrateTotals.map(({ cat, total }) => {
                     const vals = cfEntrate[cat];
-                    const rowMax = Math.max(...Object.values(vals), 1);
+                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
+                    const totaliColonna = entrateTotals.map(e => e.total);
                     return (
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={rowMax} palette="green" format={fmtK} />)}
-                        <td className="py-1 px-3 text-right text-xs font-bold bg-surface-50">{fmtK(total)}</td>
+                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
+                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
                       </tr>
                     )
                   })}
 
                   {/* Uscite */}
-                  <tr className="bg-red-50/60">
-                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-red-700 border-y border-red-100">Uscite</td>
+                  <tr>
+                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
                   </tr>
                   {usciteTotals.map(({ cat, total }) => {
                     const vals = cfUscite[cat];
-                    const rowMax = Math.max(...Object.values(vals), 1);
+                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
+                    const totaliColonna = usciteTotals.map(u => u.total);
                     return (
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={rowMax} palette="red" format={fmtK} />)}
-                        <td className="py-1 px-3 text-right text-xs font-bold bg-surface-50">{fmtK(total)}</td>
+                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
+                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
                       </tr>
                     )
                   })}
 
                   {/* Investimenti */}
                   {invTotals.length > 0 && <>
-                    <tr className="bg-blue-50/60">
-                      <td colSpan={mesiPresenti.length + 2} className="px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-blue-700 border-y border-blue-100">Investimenti</td>
+                    <tr>
+                      <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
                     </tr>
                     {invTotals.map(({ cat, total }) => {
                       const vals = cfInv[cat];
-                      const rowMax = Math.max(...Object.values(vals), 1);
+                      const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
+                      const totaliColonna = invTotals.map(v => v.total);
                       return (
                         <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                           <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} max={rowMax} palette="blue" format={fmtK} />)}
-                          <td className="py-1 px-3 text-right text-xs font-bold bg-surface-50">{fmtK(total)}</td>
+                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
+                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
                         </tr>
                       )
                     })}

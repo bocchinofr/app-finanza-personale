@@ -532,7 +532,8 @@ export default function DashboardPage() {
   const cfTotIn  = mesiPresenti.map(ms => Object.values(cfEntrate).reduce((s, r) => s + (r[ms] ?? 0), 0))
   const cfTotOut = mesiPresenti.map(ms => Object.values(cfUscite).reduce((s, r) => s + (r[ms] ?? 0), 0))
   const cfTotInv = mesiPresenti.map(ms => Object.values(cfInv).reduce((s, r) => s + (r[ms] ?? 0), 0))
-  const cfRisparmio = mesiPresenti.map((_, i) => cfTotIn[i] - cfTotOut[i] - cfTotInv[i])
+  // Risparmio = entrate - uscite (l'investimento è una destinazione del risparmio, non un costo)
+  const cfRisparmio = mesiPresenti.map((_, i) => cfTotIn[i] - cfTotOut[i])
 
   // Ogni riga/categoria ha la propria scala (min→max di quella riga): mette in evidenza le
   // anomalie della singola categoria, anche quando gli importi assoluti sono piccoli.
@@ -829,65 +830,69 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Torta entrate - donut con totale al centro + legenda a lista */}
+              {/* Torta entrate - donut con totale al centro + legenda a destra */}
               <div className="card flex flex-col">
                 <p className="num-display text-sm font-semibold text-gray-900">Distribuzione entrate YTD</p>
                 <p className="text-xs text-gray-400 mt-0.5 mb-4">Provenienza complessiva per categoria</p>
-                <div className="relative flex items-center justify-center" style={{ height: 220 }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie data={pieDataEntrate} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} innerRadius={55}>
-                        {pieDataEntrate.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip formatter={(v: number) => fmtK(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Totale entrate</p>
-                    <p className="num-display text-lg font-bold text-gray-900">{fmtK(ytdIn)}</p>
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {pieDataEntrate.map((d, i) => (
-                    <div key={d.name} className="flex justify-between items-center text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                        <span className="text-gray-600">{d.name}</span>
-                      </div>
-                      <span className="font-semibold text-gray-800">{ytdIn > 0 ? `${((d.value / ytdIn) * 100).toFixed(0)}%` : '–'}</span>
+                <div className="flex items-center gap-4">
+                  <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
+                    <ResponsiveContainer width={150} height={150}>
+                      <PieChart>
+                        <Pie data={pieDataEntrate} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={45}>
+                          {pieDataEntrate.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => fmtK(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
+                      <p className="num-display text-sm font-bold text-gray-900">{fmtK(ytdIn)}</p>
                     </div>
-                  ))}
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    {pieDataEntrate.map((d, i) => (
+                      <div key={d.name} className="flex justify-between items-center gap-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                          <span className="text-gray-600 truncate">{d.name}</span>
+                        </div>
+                        <span className="font-semibold text-gray-800 shrink-0">{ytdIn > 0 ? `${((d.value / ytdIn) * 100).toFixed(0)}%` : '–'}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Torta spese - donut con totale al centro + legenda a lista */}
+              {/* Torta spese - donut con totale al centro + legenda a destra */}
               <div className="card flex flex-col">
                 <p className="num-display text-sm font-semibold text-gray-900">Distribuzione uscite YTD</p>
                 <p className="text-xs text-gray-400 mt-0.5 mb-4">Spesa complessiva per categoria</p>
-                <div className="relative flex items-center justify-center" style={{ height: 220 }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} innerRadius={55}>
-                        {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip formatter={(v: number) => fmtK(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Totale uscite</p>
-                    <p className="num-display text-lg font-bold text-gray-900">{fmtK(ytdOut)}</p>
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {pieData.map((d, i) => (
-                    <div key={d.name} className="flex justify-between items-center text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                        <span className="text-gray-600">{d.name}</span>
-                      </div>
-                      <span className="font-semibold text-gray-800">{ytdOut > 0 ? `${((d.value / ytdOut) * 100).toFixed(0)}%` : '–'}</span>
+                <div className="flex items-center gap-4">
+                  <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
+                    <ResponsiveContainer width={150} height={150}>
+                      <PieChart>
+                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={45}>
+                          {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => fmtK(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
+                      <p className="num-display text-sm font-bold text-gray-900">{fmtK(ytdOut)}</p>
                     </div>
-                  ))}
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    {pieData.map((d, i) => (
+                      <div key={d.name} className="flex justify-between items-center gap-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                          <span className="text-gray-600 truncate">{d.name}</span>
+                        </div>
+                        <span className="font-semibold text-gray-800 shrink-0">{ytdOut > 0 ? `${((d.value / ytdOut) * 100).toFixed(0)}%` : '–'}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

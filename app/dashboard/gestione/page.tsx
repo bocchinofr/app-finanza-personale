@@ -834,7 +834,7 @@ export default function DashboardPage() {
               <div className="card flex flex-col">
                 <p className="num-display text-sm font-semibold text-gray-900">Distribuzione entrate YTD</p>
                 <p className="text-xs text-gray-400 mt-0.5 mb-4">Provenienza complessiva per categoria</p>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center gap-3">
                   <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
                     <ResponsiveContainer width={220} height={220}>
                       <PieChart>
@@ -849,7 +849,7 @@ export default function DashboardPage() {
                       <p className="num-display text-base font-bold text-gray-900">{fmtK(ytdIn)}</p>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0 max-w-[110px] space-y-1.5">
+                  <div className="w-[110px] shrink-0 space-y-1.5">
                     {pieDataEntrate.map((d, i) => (
                       <div key={d.name} className="flex justify-between items-center gap-1.5 text-[10px]">
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -867,7 +867,7 @@ export default function DashboardPage() {
               <div className="card flex flex-col">
                 <p className="num-display text-sm font-semibold text-gray-900">Distribuzione uscite YTD</p>
                 <p className="text-xs text-gray-400 mt-0.5 mb-4">Spesa complessiva per categoria</p>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center gap-3">
                   <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
                     <ResponsiveContainer width={220} height={220}>
                       <PieChart>
@@ -882,7 +882,7 @@ export default function DashboardPage() {
                       <p className="num-display text-base font-bold text-gray-900">{fmtK(ytdOut)}</p>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0 max-w-[110px] space-y-1.5">
+                  <div className="w-[110px] shrink-0 space-y-1.5">
                     {pieData.map((d, i) => (
                       <div key={d.name} className="flex justify-between items-center gap-1.5 text-[10px]">
                         <div className="flex items-center gap-1.5 min-w-0">

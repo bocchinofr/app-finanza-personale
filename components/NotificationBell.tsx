@@ -52,7 +52,7 @@ export default function NotificationBell() {
       <button
         onClick={togglePanel}
         aria-label="Notifiche"
-        className="relative p-2 rounded-lg border border-surface-200 text-gray-600 hover:bg-surface-50 transition-colors"
+        className="relative h-9 w-9 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600 hover:bg-surface-50 transition-colors"
       >
         <span className="text-lg leading-none">🔔</span>
         {hasUnread && (

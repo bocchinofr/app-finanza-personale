@@ -6,6 +6,9 @@ import { useEffect, useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
 import { AnnoProvider, useAnno } from '@/lib/AnnoContext'
 
+export const APP_NAME = 'Nucleo Finanza Personale'
+const CONTATTO_EMAIL = 'appfinanzapersonale.alert@gmail.com'
+
 const navItems = [
   { href: '/dashboard', label: 'Patrimonio', icon: '◆' },
   { href: '/dashboard/gestione', label: 'Gestione', icon: '◈' },
@@ -19,11 +22,58 @@ function AnnoSelect() {
     <select
       value={anno}
       onChange={e => setAnno(Number(e.target.value))}
-      className="input w-20 text-sm py-1.5"
+      className="h-9 w-[74px] border border-surface-200 rounded-lg px-2 text-sm bg-white
+                 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
       aria-label="Anno selezionato"
     >
       {anniDisponibili.map(y => <option key={y}>{y}</option>)}
     </select>
+  )
+}
+
+function SyncButton({ compact = false }: { compact?: boolean }) {
+  const router = useRouter()
+  return (
+    <button
+      onClick={() => router.push('/dashboard/upload?autosync=1')}
+      title="Sincronizza dati da Google Sheets"
+      className={`h-9 flex items-center justify-center gap-1.5 rounded-lg border border-surface-200
+                  text-gray-600 hover:bg-surface-50 hover:text-brand-700 transition-colors
+                  ${compact ? 'w-9' : 'px-3 text-sm font-medium'}`}
+    >
+      <span className="text-base leading-none">⟳</span>
+      {!compact && 'Sincronizza'}
+    </button>
+  )
+}
+
+function SidebarFooterNote() {
+  return (
+    <div className="px-4 py-3 border-t border-surface-100 space-y-2">
+      <p className="text-[10px] leading-snug text-gray-400">
+        Solo monitoraggio personale — nessun consiglio finanziario, fiscale o di investimento.
+      </p>
+      <a
+        href={`mailto:${CONTATTO_EMAIL}`}
+        className="text-[11px] font-medium text-brand-700 hover:underline"
+      >
+        ✉ Contatti
+      </a>
+    </div>
+  )
+}
+
+function Logo({ size = 'md' }: { size?: 'sm' | 'md' }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`shrink-0 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold
+                        ${size === 'sm' ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm'}`}>
+        N
+      </span>
+      <p className={`num-display font-semibold text-gray-900 leading-tight ${size === 'sm' ? 'text-sm' : 'text-[15px]'}`}>
+        {APP_NAME}
+      </p>
+    </div>
   )
 }
 
@@ -90,6 +140,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         )}
       </nav>
 
+      <div className="px-3">
+        <SyncButton />
+      </div>
+
+      <SidebarFooterNote />
+
       <div className="p-3 border-t border-surface-100">
         <button
           onClick={logout}
@@ -105,16 +161,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen md:flex">
       {/* Mobile top bar */}
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between bg-white border-b border-surface-200 px-4 py-3">
-        <div>
-          <p className="num-display font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-        </div>
+        <Logo size="sm" />
         <div className="flex items-center gap-2">
           <AnnoSelect />
+          <SyncButton compact />
           <NotificationBell />
           <button
             onClick={() => setMenuOpen(true)}
             aria-label="Apri menu"
-            className="p-2 rounded-lg border border-surface-200 text-gray-600"
+            className="h-9 w-9 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600"
           >
             <span className="text-lg leading-none">☰</span>
           </button>
@@ -136,9 +191,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="px-5 py-5 border-b border-surface-100 flex items-center justify-between">
-          <div>
-            <p className="num-display font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
-          </div>
+          <Logo size="sm" />
           <button
             onClick={() => setMenuOpen(false)}
             aria-label="Chiudi menu"
@@ -151,9 +204,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-56 bg-white border-r border-surface-200 flex-col fixed h-full">
+      <aside className="hidden md:flex w-60 bg-white border-r border-surface-200 flex-col fixed h-full">
         <div className="px-5 py-5 border-b border-surface-100 space-y-3">
-          <p className="num-display font-semibold text-gray-900 text-sm">Patrimonio Netto</p>
+          <Logo />
           <div className="flex items-center gap-2">
             <AnnoSelect />
             <NotificationBell />
@@ -162,7 +215,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         {navLinks}
       </aside>
 
-      <main className="flex-1 md:ml-56">
+      <main className="flex-1 md:ml-60">
         <div className="p-4 md:p-6">
           {children}
         </div>

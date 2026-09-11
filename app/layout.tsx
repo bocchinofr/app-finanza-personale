@@ -7,7 +7,7 @@ const sourceSerif = Source_Serif_4({ subsets: ['latin'], variable: '--font-serif
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', weight: ['400', '500', '600', '700'] })
 
 export const metadata: Metadata = {
-  title: 'Patrimonio Netto',
+  title: 'Nucleo Finanza Personale',
   description: 'Dashboard finanziaria personale',
 }
 

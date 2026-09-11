@@ -1,5 +1,6 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { parseMovimentiSheet } from '@/lib/parseXlsx'
 import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv, parseFondoPensioneCsv } from '@/lib/parseGoogleSheet'
@@ -23,7 +24,7 @@ async function fetchSheet(sheetId: string, sheetName: string): Promise<string[][
   return res.json()
 }
 
-export default function UploadPage() {
+function UploadPageInner() {
   const [dragging, setDragging]       = useState(false)
   const [status, setStatus]           = useState<Status>('idle')
   const [message, setMessage]         = useState('')
@@ -33,6 +34,9 @@ export default function UploadPage() {
   const [profileLoading, setProfileLoading] = useState(true)
   const [savingSheet, setSavingSheet] = useState(false)
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const autoSyncTriggered = useRef(false)
 
   // Carica il foglio salvato nel profilo
   useEffect(() => {
@@ -48,6 +52,17 @@ export default function UploadPage() {
     loadProfile()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sync automatico se si arriva da ?autosync=1 (es. bottone "Sincronizza" in sidebar)
+  useEffect(() => {
+    if (profileLoading || autoSyncTriggered.current) return
+    if (searchParams.get('autosync') === '1' && sheetId) {
+      autoSyncTriggered.current = true
+      router.replace('/dashboard/upload')
+      syncGoogleSheets()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileLoading, sheetId])
 
   // Salva (o aggiorna) il foglio Google nel profilo
   async function saveSheetId() {
@@ -504,5 +519,13 @@ export default function UploadPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function UploadPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-gray-400 p-4">Caricamento…</div>}>
+      <UploadPageInner />
+    </Suspense>
   )
 }

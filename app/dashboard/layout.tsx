@@ -4,10 +4,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
+import SnapshotReminder from '@/components/SnapshotReminder'
+import ContactModal from '@/components/ContactModal'
 import { AnnoProvider, useAnno } from '@/lib/AnnoContext'
 
 export const APP_NAME = 'Nucleo Finanza Personale'
-const CONTATTO_EMAIL = 'appfinanzapersonale.alert@gmail.com'
 
 const navItems = [
   { href: '/dashboard', label: 'Patrimonio', icon: '◆' },
@@ -22,7 +23,7 @@ function AnnoSelect() {
     <select
       value={anno}
       onChange={e => setAnno(Number(e.target.value))}
-      className="h-9 w-[74px] border border-surface-200 rounded-lg px-2 text-sm bg-white
+      className="h-9 w-[86px] border border-surface-200 rounded-lg pl-2 pr-1 text-sm bg-white
                  focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
       aria-label="Anno selezionato"
     >
@@ -37,9 +38,9 @@ function SyncButton({ compact = false }: { compact?: boolean }) {
     <button
       onClick={() => router.push('/dashboard/upload?autosync=1')}
       title="Sincronizza dati da Google Sheets"
-      className={`h-9 flex items-center justify-center gap-1.5 rounded-lg border border-surface-200
-                  text-gray-600 hover:bg-surface-50 hover:text-brand-700 transition-colors
-                  ${compact ? 'w-9' : 'px-3 text-sm font-medium'}`}
+      className={`h-9 flex items-center justify-center gap-1.5 rounded-lg bg-green-600 text-white font-medium
+                  hover:bg-green-700 transition-colors shadow-sm
+                  ${compact ? 'w-9' : 'w-full px-3 text-sm'}`}
     >
       <span className="text-base leading-none">⟳</span>
       {!compact && 'Sincronizza'}
@@ -48,17 +49,21 @@ function SyncButton({ compact = false }: { compact?: boolean }) {
 }
 
 function SidebarFooterNote() {
+  const [expanded, setExpanded] = useState(false)
   return (
-    <div className="px-4 py-3 border-t border-surface-100 space-y-2">
-      <p className="text-[10px] leading-snug text-gray-400">
-        Solo monitoraggio personale — nessun consiglio finanziario, fiscale o di investimento.
-      </p>
-      <a
-        href={`mailto:${CONTATTO_EMAIL}`}
-        className="text-[11px] font-medium text-brand-700 hover:underline"
+    <div className="px-4 py-3 border-t border-surface-100 space-y-2.5">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full text-left flex items-start justify-between gap-2 group"
       >
-        ✉ Contatti
-      </a>
+        <p className="text-[11px] leading-snug text-gray-500 group-hover:text-gray-700">
+          {expanded
+            ? `${APP_NAME} è un cruscotto personale per monitorare flussi di cassa, patrimonio netto, portafoglio investimenti e alert di accumulo, sincronizzato dai tuoi Google Sheets. È uno strumento di solo monitoraggio: non fornisce consulenza finanziaria, fiscale o di investimento — le decisioni restano sempre tue.`
+            : 'Solo monitoraggio personale — nessun consiglio finanziario, fiscale o di investimento.'}
+        </p>
+        <span className={`shrink-0 text-gray-300 text-[10px] transition-transform mt-0.5 ${expanded ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+      <ContactModal />
     </div>
   )
 }
@@ -140,10 +145,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         )}
       </nav>
 
-      <div className="px-3">
-        <SyncButton />
-      </div>
-
       <SidebarFooterNote />
 
       <div className="p-3 border-t border-surface-100">
@@ -165,6 +166,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-2">
           <AnnoSelect />
           <SyncButton compact />
+          <SnapshotReminder compact />
           <NotificationBell />
           <button
             onClick={() => setMenuOpen(true)}
@@ -211,6 +213,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             <AnnoSelect />
             <NotificationBell />
           </div>
+          <SyncButton />
+          <SnapshotReminder />
         </div>
         {navLinks}
       </aside>

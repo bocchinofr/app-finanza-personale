@@ -834,11 +834,11 @@ export default function DashboardPage() {
               <div className="card flex flex-col">
                 <p className="num-display text-sm font-semibold text-gray-900">Distribuzione entrate YTD</p>
                 <p className="text-xs text-gray-400 mt-0.5 mb-4">Provenienza complessiva per categoria</p>
-                <div className="flex items-center gap-4">
-                  <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
-                    <ResponsiveContainer width={150} height={150}>
+                <div className="flex items-center gap-3">
+                  <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
+                    <ResponsiveContainer width={220} height={220}>
                       <PieChart>
-                        <Pie data={pieDataEntrate} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={45}>
+                        <Pie data={pieDataEntrate} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={108} innerRadius={70}>
                           {pieDataEntrate.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                         </Pie>
                         <Tooltip formatter={(v: number) => fmtK(v)} />
@@ -846,14 +846,14 @@ export default function DashboardPage() {
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                       <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
-                      <p className="num-display text-sm font-bold text-gray-900">{fmtK(ytdIn)}</p>
+                      <p className="num-display text-base font-bold text-gray-900">{fmtK(ytdIn)}</p>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex-1 min-w-0 max-w-[110px] space-y-1.5">
                     {pieDataEntrate.map((d, i) => (
-                      <div key={d.name} className="flex justify-between items-center gap-2 text-xs">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <div key={d.name} className="flex justify-between items-center gap-1.5 text-[10px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
                           <span className="text-gray-600 truncate">{d.name}</span>
                         </div>
                         <span className="font-semibold text-gray-800 shrink-0">{ytdIn > 0 ? `${((d.value / ytdIn) * 100).toFixed(0)}%` : '–'}</span>
@@ -867,11 +867,11 @@ export default function DashboardPage() {
               <div className="card flex flex-col">
                 <p className="num-display text-sm font-semibold text-gray-900">Distribuzione uscite YTD</p>
                 <p className="text-xs text-gray-400 mt-0.5 mb-4">Spesa complessiva per categoria</p>
-                <div className="flex items-center gap-4">
-                  <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
-                    <ResponsiveContainer width={150} height={150}>
+                <div className="flex items-center gap-3">
+                  <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
+                    <ResponsiveContainer width={220} height={220}>
                       <PieChart>
-                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={45}>
+                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={108} innerRadius={70}>
                           {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                         </Pie>
                         <Tooltip formatter={(v: number) => fmtK(v)} />
@@ -879,14 +879,14 @@ export default function DashboardPage() {
                     </ResponsiveContainer>
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                       <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
-                      <p className="num-display text-sm font-bold text-gray-900">{fmtK(ytdOut)}</p>
+                      <p className="num-display text-base font-bold text-gray-900">{fmtK(ytdOut)}</p>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex-1 min-w-0 max-w-[110px] space-y-1.5">
                     {pieData.map((d, i) => (
-                      <div key={d.name} className="flex justify-between items-center gap-2 text-xs">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <div key={d.name} className="flex justify-between items-center gap-1.5 text-[10px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
                           <span className="text-gray-600 truncate">{d.name}</span>
                         </div>
                         <span className="font-semibold text-gray-800 shrink-0">{ytdOut > 0 ? `${((d.value / ytdOut) * 100).toFixed(0)}%` : '–'}</span>

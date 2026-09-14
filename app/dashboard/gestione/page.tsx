@@ -590,7 +590,7 @@ export default function DashboardPage() {
   const top5Pie = rawPieData.slice(0, 5)
   const otherValue = rawPieData.slice(5).reduce((s, d) => s + d.value, 0)
   const pieData = otherValue > 0 ? [...top5Pie, { name: 'Altre', value: otherValue }] : top5Pie
-  const topUsciteCats = pieData.slice(0, 5).map(d => d.name)
+  const allUsciteCats = rawPieData.map(d => d.name)
 
   const rawPieDataEntrate = Object.entries(cfEntrate)
     .map(([cat, vals]) => ({ name: cat, value: Math.round(Object.values(vals).reduce((a, b) => a + b, 0)) }))
@@ -599,10 +599,9 @@ export default function DashboardPage() {
   const otherValueEntrate = rawPieDataEntrate.slice(5).reduce((s, d) => s + d.value, 0)
   const pieDataEntrate = otherValueEntrate > 0 ? [...top5PieEntrate, { name: 'Altre', value: otherValueEntrate }] : top5PieEntrate
 
-  const barData = mesiPresenti.map((m, i) => {
+  const barData = mesiPresenti.map((m) => {
     const row: Record<string, number | string> = { mese: MESI_LABEL[m] }
-    topUsciteCats.forEach(cat => { row[cat] = Math.round(cfUscite[cat]?.[m] ?? 0) })
-    row['Altre'] = Math.round(cfTotOut[i] - topUsciteCats.reduce((s, cat) => s + (cfUscite[cat]?.[m] ?? 0), 0))
+    allUsciteCats.forEach(cat => { row[cat] = Math.round(cfUscite[cat]?.[m] ?? 0) })
     return row
   })
 
@@ -833,7 +832,8 @@ export default function DashboardPage() {
               </div>
               <button
                 onClick={() => setShowHeatmap(v => !v)}
-                className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full flex items-center gap-1.5 transition-colors
+                  ${showHeatmap ? 'bg-brand-600 text-white hover:bg-brand-700' : 'bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-100'}`}
               >
                 {showHeatmap ? 'Nascondi dettaglio' : 'Dettaglio'}
                 <span className={`transition-transform ${showHeatmap ? 'rotate-180' : ''}`}>▾</span>
@@ -906,11 +906,93 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* Heatmap - dettaglio, mostrata solo su richiesta */}
+          {showHeatmap && (
+          <div className="card p-0 overflow-hidden">
+            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+              <div>
+                <p className="num-display text-sm font-semibold text-gray-900">Analisi mensile per categoria</p>
+                <p className="text-xs text-gray-400 mt-0.5">Intensità del colore proporzionale al peso della voce nel mese</p>
+              </div>
+              <div className="flex items-center gap-3 text-[11px] font-semibold text-gray-400">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.green.dark }} />Entrate</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.red.dark }} />Uscite</span>
+                {invTotals.length > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.blue.dark }} />Investimenti</span>}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-surface-200">
+                    <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
+                    {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-200">Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Entrate */}
+                  <tr>
+                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
+                  </tr>
+                  {entrateTotals.map(({ cat, total }) => {
+                    const vals = cfEntrate[cat];
+                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
+                    const totaliColonna = entrateTotals.map(e => e.total);
+                    return (
+                      <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
+                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
+                      </tr>
+                    )
+                  })}
+
+                  {/* Uscite */}
+                  <tr>
+                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
+                  </tr>
+                  {usciteTotals.map(({ cat, total }) => {
+                    const vals = cfUscite[cat];
+                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
+                    const totaliColonna = usciteTotals.map(u => u.total);
+                    return (
+                      <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
+                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
+                      </tr>
+                    )
+                  })}
+
+                  {/* Investimenti */}
+                  {invTotals.length > 0 && <>
+                    <tr>
+                      <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
+                    </tr>
+                    {invTotals.map(({ cat, total }) => {
+                      const vals = cfInv[cat];
+                      const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
+                      const totaliColonna = invTotals.map(v => v.total);
+                      return (
+                        <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
+                          <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
+                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
+                        </tr>
+                      )
+                    })}
+                  </>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
+
           {/* Bento: barre spese (full width) + torte entrate/uscite affiancate */}
           <div className="grid grid-cols-1 gap-4 mb-6">
             {/* Barre spese - raggruppate per categoria */}
             <div className="card">
-              <p className="num-display text-sm font-semibold text-gray-900">Spese per categoria (top 5)</p>
+              <p className="num-display text-sm font-semibold text-gray-900">Spese per categoria</p>
               <p className="text-xs text-gray-400 mt-0.5 mb-4">Confronto mensile per categoria di spesa</p>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
@@ -919,7 +1001,7 @@ export default function DashboardPage() {
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
                   <Tooltip formatter={(v: number) => fmtK(v)} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {[...topUsciteCats, 'Altre'].map((cat, i) => (
+                  {allUsciteCats.map((cat, i) => (
                     <Bar key={cat} dataKey={cat} fill={PIE_COLORS[i % PIE_COLORS.length]} radius={[4, 4, 0, 0]} />
                   ))}
                 </BarChart>
@@ -1025,87 +1107,6 @@ export default function DashboardPage() {
           </div>
 
 
-          {/* Heatmap - dettaglio, mostrata solo su richiesta */}
-          {showHeatmap && (
-          <div className="card p-0 overflow-hidden">
-            <div className="flex items-center justify-between px-4 pt-4 pb-2">
-              <div>
-                <p className="num-display text-sm font-semibold text-gray-900">Analisi mensile per categoria</p>
-                <p className="text-xs text-gray-400 mt-0.5">Intensità del colore proporzionale al peso della voce nel mese</p>
-              </div>
-              <div className="flex items-center gap-3 text-[11px] font-semibold text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.green.dark }} />Entrate</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.red.dark }} />Uscite</span>
-                {invTotals.length > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.blue.dark }} />Investimenti</span>}
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-surface-200">
-                    <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
-                    {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-200">Totale</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Entrate */}
-                  <tr>
-                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
-                  </tr>
-                  {entrateTotals.map(({ cat, total }) => {
-                    const vals = cfEntrate[cat];
-                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
-                    const totaliColonna = entrateTotals.map(e => e.total);
-                    return (
-                      <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
-                      </tr>
-                    )
-                  })}
-
-                  {/* Uscite */}
-                  <tr>
-                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
-                  </tr>
-                  {usciteTotals.map(({ cat, total }) => {
-                    const vals = cfUscite[cat];
-                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
-                    const totaliColonna = usciteTotals.map(u => u.total);
-                    return (
-                      <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
-                      </tr>
-                    )
-                  })}
-
-                  {/* Investimenti */}
-                  {invTotals.length > 0 && <>
-                    <tr>
-                      <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
-                    </tr>
-                    {invTotals.map(({ cat, total }) => {
-                      const vals = cfInv[cat];
-                      const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
-                      const totaliColonna = invTotals.map(v => v.total);
-                      return (
-                        <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                          <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
-                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
-                        </tr>
-                      )
-                    })}
-                  </>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          )}
         </>
       )}
 

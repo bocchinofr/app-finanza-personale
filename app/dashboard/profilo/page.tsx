@@ -112,6 +112,7 @@ export default function ProfiloPage() {
   const supabase = createClient()
   
   const [loading, setLoading] = useState(true)
+  const [openSection, setOpenSection] = useState<'personali' | 'rischio' | 'obiettivi' | 'pensione' | null>('personali')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -260,14 +261,22 @@ export default function ProfiloPage() {
       <p className="text-sm text-gray-500 mb-6">Gestisci i tuoi dati personali, il profilo di rischio, gli obiettivi e la previdenza.</p>
 
       <form onSubmit={handleSave}>
-        {/* Griglia a 3 colonne */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-          
-          {/* --- COLONNA 1: Dati personali --- */}
-          <div className="card space-y-4">
-            <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <span className="text-base">👤</span> Dati personali
-            </h2>
+        {/* Sezioni ad espansione - una alla volta, per evitare scroll di pagina */}
+        <div className="space-y-3 mb-6">
+          {/* --- Dati personali --- */}
+          <div className="card p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenSection(s => s === 'personali' ? null : 'personali')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left"
+            >
+              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <span className="text-base">👤</span> Dati personali
+              </h2>
+              <span className={`text-gray-400 text-xs transition-transform ${openSection === 'personali' ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+            {openSection === 'personali' && (
+              <div className="px-5 pb-5 space-y-4">
             <div>
               <p className="text-xs text-gray-400 mb-1">Email</p>
               <p className="text-sm text-gray-700 bg-surface-50 px-3 py-2 rounded-lg border border-surface-200">
@@ -299,13 +308,24 @@ export default function ProfiloPage() {
                 <option value="studente">Studente</option>
               </select>
             </div>
+              </div>
+            )}
           </div>
 
-          {/* --- COLONNA 2: Profilo di rischio --- */}
-          <div className="card space-y-4">
-            <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <span className="text-base">📈</span> Profilo di rischio
-            </h2>
+          {/* --- Profilo di rischio --- */}
+          <div className="card p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenSection(s => s === 'rischio' ? null : 'rischio')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left"
+            >
+              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <span className="text-base">📈</span> Profilo di rischio
+              </h2>
+              <span className={`text-gray-400 text-xs transition-transform ${openSection === 'rischio' ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+            {openSection === 'rischio' && (
+              <div className="px-5 pb-5 space-y-4 max-h-[70vh] overflow-y-auto">
             <p className="text-xs text-gray-400">Rispondi alle domande per calcolare il tuo profilo.</p>
             {RISK_QUESTIONS.map((q) => (
               <div key={q.id} className="space-y-1">
@@ -368,15 +388,24 @@ export default function ProfiloPage() {
                 <p className="text-xs text-gray-400">Modifica le risposte per ricalcolarlo.</p>
               </div>
             )}
+              </div>
+            )}
           </div>
 
-          {/* --- COLONNA 3: Obiettivi finanziari + Fondo pensione --- */}
-          <div className="card space-y-6">
-            {/* Obiettivi finanziari */}
-            <div>
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-3">
+          {/* --- Obiettivi finanziari --- */}
+          <div className="card p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenSection(s => s === 'obiettivi' ? null : 'obiettivi')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left"
+            >
+              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
                 <span className="text-base">🎯</span> Obiettivi finanziari
               </h2>
+              <span className={`text-gray-400 text-xs transition-transform ${openSection === 'obiettivi' ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+            {openSection === 'obiettivi' && (
+              <div className="px-5 pb-5">
               <div className="flex flex-wrap gap-2">
                 {AVAILABLE_GOALS.map(goal => (
                   <button
@@ -394,15 +423,24 @@ export default function ProfiloPage() {
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-1.5">Seleziona uno o più obiettivi principali.</p>
-            </div>
+              </div>
+            )}
+          </div>
 
-            <hr className="border-surface-200" />
-
-            {/* Fondo pensione */}
-            <div>
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-3">
+          {/* --- Fondo pensione --- */}
+          <div className="card p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenSection(s => s === 'pensione' ? null : 'pensione')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left"
+            >
+              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
                 <span className="text-base">🏦</span> Fondo pensione
               </h2>
+              <span className={`text-gray-400 text-xs transition-transform ${openSection === 'pensione' ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+            {openSection === 'pensione' && (
+              <div className="px-5 pb-5">
               
               {/* Ha un fondo pensione? */}
               <div className="mb-4">
@@ -480,7 +518,8 @@ export default function ProfiloPage() {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 

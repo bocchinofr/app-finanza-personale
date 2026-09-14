@@ -145,7 +145,7 @@ function HeatCell({ value, values, palette, format }: {
   );
 }
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 20
 type SortKey = 'mese' | 'data_operazione' | 'descrizione' | 'importo' | 'categoria' | 'componente'
 type SortDir = 'asc' | 'desc'
 
@@ -160,6 +160,7 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 export default function DashboardPage() {
   const supabase = createClient()
   const [tab, setTab] = useState<'movimenti' | 'cashflow' | 'portafoglio'>('movimenti')
+  const [showHeatmap, setShowHeatmap] = useState(false)
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [liquidita, setLiquidita] = useState<Liquidita[]>([])
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
@@ -501,6 +502,14 @@ export default function DashboardPage() {
   const saldo = totalIn - totalOut
   const cats = [...new Set(movimenti.map(m => m.categoria))].sort()
 
+  // Ripartizione Entrate/Uscite per componente (conto), stesso stile della card Liquidità
+  const entratePerComponente = componenti.length > 0
+    ? componenti.map(c => ({ componente: c, val: filtered.filter(m => m.componente === c).reduce((s, m) => s + m.entrate, 0) })).filter(c => c.val !== 0)
+    : []
+  const uscitePerComponente = componenti.length > 0
+    ? componenti.map(c => ({ componente: c, val: filtered.filter(m => m.componente === c).reduce((s, m) => s + m.uscite, 0) })).filter(c => c.val !== 0)
+    : []
+
   // Liquidità: ultima registrazione disponibile per i movimenti
   const ultimaLiquidita = (() => {
     if (liquidita.length === 0) return null
@@ -652,11 +661,17 @@ export default function DashboardPage() {
             {[
               {
                 label: 'Entrate', val: `€ ${fmt(totalIn)}`, color: 'text-green-700', icon: '↑', iconBg: 'bg-green-100 text-green-700',
-                badge: `${(totalIn + totalOut) > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`, badgeBg: 'bg-green-50 text-green-700',
+                badge: entratePerComponente.length > 1
+                  ? entratePerComponente.map(c => `${c.componente}: € ${fmt(c.val)}`).join(' · ')
+                  : `${(totalIn + totalOut) > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`,
+                badgeBg: 'bg-green-50 text-green-700',
               },
               {
                 label: 'Uscite', val: `€ ${fmt(totalOut)}`, color: 'text-red-600', icon: '↓', iconBg: 'bg-red-100 text-red-600',
-                badge: `${(totalIn + totalOut) > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`, badgeBg: 'bg-red-50 text-red-600',
+                badge: uscitePerComponente.length > 1
+                  ? uscitePerComponente.map(c => `${c.componente}: € ${fmt(c.val)}`).join(' · ')
+                  : `${(totalIn + totalOut) > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`,
+                badgeBg: 'bg-red-50 text-red-600',
               },
               {
                 label: 'Saldo', val: `€ ${fmt(saldo)}`, color: saldo >= 0 ? 'text-green-700' : 'text-red-600', icon: '●', iconBg: saldo >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
@@ -809,6 +824,88 @@ export default function DashboardPage() {
             ))}
           </div>
 
+          {/* Tabella riepilogo totali */}
+          <div className="card p-0 overflow-hidden mb-6">
+            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+              <div>
+                <p className="num-display text-sm font-semibold text-gray-900">Riepilogo mensile</p>
+                <p className="text-xs text-gray-400 mt-0.5">Totali e tasso di risparmio</p>
+              </div>
+              <button
+                onClick={() => setShowHeatmap(v => !v)}
+                className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+              >
+                {showHeatmap ? 'Nascondi dettaglio' : 'Dettaglio'}
+                <span className={`transition-transform ${showHeatmap ? 'rotate-180' : ''}`}>▾</span>
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-surface-200">
+                    <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
+                    {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-50 min-w-[100px]">Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-surface-100">
+                    <td className="sticky left-0 z-10 bg-green-50 py-1.5 px-3 text-xs font-bold text-green-800">Totale entrate</td>
+                    {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
+                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtK(ytdIn)}</td>
+                  </tr>
+                  <tr className="border-b border-surface-100">
+                    <td className="sticky left-0 z-10 bg-red-50 py-1.5 px-3 text-xs font-bold text-red-800">Totale uscite</td>
+                    {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
+                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtK(ytdOut)}</td>
+                  </tr>
+                  {invTotals.length > 0 && (
+                    <tr className="border-b border-surface-100">
+                      <td className="sticky left-0 z-10 bg-blue-50 py-1.5 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
+                      {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
+                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtK(ytdInv)}</td>
+                    </tr>
+                  )}
+                  <tr className="border-b-2 border-surface-200">
+                    <td className={`sticky left-0 z-10 py-1.5 px-3 text-xs font-bold text-gray-800 ${ytdRisp >= 0 ? 'bg-green-50/50' : 'bg-red-50/50'}`}>Risparmio netto</td>
+                    {cfRisparmio.map((v, i) => (
+                      <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
+                    ))}
+                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
+                  </tr>
+                  <tr className="border-b border-surface-100">
+                    <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio del mese</td>
+                    {mesiPresenti.map((m, i) => {
+                      const lordo = cfTotIn[i] - cfTotOut[i]
+                      const pct = cfTotIn[i] > 0 ? (lordo / cfTotIn[i]) * 100 : null
+                      return (
+                        <td key={m} className={`py-1.5 px-2 text-center font-mono tabular-nums ${pct == null ? 'text-gray-300' : pct >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          {pct == null ? '–' : `${pct.toFixed(0)}%`}
+                        </td>
+                      )
+                    })}
+                    <td className={`py-1.5 px-3 text-right font-bold ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
+                  </tr>
+                  <tr>
+                    <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio investito</td>
+                    {mesiPresenti.map((m, i) => {
+                      const lordo = cfTotIn[i] - cfTotOut[i]
+                      const pct = lordo > 0 ? (cfTotInv[i] / lordo) * 100 : (cfTotInv[i] > 0 ? null : 0)
+                      return (
+                        <td key={m} className="py-1.5 px-2 text-center font-mono tabular-nums text-gray-600">
+                          {pct == null ? '–' : `${pct.toFixed(0)}%`}
+                        </td>
+                      )
+                    })}
+                    <td className="py-1.5 px-3 text-right font-bold text-gray-700 bg-surface-50">
+                      {ytdRisp > 0 ? `${((ytdInv / ytdRisp) * 100).toFixed(0)}%` : '–'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Bento: barre spese (full width) + torte entrate/uscite affiancate */}
           <div className="grid grid-cols-1 gap-4 mb-6">
             {/* Barre spese - raggruppate per categoria */}
@@ -927,80 +1024,9 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Tabella riepilogo totali - estratta dalla heatmap */}
-          <div className="card p-0 overflow-hidden mb-4">
-            <div className="px-4 pt-4 pb-2">
-              <p className="num-display text-sm font-semibold text-gray-900">Riepilogo mensile</p>
-              <p className="text-xs text-gray-400 mt-0.5">Totali e tasso di risparmio</p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-surface-200">
-                    <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
-                    {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-50 min-w-[100px]">Totale</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-surface-100">
-                    <td className="sticky left-0 z-10 bg-green-50 py-1.5 px-3 text-xs font-bold text-green-800">Totale entrate</td>
-                    {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtK(ytdIn)}</td>
-                  </tr>
-                  <tr className="border-b border-surface-100">
-                    <td className="sticky left-0 z-10 bg-red-50 py-1.5 px-3 text-xs font-bold text-red-800">Totale uscite</td>
-                    {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtK(ytdOut)}</td>
-                  </tr>
-                  {invTotals.length > 0 && (
-                    <tr className="border-b border-surface-100">
-                      <td className="sticky left-0 z-10 bg-blue-50 py-1.5 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
-                      {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
-                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtK(ytdInv)}</td>
-                    </tr>
-                  )}
-                  <tr className="border-b-2 border-surface-200">
-                    <td className={`sticky left-0 z-10 py-1.5 px-3 text-xs font-bold text-gray-800 ${ytdRisp >= 0 ? 'bg-green-50/50' : 'bg-red-50/50'}`}>Risparmio netto</td>
-                    {cfRisparmio.map((v, i) => (
-                      <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
-                    ))}
-                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
-                  </tr>
-                  <tr className="border-b border-surface-100">
-                    <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio del mese</td>
-                    {mesiPresenti.map((m, i) => {
-                      const lordo = cfTotIn[i] - cfTotOut[i]
-                      const pct = cfTotIn[i] > 0 ? (lordo / cfTotIn[i]) * 100 : null
-                      return (
-                        <td key={m} className={`py-1.5 px-2 text-center font-mono tabular-nums ${pct == null ? 'text-gray-300' : pct >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                          {pct == null ? '–' : `${pct.toFixed(0)}%`}
-                        </td>
-                      )
-                    })}
-                    <td className={`py-1.5 px-3 text-right font-bold ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
-                  </tr>
-                  <tr>
-                    <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio investito</td>
-                    {mesiPresenti.map((m, i) => {
-                      const lordo = cfTotIn[i] - cfTotOut[i]
-                      const pct = lordo > 0 ? (cfTotInv[i] / lordo) * 100 : (cfTotInv[i] > 0 ? null : 0)
-                      return (
-                        <td key={m} className="py-1.5 px-2 text-center font-mono tabular-nums text-gray-600">
-                          {pct == null ? '–' : `${pct.toFixed(0)}%`}
-                        </td>
-                      )
-                    })}
-                    <td className="py-1.5 px-3 text-right font-bold text-gray-700 bg-surface-50">
-                      {ytdRisp > 0 ? `${((ytdInv / ytdRisp) * 100).toFixed(0)}%` : '–'}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
 
-          {/* Heatmap */}
+          {/* Heatmap - dettaglio, mostrata solo su richiesta */}
+          {showHeatmap && (
           <div className="card p-0 overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
               <div>
@@ -1079,6 +1105,7 @@ export default function DashboardPage() {
               </table>
             </div>
           </div>
+          )}
         </>
       )}
 

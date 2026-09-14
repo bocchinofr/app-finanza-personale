@@ -428,14 +428,14 @@ function UploadPageInner() {
           </a>
           <div className="pt-2 border-t border-surface-100">
             <p className="text-xs text-gray-400">
-              Il foglio può contenere fino a 3 fogli:<br />
-              <strong>Movimenti conto</strong> (obbligatorio), <strong>Liquidità</strong> e <strong>Anagrafica Portafoglio</strong> (opzionali).
+              Il foglio può contenere fino a 4 fogli:<br />
+              <strong>Movimenti conto</strong> (obbligatorio), <strong>Liquidità</strong>, <strong>Fondo pensione</strong> e <strong>Anagrafica Portafoglio</strong> (opzionali).
             </p>
           </div>
         </div>
       </div>
 
-      {/* Guida configurazione (invariata) */}
+      {/* Guida configurazione — aggiornata: 4 fogli, colonne Liquidità/Fondo pensione corrette */}
       <details className="mt-6 card bg-surface-50">
         <summary className="text-sm font-semibold text-gray-700 cursor-pointer hover:text-brand-600 transition-colors">
           📖 Come configurare il tuo foglio Google
@@ -443,39 +443,55 @@ function UploadPageInner() {
         {/* ... contenuto invariato ... */}
         <div className="space-y-3 pt-3 text-xs text-gray-500">
           <p>
-            Il template contiene <strong className="text-gray-700">3 fogli</strong> che puoi compilare.
+            Il template contiene <strong className="text-gray-700">4 fogli</strong> che puoi compilare.
             Solo il foglio <strong className="text-gray-700">&quot;Movimenti conto&quot;</strong> è obbligatorio.
           </p>
-          <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-            <p className="font-medium text-gray-700 text-xs">📊 Foglio 1: Movimenti conto (obbligatorio)</p>
-            <p className="text-gray-500">Contiene l&apos;elenco di tutte le transazioni del conto.</p>
-            <div className="space-y-0.5 pt-1">
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Data operazione</code> — formato GG/MM/AAAA</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Descrizione</code> — testo libero</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Entrate</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Uscite</code> — importo numerico senza simbolo €</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CATEGORIA</code> — usa i valori dell&apos;elenco nel template</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">COMPONENTE</code> — opzionale, es. &quot;Giulia&quot; o &quot;Famiglia&quot;</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
+              <p className="font-medium text-gray-700 text-xs">📊 Foglio 1: Movimenti conto (obbligatorio)</p>
+              <p className="text-gray-500">Contiene l&apos;elenco di tutte le transazioni del conto.</p>
+              <div className="space-y-0.5 pt-1">
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Data operazione</code> — formato GG/MM/AAAA</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Descrizione</code> — testo libero</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Entrate</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Uscite</code> — importo numerico senza simbolo €</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CATEGORIA</code> — usa i valori dell&apos;elenco nel template</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">COMPONENTE</code> — opzionale, es. &quot;Giulia&quot; o &quot;Famiglia&quot;</p>
+              </div>
             </div>
-          </div>
-          <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-            <p className="font-medium text-gray-700 text-xs">💰 Foglio 2: Liquidità (opzionale)</p>
-            <p className="text-gray-500">Traccia il saldo dei conti correnti e dei depositi.</p>
-            <div className="space-y-0.5 pt-1">
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Data</code> — formato GG/MM/AAAA</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Conto</code> — nome del conto (es. &quot;Intesa&quot;, &quot;Fineco&quot;)</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Saldo</code> — importo numerico</p>
+            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
+              <p className="font-medium text-gray-700 text-xs">💰 Foglio 2: Liquidità (opzionale)</p>
+              <p className="text-gray-500">Traccia il saldo dei conti correnti e dei depositi, mese per mese.</p>
+              <div className="space-y-0.5 pt-1">
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ANNO</code> — es. 2026</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CONTO</code> — nome del conto (es. &quot;Intesa&quot;, &quot;Fineco&quot;)</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">SALDO</code> — importo numerico</p>
+              </div>
             </div>
-          </div>
-          <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-            <p className="font-medium text-gray-700 text-xs">📈 Foglio 3: Anagrafica Portafoglio (opzionale)</p>
-            <p className="text-gray-500">Elenco degli asset finanziari (azioni, obbligazioni, ETF, fondi).</p>
-            <div className="space-y-0.5 pt-1">
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Tipo</code> — Azioni, Obbligazioni, ETF, Fondi, Crypto</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Ticker</code> — codice identificativo (es. &quot;AAPL&quot;, &quot;VWCE&quot;)</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Quantità</code> — numero di unità possedute</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Prezzo medio carico</code> — prezzo di acquisto medio</p>
-              <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Valore attuale</code> — valore di mercato aggiornato</p>
+            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
+              <p className="font-medium text-gray-700 text-xs">🏦 Foglio 3: Fondo pensione (opzionale)</p>
+              <p className="text-gray-500">Traccia il saldo e gli interessi maturati sul fondo pensione, mese per mese.</p>
+              <div className="space-y-0.5 pt-1">
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ANNO</code> — es. 2026</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">FONDO</code> — nome del fondo</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">SALDO</code> — importo numerico</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">INTERESSI</code> — interessi maturati nel mese</p>
+              </div>
+            </div>
+            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
+              <p className="font-medium text-gray-700 text-xs">📈 Foglio 4: Anagrafica Portafoglio (opzionale)</p>
+              <p className="text-gray-500">Elenco degli asset finanziari (azioni, obbligazioni, ETF, fondi).</p>
+              <div className="space-y-0.5 pt-1">
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ASSET</code> — nome/codice sintetico della posizione</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">TICKER</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ISIN</code> — identificativi per il recupero quotazioni</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">NOME</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">DESCRIZIONE</code> — nome esteso dell&apos;asset</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">DATA ACQUISTO</code> — formato GG/MM/AAAA</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">PREZZO ACQUISTO</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">QUANTITÀ</code> — prezzo medio di carico e quantità possedute</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CLASSE</code> — azionario, obbligazionario o altro</p>
+                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">SVINCOLATO</code> — &quot;S&quot; se il capitale è libero e concorre alla riserva di accumulo</p>
+              </div>
             </div>
           </div>
           <div className="mt-2 pt-3 border-t border-surface-200 space-y-1">

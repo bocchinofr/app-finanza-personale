@@ -490,7 +490,8 @@ export default function PatrimonioPage() {
               </tr>
             </thead>
             <tbody>
-              {storicoData.map((row, i) => {
+              {storicoData.slice().reverse().map((row) => {
+                const i = storicoData.findIndex(r => r.mese === row.mese)
                 const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
                 const rowPrec = i > 0 ? storicoData[i - 1] : null
                 const totalePrec = rowPrec ? rowPrec['Liquidità'] + rowPrec['Capitale investito'] + rowPrec['Fondo pensione'] : null

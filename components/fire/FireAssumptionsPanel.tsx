@@ -10,7 +10,17 @@ interface FireAssumptionsPanelProps {
   onChange: (parametri: FireParametri) => void;
 }
 
-function CampoNumero({
+// Ogni colonna ha un proprio accento cromatico (variazioni sage/terra coerenti
+// con la palette dell'app) così le quattro sezioni si distinguono senza bordi
+// pesanti o card-in-card.
+const ACCENTI = {
+  spese: "border-t-stone-400",
+  investimenti: "border-t-emerald-600",
+  fondo: "border-t-teal-600",
+  generali: "border-t-amber-600",
+} as const;
+
+function Campo({
   label,
   value,
   onChange,
@@ -24,19 +34,36 @@ function CampoNumero({
   step?: number;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm text-stone-600">
-      <span>{label}</span>
-      <div className="flex items-center gap-1">
+    <label className="block">
+      <span className="block text-[11px] leading-tight text-stone-500">{label}</span>
+      <div className="mt-1 flex items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 focus-within:border-emerald-500">
         <input
           type="number"
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full rounded-md border border-stone-200 px-2 py-1.5 font-mono text-sm"
+          className="w-full min-w-0 border-0 p-0 font-mono text-sm text-stone-800 outline-none"
         />
-        {suffix && <span className="text-xs text-stone-400">{suffix}</span>}
+        {suffix && <span className="shrink-0 text-[10px] text-stone-400">{suffix}</span>}
       </div>
     </label>
+  );
+}
+
+function Colonna({
+  titolo,
+  accento,
+  children,
+}: {
+  titolo: string;
+  accento: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`border-t-2 ${accento} pt-3`}>
+      <h4 className="mb-2.5 text-sm font-medium text-stone-700">{titolo}</h4>
+      <div className="space-y-2.5">{children}</div>
+    </div>
   );
 }
 
@@ -65,79 +92,69 @@ export default function FireAssumptionsPanel({
 
       {aperto && (
         <div className="space-y-6 border-t border-stone-200 px-4 py-4">
-          {/* Spese */}
-          <section className="space-y-3">
-            <h4 className="text-sm font-medium text-stone-700">Spese</h4>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <CampoNumero
+          <div className="grid grid-cols-2 gap-x-5 gap-y-6 lg:grid-cols-4">
+            <Colonna titolo="Spese" accento={ACCENTI.spese}>
+              <Campo
                 label="Spese annue base"
                 value={parametri.speseAnnueBase}
                 onChange={(v) => set("speseAnnueBase", v)}
                 suffix="€/anno"
               />
-              <CampoNumero
+              <Campo
                 label="Crescita spese"
                 value={parametri.crescitaSpesePct}
                 onChange={(v) => set("crescitaSpesePct", v)}
                 suffix="%/anno"
                 step={0.1}
               />
-            </div>
-          </section>
+            </Colonna>
 
-          {/* Investimenti */}
-          <section className="space-y-3">
-            <h4 className="text-sm font-medium text-stone-700">Investimenti</h4>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <CampoNumero
+            <Colonna titolo="Investimenti" accento={ACCENTI.investimenti}>
+              <Campo
                 label="Investimento annuo"
                 value={parametri.investimentoAnnuoBase}
                 onChange={(v) => set("investimentoAnnuoBase", v)}
                 suffix="€/anno"
               />
-              <CampoNumero
+              <Campo
                 label="Crescita investimento"
                 value={parametri.crescitaInvestimentoPct}
                 onChange={(v) => set("crescitaInvestimentoPct", v)}
                 suffix="%/anno"
                 step={0.1}
               />
-              <CampoNumero
+              <Campo
                 label="Rendimento atteso"
                 value={parametri.rendimentoInvestimentiPct}
                 onChange={(v) => set("rendimentoInvestimentiPct", v)}
                 suffix="%/anno"
                 step={0.1}
               />
-              <CampoNumero
+              <Campo
                 label="Tassazione interessi"
                 value={parametri.tassazioneInteressiPct}
                 onChange={(v) => set("tassazioneInteressiPct", v)}
                 suffix="%"
                 step={0.5}
               />
-            </div>
-          </section>
+            </Colonna>
 
-          {/* Fondo pensione */}
-          <section className="space-y-3">
-            <h4 className="text-sm font-medium text-stone-700">Fondo pensione</h4>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <CampoNumero
+            <Colonna titolo="Fondo pensione" accento={ACCENTI.fondo}>
+              <Campo
                 label="Rendimento atteso"
                 value={parametri.rendimentoFondoPensionePct}
                 onChange={(v) => set("rendimentoFondoPensionePct", v)}
                 suffix="%/anno"
                 step={0.1}
               />
-              <CampoNumero
+              <Campo
                 label="Tassazione fondo"
                 value={parametri.tassazioneFondoPensionePct}
                 onChange={(v) => set("tassazioneFondoPensionePct", v)}
                 suffix="%"
                 step={0.5}
               />
-              <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-stone-600">
+              <label className="flex items-center gap-1.5 pt-1 text-[11px] text-stone-500">
                 <input
                   type="checkbox"
                   checked={parametri.includiFondoPensioneInFireNumber}
@@ -147,44 +164,39 @@ export default function FireAssumptionsPanel({
                 />
                 Includi nel FIRE number
               </label>
-            </div>
-          </section>
+            </Colonna>
 
-          {/* Macro */}
-          <section className="space-y-3">
-            <h4 className="text-sm font-medium text-stone-700">Parametri generali</h4>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <CampoNumero
+            <Colonna titolo="Generali" accento={ACCENTI.generali}>
+              <Campo
                 label="Inflazione"
                 value={parametri.inflazionePct}
                 onChange={(v) => set("inflazionePct", v)}
                 suffix="%/anno"
                 step={0.1}
               />
-              <CampoNumero
+              <Campo
                 label="Safe Withdrawal Rate"
                 value={parametri.swrPct}
                 onChange={(v) => set("swrPct", v)}
                 suffix="%"
                 step={0.1}
               />
-              <CampoNumero
+              <Campo
                 label="Orizzonte proiezione"
                 value={parametri.orizzonteAnni}
                 onChange={(v) => set("orizzonteAnni", v)}
                 suffix="anni"
               />
-            </div>
-          </section>
+            </Colonna>
+          </div>
 
-          {/* Debiti */}
-          <section className="space-y-3">
-            <h4 className="text-sm font-medium text-stone-700">Debiti</h4>
+          <div className="border-t border-stone-200 pt-4">
+            <h4 className="mb-2.5 text-sm font-medium text-stone-700">Debiti</h4>
             <DebitiEditor
               debiti={parametri.debiti}
               onChange={(debiti) => set("debiti", debiti)}
             />
-          </section>
+          </div>
         </div>
       )}
     </div>

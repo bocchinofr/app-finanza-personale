@@ -120,7 +120,7 @@ export function calcolaProiezioneFire(params: FireParametri): AnnoProiezione[] {
     // crescita propria (es. inflazione), quindi il target è semplicemente spese/SWR.
     const fireNumberTarget = speseAnnue / (params.swrPct / 100);
 
-    const fireRaggiunto =
+    const fireRaggiunto: boolean =
       fireGiaRaggiunto || patrimonioRilevantePerFire >= fireNumberTarget;
     fireGiaRaggiunto = fireRaggiunto;
 

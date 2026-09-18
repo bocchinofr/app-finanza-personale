@@ -246,11 +246,14 @@ export default function FirePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-serif text-2xl text-stone-800">FIRE</h1>
-        <p className="text-sm text-stone-500">
-          Quando potrai vivere di rendita, e quanto dura il capitale se smettessi oggi.
-        </p>
+      <div className="flex items-center gap-1.5">
+        <div>
+          <h1 className="font-serif text-2xl text-stone-800">FIRE</h1>
+          <p className="text-sm text-stone-500">
+            Quando potrai vivere di rendita, e quanto dura il capitale se smettessi oggi.
+          </p>
+        </div>
+        <FireInfoBox />
       </div>
 
       {errore && (
@@ -263,8 +266,6 @@ export default function FirePage() {
           Data di nascita non impostata: vai su Profilo per inserirla. Nel frattempo uso {ETA_DEFAULT_SE_MANCANTE} anni come default.
         </div>
       )}
-
-      <FireInfoBox />
 
       <FireAssumptionsPanel parametri={parametri} onChange={setParametri} />
 

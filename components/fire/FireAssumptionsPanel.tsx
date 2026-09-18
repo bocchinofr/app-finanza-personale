@@ -26,12 +26,14 @@ function Campo({
   onChange,
   suffix,
   step = 1,
+  nota,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   suffix?: string;
   step?: number;
+  nota?: string;
 }) {
   return (
     <label className="block">
@@ -46,6 +48,7 @@ function Campo({
         />
         {suffix && <span className="shrink-0 text-[10px] text-stone-400">{suffix}</span>}
       </div>
+      {nota && <p className="mt-1 text-[10px] leading-snug text-stone-400">{nota}</p>}
     </label>
   );
 }
@@ -154,6 +157,20 @@ export default function FireAssumptionsPanel({
                 suffix="%"
                 step={0.5}
               />
+              <Campo
+                label="Età sblocco"
+                value={parametri.etaRitiroFondoPensione}
+                onChange={(v) => set("etaRitiroFondoPensione", v)}
+                suffix="anni"
+                nota="Da questa età il fondo si libera: una parte come capitale, il resto come integrazione annua."
+              />
+              <Campo
+                label="Quota capitale (TFR)"
+                value={parametri.quotaCapitaleFondoPensionePct}
+                onChange={(v) => set("quotaCapitaleFondoPensionePct", v)}
+                suffix="%"
+                nota="Il resto esce come integrazione annua che riduce le spese nette."
+              />
               <label className="flex items-center gap-1.5 pt-1 text-[11px] text-stone-500">
                 <input
                   type="checkbox"
@@ -162,7 +179,7 @@ export default function FireAssumptionsPanel({
                     set("includiFondoPensioneInFireNumber", e.target.checked)
                   }
                 />
-                Includi nel FIRE number
+                Conta anche da bloccato nel FIRE number
               </label>
             </Colonna>
 
@@ -173,6 +190,7 @@ export default function FireAssumptionsPanel({
                 onChange={(v) => set("inflazionePct", v)}
                 suffix="%/anno"
                 step={0.1}
+                nota="Valore di riferimento; per farla incidere sulle spese, imposta anche la 'Crescita spese' qui sopra."
               />
               <Campo
                 label="Safe Withdrawal Rate"
@@ -180,6 +198,7 @@ export default function FireAssumptionsPanel({
                 onChange={(v) => set("swrPct", v)}
                 suffix="%"
                 step={0.1}
+                nota="Quota del capitale che puoi prelevare ogni anno senza esaurirlo nel tempo. 4% è la regola storica più usata (capitale target = spese ÷ SWR)."
               />
               <Campo
                 label="Orizzonte proiezione"

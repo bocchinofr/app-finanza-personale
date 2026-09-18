@@ -9,12 +9,15 @@ import {
   statoAttuale,
 } from '@/types/index'
 import {
-  calcolaProiezioneFire, calcolaFireNumber, calcolaRunway,
-  FireParametri, Debito,
+  calcolaProiezioneFire, calcolaFireNumber, calcolaRunway, calcolaSostenibilitaPostFire,
+  confrontaConSnapshot, AnnoProiezione, ConfrontoAnnuale, FireParametri, Debito,
 } from '@/lib/fireCalculations'
+import FireInfoBox from '@/components/fire/FireInfoBox'
 import FireAssumptionsPanel from '@/components/fire/FireAssumptionsPanel'
 import FireNumberCard from '@/components/fire/FireNumberCard'
 import RunwayCard from '@/components/fire/RunwayCard'
+import PostFireCard from '@/components/fire/PostFireCard'
+import FireReviewCard from '@/components/fire/FireReviewCard'
 import FireProjectionChart from '@/components/fire/FireProjectionChart'
 
 const DEFAULT_SWR = 4
@@ -22,6 +25,8 @@ const DEFAULT_INFLAZIONE = 2
 const DEFAULT_TASSAZIONE_INTERESSI = 26
 const DEFAULT_TASSAZIONE_FONDO = 15
 const DEFAULT_ORIZZONTE = 50
+const DEFAULT_ETA_RITIRO_FONDO = 67
+const DEFAULT_QUOTA_CAPITALE_FONDO = 50
 const ETA_DEFAULT_SE_MANCANTE = 40
 
 function calcolaEta(birthDate: string | null | undefined): number | null {
@@ -53,6 +58,11 @@ export default function FirePage() {
 
   const [parametri, setParametri] = useState<FireParametri | null>(null)
 
+  // Confronto con lo snapshot congelato per l'anno corrente (revisione annuale)
+  const [confronto, setConfronto] = useState<ConfrontoAnnuale | null>(null)
+  const [annoSnapshot, setAnnoSnapshot] = useState<number | null>(null)
+  const [snapshotGestito, setSnapshotGestito] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -75,8 +85,6 @@ export default function FirePage() {
       // --- Età da profilo ---
       const profilo = profRes.data as (Profilo & { birth_date?: string | null }) | null
       if (profRes.error) {
-        // Colonna birth_date potenzialmente assente: non blocchiamo la pagina,
-        // segnaliamo il problema invece di far crashare la query.
         setErrore('Impossibile leggere il profilo (verifica che la colonna birth_date esista).')
       } else {
         const eta = calcolaEta(profilo?.birth_date)
@@ -92,8 +100,7 @@ export default function FirePage() {
         .filter(l => l.mese === ultimoMeseLiquidita)
         .reduce((sum, l) => sum + (l.saldo ?? 0), 0)
 
-      // --- Portafoglio: valore a prezzo di carico (la proiezione FIRE lavora
-      // su ordini di grandezza pluriennali, non serve la quotazione live) ---
+      // --- Portafoglio: valore a prezzo di carico ---
       const portafoglio = (portRes.data ?? []) as AssetPortafoglio[]
       const capitaleInvestito = portafoglio.reduce((sum, a) => {
         const { quantita, prezzoCarico } = statoAttuale(a)
@@ -117,9 +124,7 @@ export default function FirePage() {
         setRendimentoFondoStorico(Math.round((fondoInteressi / fondoTotale) * 1000) / 10)
       }
 
-      // --- Spese e investimenti: media mensile dei mesi con dati nell'anno
-      // corrente, annualizzata. Valore indicativo, sempre correggibile a mano
-      // nel pannello parametri se l'anno corrente ha pochi mesi di dati. ---
+      // --- Spese e investimenti: media mensile dei mesi con dati, annualizzata ---
       const movimenti = (movRes.data ?? []) as Movimento[]
       const mesiConMovimenti = new Set(movimenti.map(m => m.mese)).size || 1
 
@@ -129,8 +134,6 @@ export default function FirePage() {
       const investimentiTotali = movimenti
         .filter(m => CATEGORIE_INVESTIMENTI.includes(m.categoria))
         .reduce((sum, m) => sum + (m.uscite ?? 0), 0)
-      // entrateTotali riservato a un futuro confronto entrate/spese in UI;
-      // il calcolo FIRE si basa solo su spese e capacità di investimento dichiarate.
       void movimenti.filter(m => CATEGORIE_ENTRATE.includes(m.categoria))
 
       setSpeseAnnueBase(Math.round((speseTotali / mesiConMovimenti) * 12))
@@ -143,8 +146,7 @@ export default function FirePage() {
   }, [])
 
   // Inizializza i parametri di default una sola volta, appena i dati aggregati
-  // sono pronti. Dopo l'inizializzazione l'utente li modifica liberamente nel
-  // pannello e questo effect non li sovrascrive più.
+  // sono pronti. Dopo l'inizializzazione l'utente li modifica liberamente.
   useEffect(() => {
     if (parametri !== null) return
     if (loading) return
@@ -155,7 +157,7 @@ export default function FirePage() {
       annoIniziale: oggi.getFullYear(),
       etaIniziale: etaAttuale,
       speseAnnueBase,
-      crescitaSpesePct: 0,
+      crescitaSpesePct: DEFAULT_INFLAZIONE,
       investimentoAnnuoBase,
       crescitaInvestimentoPct: 0,
       patrimonioLiquidoIniziale,
@@ -163,6 +165,8 @@ export default function FirePage() {
       fondoPensioneIniziale,
       rendimentoFondoPensionePct: rendimentoFondoStorico,
       includiFondoPensioneInFireNumber: false,
+      etaRitiroFondoPensione: DEFAULT_ETA_RITIRO_FONDO,
+      quotaCapitaleFondoPensionePct: DEFAULT_QUOTA_CAPITALE_FONDO,
       inflazionePct: DEFAULT_INFLAZIONE,
       swrPct: DEFAULT_SWR,
       tassazioneInteressiPct: DEFAULT_TASSAZIONE_INTERESSI,
@@ -181,6 +185,60 @@ export default function FirePage() {
     () => (parametri ? calcolaFireNumber(proiezione, parametri) : null),
     [proiezione, parametri]
   )
+  const postFireResult = useMemo(
+    () => (fireNumberResult ? calcolaSostenibilitaPostFire(proiezione, fireNumberResult) : null),
+    [proiezione, fireNumberResult]
+  )
+
+  // Snapshot annuale: al primo caricamento dell'anno, se non esiste ancora uno
+  // snapshot per l'anno corrente, lo crea congelando parametri e proiezione
+  // attuali. Poi carica lo snapshot di riferimento (nuovo o già esistente) e
+  // calcola il confronto reale-vs-previsto per l'anno in corso.
+  useEffect(() => {
+    if (snapshotGestito) return
+    if (!parametri || proiezione.length === 0) return
+
+    let cancelled = false
+    async function gestisciSnapshot() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !parametri) return
+
+      const annoCorrente = parametri.annoIniziale
+
+      await supabase.from('fire_snapshot').upsert(
+        {
+          user_id: user.id,
+          anno_creazione: annoCorrente,
+          parametri,
+          proiezione,
+        },
+        { onConflict: 'user_id,anno_creazione', ignoreDuplicates: true }
+      )
+
+      const { data: snapshotRow } = await supabase
+        .from('fire_snapshot')
+        .select('anno_creazione, proiezione')
+        .eq('user_id', user.id)
+        .eq('anno_creazione', annoCorrente)
+        .single()
+
+      if (cancelled || !snapshotRow) return
+
+      const proiezioneSnapshot = snapshotRow.proiezione as AnnoProiezione[]
+      const risultatoConfronto = confrontaConSnapshot(annoCorrente, proiezioneSnapshot, {
+        speseReali: speseAnnueBase,
+        investimentoReale: investimentoAnnuoBase,
+        patrimonioReale: patrimonioLiquidoIniziale + fondoPensioneIniziale,
+      })
+
+      setConfronto(risultatoConfronto)
+      setAnnoSnapshot(snapshotRow.anno_creazione)
+      setSnapshotGestito(true)
+    }
+    gestisciSnapshot()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parametri, proiezione, snapshotGestito])
 
   if (loading || !parametri) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-400">Caricamento…</div>
@@ -206,12 +264,24 @@ export default function FirePage() {
         </div>
       )}
 
+      <FireInfoBox />
+
       <FireAssumptionsPanel parametri={parametri} onChange={setParametri} />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {fireNumberResult && <FireNumberCard risultato={fireNumberResult} />}
+        {postFireResult && (
+          <PostFireCard
+            risultato={postFireResult}
+            etaRitiroFondoPensione={parametri.etaRitiroFondoPensione}
+          />
+        )}
         <RunwayCard calcolaRunway={(includiFondo) => calcolaRunway(parametri, includiFondo)} />
       </div>
+
+      {confronto && annoSnapshot && (
+        <FireReviewCard confronto={confronto} annoSnapshot={annoSnapshot} />
+      )}
 
       <FireProjectionChart proiezione={proiezione} />
     </div>

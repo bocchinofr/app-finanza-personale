@@ -42,7 +42,7 @@ export default function FireInfoBox() {
               </div>
 
               <div>
-                <p className="font-semibold text-gray-800 mb-1">Quando sei "FIRE"</p>
+                <p className="font-semibold text-gray-800 mb-1">Quando sei &ldquo;FIRE&rdquo;</p>
                 <p>
                   Non un rapporto fisso (spese ÷ SWR), ma una <strong>verifica simulata</strong>:
                   ogni anno, finché sei in accumulo, si controlla &ldquo;se smettessi di investire

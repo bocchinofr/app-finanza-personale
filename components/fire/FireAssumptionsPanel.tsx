@@ -198,7 +198,7 @@ export default function FireAssumptionsPanel({
                 onChange={(v) => set("swrPct", v)}
                 suffix="%"
                 step={0.1}
-                nota="Quota del capitale che puoi prelevare ogni anno senza esaurirlo nel tempo. 4% è la regola storica più usata (capitale target = spese ÷ SWR)."
+                nota="Riferimento storico (regola del 4%): capitale target = spese ÷ SWR. Il vero criterio di raggiungimento è la simulazione, non questo rapporto — vedi il box info."
               />
               <Campo
                 label="Orizzonte proiezione"

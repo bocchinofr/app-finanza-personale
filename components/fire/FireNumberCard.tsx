@@ -21,17 +21,17 @@ export default function FireNumberCard({ risultato }: FireNumberCardProps) {
         € {formatEuro(risultato.fireNumberOggi)}
       </p>
       <p className="mt-0.5 text-xs text-stone-400">
-        capitale target su spese attuali (spese / SWR)
+        riferimento regola del 4%: spese attuali / SWR
       </p>
 
       <div className="mt-4 border-t border-stone-100 pt-4">
         {risultato.annoStimato === null ? (
           <p className="text-sm text-amber-600">
-            Non raggiunto entro l&apos;orizzonte di proiezione impostato.
+            Sostenibilità non raggiunta entro l&apos;orizzonte di proiezione impostato.
           </p>
         ) : raggiunto ? (
           <p className="text-sm text-emerald-700">
-            Obiettivo già raggiunto oggi.
+            Sostenibilità già raggiunta oggi.
           </p>
         ) : (
           <>
@@ -39,7 +39,7 @@ export default function FireNumberCard({ risultato }: FireNumberCardProps) {
               {risultato.anniMancanti} anni
             </p>
             <p className="text-xs text-stone-400">
-              stimato per il {risultato.annoStimato} (età {risultato.etaStimata})
+              simulato sostenibile dal {risultato.annoStimato} (età {risultato.etaStimata})
             </p>
           </>
         )}

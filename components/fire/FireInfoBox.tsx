@@ -42,20 +42,26 @@ export default function FireInfoBox() {
               </div>
 
               <div>
-                <p className="font-semibold text-gray-800 mb-1">FIRE number</p>
+                <p className="font-semibold text-gray-800 mb-1">Quando sei "FIRE"</p>
                 <p>
-                  È il capitale che ti serve per vivere di rendita: spese annue nette ÷ SWR. Con SWR al 4%, per
-                  30.000 €/anno di spesa servono 750.000 €. Si ricalcola anno per anno sulle spese proiettate (già
-                  al netto di debiti estinti e dell&apos;eventuale integrazione da fondo pensione).
+                  Non un rapporto fisso (spese ÷ SWR), ma una <strong>verifica simulata</strong>:
+                  ogni anno, finché sei in accumulo, si controlla &ldquo;se smettessi di investire
+                  da qui, il capitale arriverebbe vivo fino a fine orizzonte?&rdquo; simulando un
+                  intero decumulo con le tue assunzioni reali (rendimento, tasse, inflazione,
+                  crescita spese, sblocco fondo pensione). Il primo anno in cui la risposta è sì è
+                  il tuo anno di raggiungimento. Il &ldquo;FIRE number&rdquo; (spese ÷ SWR) resta
+                  mostrato come riferimento della regola storica del 4%, ma non decide più il
+                  passaggio da accumulo a decumulo.
                 </p>
               </div>
 
               <div>
-                <p className="font-semibold text-gray-800 mb-1">Perché il capitale può crescere anche in decumulo</p>
+                <p className="font-semibold text-gray-800 mb-1">Perché può scattare prima o dopo il riferimento del 4%</p>
                 <p>
-                  Se il rendimento netto degli investimenti supera lo SWR scelto (es. 4,44% netto contro 4% di
-                  prelievo), il capitale continua a crescere anche mentre ci vivi sopra: è lo stesso margine di
-                  sicurezza della regola storica del 4%, pensata per non esaurirsi mai nei mercati peggiori.
+                  Se le tue spese restano piatte (crescita 0%) o il tuo orizzonte è più corto dei
+                  30+ anni assunti dalla regola storica, può bastare meno del target spese/SWR. Se
+                  invece le spese crescono più del margine tra rendimento netto e SWR, può servire
+                  di più. La simulazione riflette il tuo caso, non la media storica.
                 </p>
               </div>
 
@@ -83,8 +89,11 @@ export default function FireInfoBox() {
               <div className="bg-surface-50 rounded-lg p-3">
                 <p className="font-semibold text-gray-800 mb-1">Safe Withdrawal Rate (SWR)</p>
                 <p>
-                  Quota del capitale che puoi prelevare ogni anno senza esaurirlo nel tempo. 4% è la regola
-                  storica più usata (Trinity Study), su orizzonti di 30+ anni.
+                  Quota di riferimento del capitale storicamente sostenibile da prelevare ogni
+                  anno (4% è la regola più usata, Trinity Study, su orizzonti di 30+ anni). Qui
+                  serve solo a calcolare il &ldquo;FIRE number&rdquo; mostrato come confronto: il
+                  vero criterio di raggiungimento è la simulazione, più precisa perché usa le tue
+                  assunzioni invece della media storica.
                 </p>
               </div>
 

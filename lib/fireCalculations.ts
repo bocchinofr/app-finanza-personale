@@ -3,12 +3,22 @@
 // riceve parametri già aggregati e restituisce dati pronti per la UI.
 //
 // Modello a due fasi, in un'unica proiezione continua:
-//  - ACCUMULO: da oggi finché il patrimonio non raggiunge il FIRE number.
-//    Si investe ogni anno (investimentoAnnuo), le spese non intaccano il
-//    capitale (si assume coperte dal reddito da lavoro).
-//  - DECUMULO: dall'anno successivo al raggiungimento del FIRE number (o da
-//    subito, per lo scenario "runway"/"se smettessi oggi"). Niente più
-//    investimento: le spese nette vengono prelevate dal capitale ogni anno.
+//  - ACCUMULO: da oggi finché il patrimonio non è sufficiente a sostenere il
+//    decumulo fino a fine orizzonte. Si investe ogni anno (investimentoAnnuo),
+//    le spese non intaccano il capitale (si assume coperte dal reddito da
+//    lavoro).
+//  - DECUMULO: dall'anno successivo al raggiungimento del FIRE (o da subito,
+//    per lo scenario "runway"/"se smettessi oggi"). Niente più investimento:
+//    le spese nette vengono prelevate dal capitale ogni anno.
+//
+// "FIRE raggiunto" NON è più un semplice rapporto (patrimonio >= spese/SWR):
+// è una verifica di sostenibilità simulata. Ogni anno, mentre sei ancora in
+// accumulo, si testa "se da qui in poi smettessi di investire, il capitale
+// arriverebbe vivo a fine orizzonte?" simulando in avanti un intero decumulo
+// con le tue assunzioni reali (rendimento, tasse, inflazione, crescita
+// spese, sblocco fondo pensione). Il FIRE number (spese/SWR) resta calcolato
+// e mostrato come riferimento — è il target "storico" della regola del 4% —
+// ma non è più ciò che determina il passaggio da accumulo a decumulo.
 //
 // Il fondo pensione è un capitale separato, bloccato fino a
 // etaRitiroFondoPensione: fino a quel momento cresce ma non è disponibile.
@@ -47,13 +57,13 @@ export interface FireParametri {
   quotaCapitaleFondoPensionePct: number; // % del fondo che esce come capitale una tantum (TFR); il resto come integrazione annua
 
   inflazionePct: number; // usata come riferimento, non applicata automaticamente alle spese
-  swrPct: number; // safe withdrawal rate, es. 4
+  swrPct: number; // safe withdrawal rate, es. 4 — usato solo per il "fireNumberTarget" di riferimento
   tassazioneInteressiPct: number; // es. 26 (aliquota rendite finanziarie IT), editabile
   tassazioneFondoPensionePct: number; // es. 15 (agevolata, scende fino a 9% con anzianità), editabile
 
   debiti: Debito[];
 
-  orizzonteAnni: number; // quanti anni proiettare (default 50)
+  orizzonteAnni: number; // quanti anni proiettare (default 50) — orizzonte su cui si verifica la sostenibilità
 }
 
 export interface AnnoProiezione {
@@ -65,9 +75,9 @@ export interface AnnoProiezione {
   patrimonioInvestito: number; // fine anno
   fondoPensione: number; // fine anno (0 dopo lo sblocco)
   patrimonioTotale: number; // investito + fondo pensione (per grafico)
-  fireNumberTarget: number; // target dell'anno (spese nette / SWR)
+  fireNumberTarget: number; // target di riferimento (spese nette / SWR) — regola del 4%, non più il trigger
   patrimonioRilevantePerFire: number; // investito (+ fondo se ancora bloccato e incluso da parametro)
-  fireRaggiunto: boolean;
+  fireRaggiunto: boolean; // sostenibilità simulata fino a fine orizzonte, non più il rapporto spese/SWR
   integrazionePensioneAnnua: number; // 0 finché il fondo non si sblocca
   fondoPensioneRitirato: boolean;
   capitaleEsaurito: boolean; // patrimonio rilevante <= 0 in fase decumulo
@@ -97,91 +107,89 @@ function speseDopoEstinzioneDebiti(
   return speseLorde - rateEstinteEntroAnno;
 }
 
-interface OpzioniSimulazione {
-  modalita: "auto" | "decumulo_immediato";
-  includiFondoPensione: boolean; // false = il fondo pensione viene ignorato per l'intera simulazione
+interface StatoSimulazione {
+  patrimonioInvestito: number;
+  fondoPensione: number;
+  fondoGiaRitirato: boolean;
+  integrazionePensioneAnnua: number;
 }
 
-/** Motore unico di proiezione, condiviso da calcolaProiezioneFire e calcolaRunway. */
-function simulaProiezione(
+/** Un singolo passo annuale del motore di simulazione: aggiorna lo stato e
+ * produce i dati dell'anno. `fireRaggiunto` nel risultato NON è impostato
+ * (lo decide il chiamante, in base alla modalità) — qui vale sempre false. */
+function simulaUnAnno(
   params: FireParametri,
-  opzioni: OpzioniSimulazione
-): AnnoProiezione[] {
-  const orizzonte = params.orizzonteAnni ?? DEFAULT_ORIZZONTE;
-  const risultati: AnnoProiezione[] = [];
+  stato: StatoSimulazione,
+  i: number, // indice assoluto rispetto ad annoIniziale
+  orizzonte: number,
+  inAccumulo: boolean
+): { stato: StatoSimulazione; annoInfo: AnnoProiezione } {
+  const anno = params.annoIniziale + i;
+  const eta = params.etaIniziale + i;
 
-  let patrimonioInvestito = params.patrimonioLiquidoIniziale;
-  let fondoPensione = opzioni.includiFondoPensione ? params.fondoPensioneIniziale : 0;
-  let fondoGiaRitirato = !opzioni.includiFondoPensione;
-  let fireGiaRaggiunto = false;
-  let integrazionePensioneAnnua = 0;
+  let { patrimonioInvestito, fondoPensione, fondoGiaRitirato, integrazionePensioneAnnua } = stato;
 
-  for (let i = 0; i < orizzonte; i++) {
-    const anno = params.annoIniziale + i;
-    const eta = params.etaIniziale + i;
-
-    const inAccumulo: boolean = opzioni.modalita === "auto" && !fireGiaRaggiunto;
-
-    // --- Fondo pensione: sblocco a età, oppure crescita mentre resta bloccato ---
-    if (!fondoGiaRitirato) {
-      if (eta >= params.etaRitiroFondoPensione) {
-        const capitaleTFR = fondoPensione * (params.quotaCapitaleFondoPensionePct / 100);
-        const integrazioneTotale =
-          fondoPensione * (1 - params.quotaCapitaleFondoPensionePct / 100);
-        const anniResidui = orizzonte - i;
-        integrazionePensioneAnnua = anniResidui > 0 ? integrazioneTotale / anniResidui : 0;
-        patrimonioInvestito += capitaleTFR;
-        fondoPensione = 0;
-        fondoGiaRitirato = true;
-      } else {
-        const rendimentoFondoNetto = rendimentoNetto(
-          params.rendimentoFondoPensionePct,
-          params.tassazioneFondoPensionePct
-        );
-        fondoPensione = fondoPensione * (1 + rendimentoFondoNetto / 100);
-      }
+  // --- Fondo pensione: sblocco a età, oppure crescita mentre resta bloccato ---
+  if (!fondoGiaRitirato) {
+    if (eta >= params.etaRitiroFondoPensione) {
+      const capitaleTFR = fondoPensione * (params.quotaCapitaleFondoPensionePct / 100);
+      const integrazioneTotale =
+        fondoPensione * (1 - params.quotaCapitaleFondoPensionePct / 100);
+      const anniResidui = orizzonte - i;
+      integrazionePensioneAnnua = anniResidui > 0 ? integrazioneTotale / anniResidui : 0;
+      patrimonioInvestito += capitaleTFR;
+      fondoPensione = 0;
+      fondoGiaRitirato = true;
+    } else {
+      const rendimentoFondoNetto = rendimentoNetto(
+        params.rendimentoFondoPensionePct,
+        params.tassazioneFondoPensionePct
+      );
+      fondoPensione = fondoPensione * (1 + rendimentoFondoNetto / 100);
     }
+  }
 
-    // --- Spese nette: dopo debiti estinti e integrazione pensione già attiva ---
-    const speseDopoDebiti = speseDopoEstinzioneDebiti(
-      params.speseAnnueBase,
-      params.crescitaSpesePct,
-      i,
-      anno,
-      params.debiti
-    );
-    const speseAnnue = Math.max(0, speseDopoDebiti - integrazionePensioneAnnua);
+  // --- Spese nette: dopo debiti estinti e integrazione pensione già attiva ---
+  const speseDopoDebiti = speseDopoEstinzioneDebiti(
+    params.speseAnnueBase,
+    params.crescitaSpesePct,
+    i,
+    anno,
+    params.debiti
+  );
+  const speseAnnue = Math.max(0, speseDopoDebiti - integrazionePensioneAnnua);
 
-    // --- Investimento annuo: solo in fase di accumulo ---
-    const investimentoAnnuo: number = inAccumulo
-      ? params.investimentoAnnuoBase * Math.pow(1 + params.crescitaInvestimentoPct / 100, i)
-      : 0;
+  // --- Investimento annuo: solo in fase di accumulo ---
+  const investimentoAnnuo: number = inAccumulo
+    ? params.investimentoAnnuoBase * Math.pow(1 + params.crescitaInvestimentoPct / 100, i)
+    : 0;
 
-    // --- Patrimonio investito: accumula in fase accumulo, si consuma in decumulo ---
-    const rendimentoInvestitiNetto = rendimentoNetto(
-      params.rendimentoInvestimentiPct,
-      params.tassazioneInteressiPct
-    );
-    patrimonioInvestito = inAccumulo
-      ? patrimonioInvestito * (1 + rendimentoInvestitiNetto / 100) + investimentoAnnuo
-      : patrimonioInvestito * (1 + rendimentoInvestitiNetto / 100) - speseAnnue;
+  // --- Patrimonio investito: accumula in fase accumulo, si consuma in decumulo ---
+  const rendimentoInvestitiNetto = rendimentoNetto(
+    params.rendimentoInvestimentiPct,
+    params.tassazioneInteressiPct
+  );
+  patrimonioInvestito = inAccumulo
+    ? patrimonioInvestito * (1 + rendimentoInvestitiNetto / 100) + investimentoAnnuo
+    : patrimonioInvestito * (1 + rendimentoInvestitiNetto / 100) - speseAnnue;
 
-    const patrimonioRilevantePerFire = params.includiFondoPensioneInFireNumber
-      ? patrimonioInvestito + fondoPensione
-      : patrimonioInvestito;
+  const patrimonioRilevantePerFire = params.includiFondoPensioneInFireNumber
+    ? patrimonioInvestito + fondoPensione
+    : patrimonioInvestito;
 
-    // Target espresso sulle spese nette dell'anno (già al netto di debiti estinti
-    // e integrazione pensione): rappresenta il capitale che serve OGGI per quel
-    // livello di spesa secondo lo SWR scelto.
-    const fireNumberTarget = speseAnnue / (params.swrPct / 100);
+  const fireNumberTarget = speseAnnue / (params.swrPct / 100);
+  const capitaleEsaurito = !inAccumulo && patrimonioRilevantePerFire <= 0;
 
-    const fireRaggiunto: boolean =
-      fireGiaRaggiunto || patrimonioRilevantePerFire >= fireNumberTarget;
-    fireGiaRaggiunto = fireRaggiunto;
+  const nuovoStato: StatoSimulazione = {
+    patrimonioInvestito,
+    fondoPensione,
+    fondoGiaRitirato,
+    integrazionePensioneAnnua,
+  };
 
-    const capitaleEsaurito = !inAccumulo && patrimonioRilevantePerFire <= 0;
-
-    risultati.push({
+  return {
+    stato: nuovoStato,
+    annoInfo: {
       anno,
       eta,
       fase: inAccumulo ? "accumulo" : "decumulo",
@@ -192,29 +200,87 @@ function simulaProiezione(
       patrimonioTotale: patrimonioInvestito + fondoPensione,
       fireNumberTarget,
       patrimonioRilevantePerFire,
-      fireRaggiunto,
+      fireRaggiunto: false,
       integrazionePensioneAnnua,
       fondoPensioneRitirato: fondoGiaRitirato,
       capitaleEsaurito,
-    });
+    },
+  };
+}
+
+/** Verifica se, partendo dallo stato raggiunto all'indice iSoglia, un decumulo
+ * dall'anno successivo fino a fine orizzonte sopravviverebbe (mai <= 0). */
+function sostenibileFinoAFineOrizzonte(
+  params: FireParametri,
+  statoAllaSoglia: StatoSimulazione,
+  iSoglia: number,
+  orizzonte: number
+): boolean {
+  let stato = statoAllaSoglia;
+  for (let j = iSoglia + 1; j < orizzonte; j++) {
+    const passo = simulaUnAnno(params, stato, j, orizzonte, false);
+    stato = passo.stato;
+    if (passo.annoInfo.capitaleEsaurito) return false;
+  }
+  return true;
+}
+
+interface OpzioniSimulazione {
+  modalita: "auto" | "decumulo_immediato";
+  includiFondoPensione: boolean; // false = il fondo pensione viene ignorato per l'intera simulazione
+}
+
+/** Motore principale di proiezione, condiviso da calcolaProiezioneFire e calcolaRunway. */
+function simulaProiezione(
+  params: FireParametri,
+  opzioni: OpzioniSimulazione
+): AnnoProiezione[] {
+  const orizzonte = params.orizzonteAnni ?? DEFAULT_ORIZZONTE;
+  const risultati: AnnoProiezione[] = [];
+
+  let stato: StatoSimulazione = {
+    patrimonioInvestito: params.patrimonioLiquidoIniziale,
+    fondoPensione: opzioni.includiFondoPensione ? params.fondoPensioneIniziale : 0,
+    fondoGiaRitirato: !opzioni.includiFondoPensione,
+    integrazionePensioneAnnua: 0,
+  };
+  let fireGiaRaggiunto = false;
+
+  for (let i = 0; i < orizzonte; i++) {
+    const inAccumulo: boolean = opzioni.modalita === "auto" && !fireGiaRaggiunto;
+
+    const passo = simulaUnAnno(params, stato, i, orizzonte, inAccumulo);
+    stato = passo.stato;
+
+    let fireRaggiunto: boolean = fireGiaRaggiunto;
+    if (opzioni.modalita === "auto" && inAccumulo && !fireGiaRaggiunto) {
+      // Ancora in accumulo: verifica se da qui in poi il decumulo reggerebbe
+      // fino a fine orizzonte con le assunzioni reali (non il rapporto SWR).
+      fireRaggiunto = sostenibileFinoAFineOrizzonte(params, stato, i, orizzonte);
+    }
+    fireGiaRaggiunto = fireRaggiunto;
+
+    risultati.push({ ...passo.annoInfo, fireRaggiunto });
   }
 
   return risultati;
 }
 
-/** Proiezione principale: accumulo fino al FIRE number, poi decumulo automatico. */
+/** Proiezione principale: accumulo finché il decumulo simulato non regge fino
+ * a fine orizzonte, poi decumulo automatico. */
 export function calcolaProiezioneFire(params: FireParametri): AnnoProiezione[] {
   return simulaProiezione(params, { modalita: "auto", includiFondoPensione: true });
 }
 
 export interface FireNumberResult {
-  fireNumberOggi: number; // target calcolato su spese attuali (anno 0)
-  annoStimato: number | null; // null se non raggiunto entro orizzonte
+  fireNumberOggi: number; // riferimento regola del 4%: spese attuali / SWR (non più il trigger)
+  annoStimato: number | null; // null se la sostenibilità non viene raggiunta entro l'orizzonte
   etaStimata: number | null;
   anniMancanti: number | null;
 }
 
-/** Estrae dal risultato della proiezione il primo anno in cui il FIRE è raggiunto. */
+/** Estrae dal risultato della proiezione il primo anno in cui la sostenibilità
+ * simulata è raggiunta. */
 export function calcolaFireNumber(
   proiezione: AnnoProiezione[],
   params: FireParametri
@@ -240,15 +306,18 @@ export function calcolaFireNumber(
 }
 
 export interface PostFireResult {
-  applicabile: boolean; // false se il FIRE non viene raggiunto entro l'orizzonte
+  applicabile: boolean; // false se la sostenibilità non viene raggiunta entro l'orizzonte
   sostenibileFinoOrizzonte: boolean;
   annoEsaurimento: number | null;
   etaEsaurimento: number | null;
   anniDiRendita: number | null; // anni coperti dal pensionamento all'esaurimento (se si esaurisce)
 }
 
-/** Cosa succede DOPO il raggiungimento del FIRE number: quanto dura il capitale
- * nella fase di decumulo, tenendo conto anche dello sblocco del fondo pensione. */
+/** Cosa succede DOPO il raggiungimento del FIRE: quanto dura il capitale nella
+ * fase di decumulo. Con la nuova definizione di "raggiunto" questo risulterà
+ * quasi sempre sostenibile per costruzione (è proprio ciò che è stato
+ * verificato); resta utile per mostrare i dettagli e per i casi limite in cui
+ * i parametri vengono modificati dopo il fatto. */
 export function calcolaSostenibilitaPostFire(
   proiezione: AnnoProiezione[],
   fireNumberResult: FireNumberResult
@@ -340,8 +409,7 @@ export interface ConfrontoAnnuale {
  * Confronta i dati reali correnti (spese/investimento annualizzati, patrimonio
  * di oggi) con quanto previsto per lo stesso anno da uno snapshot congelato in
  * precedenza (fire_snapshot). Restituisce null se lo snapshot non copre
- * l'anno richiesto (non dovrebbe succedere se lo snapshot è stato creato per
- * quell'anno o per uno precedente con orizzonte sufficiente).
+ * l'anno richiesto.
  */
 export function confrontaConSnapshot(
   annoTarget: number,

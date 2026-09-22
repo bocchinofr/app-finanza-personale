@@ -41,9 +41,6 @@ function fmtK(n: number) {
   if (n === 0) return '–'
   return `€${Math.round(n).toLocaleString('it-IT')}`
 }
-function fmtPrice(n: number) {
-  return `€${fmt(n)}`
-}
 function fmtShort(n: number) {
   if (Math.abs(n) >= 1000) return `€${(n/1000).toFixed(1)}k`
   return `€${Math.round(n)}`
@@ -182,14 +179,17 @@ function MediaCell({ value, className = '' }: { value: number | undefined; class
 
 // Tooltip per "Spese per categoria": mostra solo le voci realmente presenti nel mese
 // (le prime 10 categorie di quel mese + Altro), non l'intero elenco di dataKey del grafico.
-function SpeseCategoriaTooltip({ active, payload, label }: any) {
+type SpeseTooltipPayload = { dataKey: string; value: number; color: string }
+function SpeseCategoriaTooltip({ active, payload, label }: {
+  active?: boolean; payload?: SpeseTooltipPayload[]; label?: string
+}) {
   if (!active || !payload) return null
-  const items = payload.filter((p: any) => p.value > 0).sort((a: any, b: any) => b.value - a.value)
+  const items = payload.filter(p => p.value > 0).sort((a, b) => b.value - a.value)
   if (items.length === 0) return null
   return (
     <div className="bg-white border border-surface-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-1">
       <p className="font-semibold text-gray-700 mb-1">{label}</p>
-      {items.map((p: any) => (
+      {items.map(p => (
         <div key={p.dataKey} className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />

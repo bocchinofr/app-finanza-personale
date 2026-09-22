@@ -15,6 +15,14 @@ export interface Movimento {
   portafoglio_id?: string | null
 }
 
+export interface MediaStorica {
+  id?: string
+  user_id?: string
+  anno: number
+  categoria: string
+  media: number
+}
+
 export interface Liquidita {
   id?: string
   user_id?: string

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MESI, statoAttuale } from '@/types'
+import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MediaStorica, MESI, statoAttuale } from '@/types'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
 import SimulatoreAccumulo from '@/components/SimulatoreAccumulo'
 import { useAnno } from '@/lib/AnnoContext'
@@ -145,6 +145,16 @@ function HeatCell({ value, values, palette, format }: {
   );
 }
 
+// Cella "Media" riutilizzata sia nel riepilogo aggregato che nel dettaglio per categoria.
+// Mostra '–' quando il valore non è disponibile (es. media anno precedente mai inserita).
+function MediaCell({ value, className = '' }: { value: number | undefined; className?: string }) {
+  return (
+    <td className={`py-1.5 px-3 text-right font-mono tabular-nums text-xs ${value == null ? 'text-gray-300' : ''} ${className}`}>
+      {value == null ? '–' : fmtK(value)}
+    </td>
+  )
+}
+
 const PAGE_SIZE = 20
 type SortKey = 'mese' | 'data_operazione' | 'descrizione' | 'importo' | 'categoria' | 'componente'
 type SortDir = 'asc' | 'desc'
@@ -174,6 +184,9 @@ export default function DashboardPage() {
   const [portafoglioStorico, setPortafoglioStorico] = useState<
     { mese: string; portafoglio_id: string; prezzo: number }[]
   >([])
+  // Media mensile dell'anno precedente, per categoria (inserita manualmente su Supabase
+  // quando non ci sono movimenti dettagliati per quell'anno). '–' se assente.
+  const [medieStoricheAnnoPrec, setMedieStoricheAnnoPrec] = useState<Record<string, number>>({})
 
   // Soglie di allerta portafoglio
   const [soglie, setSoglie] = useState<AlertSoglia[]>([])
@@ -258,12 +271,13 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const [movRes, liqRes, portRes, sogRes, profRes] = await Promise.all([
+    const [movRes, liqRes, portRes, sogRes, profRes, medieRes] = await Promise.all([
       supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('portafoglio').select('*').eq('user_id', user.id),
       supabase.from('alert_soglie').select('*').eq('user_id', user.id),
       supabase.from('profili').select('*').eq('user_id', user.id).single(),
+      supabase.from('medie_storiche').select('*').eq('user_id', user.id).eq('anno', anno - 1),
     ])
 
     setMovimenti((movRes.data as Movimento[]) ?? [])
@@ -271,6 +285,9 @@ export default function DashboardPage() {
     setPortafoglio((portRes.data as AssetPortafoglio[]) ?? [])
     setSoglie((sogRes.data as AlertSoglia[]) ?? [])
     setProfilo((profRes.data as Profilo) ?? null)
+    setMedieStoricheAnnoPrec(
+      Object.fromEntries(((medieRes.data as MediaStorica[]) ?? []).map(r => [r.categoria, r.media]))
+    )
     setLoading(false)
   }, [anno])
 
@@ -846,6 +863,8 @@ export default function DashboardPage() {
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-50 min-w-[100px]">Totale</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-l-2 border-surface-200 min-w-[90px]">Media</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[100px]">Media {anno - 1}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -853,17 +872,23 @@ export default function DashboardPage() {
                     <td className="sticky left-0 z-10 bg-green-50 py-1.5 px-3 text-xs font-bold text-green-800">Totale entrate</td>
                     {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
                     <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtK(ytdIn)}</td>
+                    <MediaCell value={mediaEntrateMensili} className="border-l-2 border-surface-200 text-green-800" />
+                    <MediaCell value={medieStoricheAnnoPrec['TOTALE_ENTRATE']} className="text-green-700" />
                   </tr>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-red-50 py-1.5 px-3 text-xs font-bold text-red-800">Totale uscite</td>
                     {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
                     <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtK(ytdOut)}</td>
+                    <MediaCell value={mediaUsciteMensili} className="border-l-2 border-surface-200 text-red-800" />
+                    <MediaCell value={medieStoricheAnnoPrec['TOTALE_USCITE']} className="text-red-700" />
                   </tr>
                   {invTotals.length > 0 && (
                     <tr className="border-b border-surface-100">
                       <td className="sticky left-0 z-10 bg-blue-50 py-1.5 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
                       {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
                       <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtK(ytdInv)}</td>
+                      <MediaCell value={ytdInv / nMesi} className="border-l-2 border-surface-200 text-blue-800" />
+                      <MediaCell value={medieStoricheAnnoPrec['TOTALE_INVESTIMENTI']} className="text-blue-700" />
                     </tr>
                   )}
                   <tr className="border-b-2 border-surface-200">
@@ -872,6 +897,8 @@ export default function DashboardPage() {
                       <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
                     ))}
                     <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
+                    <MediaCell value={ytdRisp / nMesi} className="border-l-2 border-surface-200 font-semibold text-gray-800" />
+                    <MediaCell value={medieStoricheAnnoPrec['RISPARMIO_NETTO']} className="font-semibold text-gray-700" />
                   </tr>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio del mese</td>
@@ -885,6 +912,8 @@ export default function DashboardPage() {
                       )
                     })}
                     <td className={`py-1.5 px-3 text-right font-bold ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
+                    <td className="border-l-2 border-surface-200 bg-white" />
+                    <td className="bg-white" />
                   </tr>
                   <tr>
                     <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio investito</td>
@@ -900,6 +929,8 @@ export default function DashboardPage() {
                     <td className="py-1.5 px-3 text-right font-bold text-gray-700 bg-surface-50">
                       {ytdRisp > 0 ? `${((ytdInv / ytdRisp) * 100).toFixed(0)}%` : '–'}
                     </td>
+                    <td className="border-l-2 border-surface-200 bg-white" />
+                    <td className="bg-white" />
                   </tr>
                 </tbody>
               </table>
@@ -927,12 +958,14 @@ export default function DashboardPage() {
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-200">Totale</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[80px]">Media</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px]">Media {anno - 1}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {/* Entrate */}
                   <tr>
-                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
+                    <td colSpan={mesiPresenti.length + 4} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
                   </tr>
                   {entrateTotals.map(({ cat, total }) => {
                     const vals = cfEntrate[cat];
@@ -943,13 +976,15 @@ export default function DashboardPage() {
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
                         <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
+                        <MediaCell value={total / nMesi} className="text-green-800" />
+                        <MediaCell value={medieStoricheAnnoPrec[cat]} className="text-green-700" />
                       </tr>
                     )
                   })}
 
                   {/* Uscite */}
                   <tr>
-                    <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
+                    <td colSpan={mesiPresenti.length + 4} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
                   </tr>
                   {usciteTotals.map(({ cat, total }) => {
                     const vals = cfUscite[cat];
@@ -960,6 +995,8 @@ export default function DashboardPage() {
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
                         <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
+                        <MediaCell value={total / nMesi} className="text-red-800" />
+                        <MediaCell value={medieStoricheAnnoPrec[cat]} className="text-red-700" />
                       </tr>
                     )
                   })}
@@ -967,7 +1004,7 @@ export default function DashboardPage() {
                   {/* Investimenti */}
                   {invTotals.length > 0 && <>
                     <tr>
-                      <td colSpan={mesiPresenti.length + 2} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
+                      <td colSpan={mesiPresenti.length + 4} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
                     </tr>
                     {invTotals.map(({ cat, total }) => {
                       const vals = cfInv[cat];
@@ -978,6 +1015,8 @@ export default function DashboardPage() {
                           <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
                           {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
                           <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
+                          <MediaCell value={total / nMesi} className="text-blue-800" />
+                          <MediaCell value={medieStoricheAnnoPrec[cat]} className="text-blue-700" />
                         </tr>
                       )
                     })}

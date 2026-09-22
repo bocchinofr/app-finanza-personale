@@ -41,11 +41,6 @@ function fmtK(n: number) {
   if (n === 0) return '–'
   return `€${Math.round(n).toLocaleString('it-IT')}`
 }
-// Formato con separatore decimale, riservato alle colonne di sintesi (Totale, Media)
-function fmtTotale(n: number) {
-  if (n === 0) return '–'
-  return `€${n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 function fmtPrice(n: number) {
   return `€${fmt(n)}`
 }
@@ -60,17 +55,28 @@ const PIE_COLORS = [
   '#a855f7','#eab308','#6366f1','#10b981'
 ]
 
-// Palette pastello per "Spese per categoria" (tante categorie diverse, nessun significato semantico)
-const PASTEL_COLORS = [
-  '#a9c9a6','#e8b4ab','#e3cf9c','#a7bbd6','#c9b3d6',
-  '#9ecfcf','#e0b98f','#b9c98f','#d9a6bf','#9fb8d9',
-  '#d1c193','#b7a0cf',
-]
-const PASTEL_ALTRO = '#c9c9b8'
-
 // Gradazioni per le torte di distribuzione (verde = entrate, rosso/terracotta = uscite)
 const GREEN_SHADES = ['#3f6b4f','#5b8a68','#7aa682','#93bb95','#afe0b4','#cdeed0']
 const RED_SHADES   = ['#8a4a3a','#af4b3a','#c17b64','#d5a39a','#e0b7ae','#ecd2cc']
+
+// ============================================================
+// COLORI DEI GRAFICI A BARRE (Andamento mensile, Spese per categoria).
+// Unico punto da modificare per cambiare la palette in entrambi i grafici.
+// Toni meno accesi dei colori "pieni" (es. #22c55e) ma con saturazione/luminosità
+// sufficienti a restare ben leggibili — non pastello slavato.
+// ============================================================
+const BAR_COLORS = {
+  entrate: '#4f9370',
+  uscite: '#c1735a',
+  risparmio: '#5b7fa6',
+  liquidita: '#8f76b5',
+  altro: '#9a9a86',
+  categorie: [
+    '#5b9c74','#c98f6b','#c2a63f','#5c85ad','#9a6fb0',
+    '#4fa39c','#c98545','#7a9c4f','#bd5f8c','#5f8fbd',
+    '#ad9a4f','#8f5fbd',
+  ],
+}
 
 // Colori base per la heatmap (min saturazione → max saturazione), allineati al tema Foglio Vivo
 const HEAT_COLORS: Record<'green' | 'red' | 'blue' | 'amber', { light: string; dark: string; textLight: string; textDark: string }> = {
@@ -163,13 +169,36 @@ function HeatCell({ value, values, palette, format }: {
 }
 
 // Cella "Media" riutilizzata sia nel riepilogo aggregato che nel dettaglio per categoria.
-// Sempre in grigio scuro neutro (nessun rosso/verde: la media non è un valore "buono o cattivo").
-// Mostra '–' quando il valore non è disponibile (es. media anno precedente mai inserita).
+// Stesso box arrotondato grigio chiaro delle celle "piatte" della heatmap, valore non in grassetto.
 function MediaCell({ value, className = '' }: { value: number | undefined; className?: string }) {
   return (
-    <td className={`py-1.5 px-3 text-right font-mono tabular-nums text-xs bg-surface-200 ${value == null ? 'text-gray-400' : 'text-gray-800 font-semibold'} ${className}`}>
-      {value == null ? '–' : fmtTotale(value)}
+    <td className={`text-center p-0.5 ${className}`}>
+      <div className={`bg-surface-50 py-1 rounded-lg text-xs font-medium ${value == null ? 'text-gray-300' : 'text-gray-700'}`}>
+        {value == null ? '–' : fmtK(value)}
+      </div>
     </td>
+  )
+}
+
+// Tooltip per "Spese per categoria": mostra solo le voci realmente presenti nel mese
+// (le prime 10 categorie di quel mese + Altro), non l'intero elenco di dataKey del grafico.
+function SpeseCategoriaTooltip({ active, payload, label }: any) {
+  if (!active || !payload) return null
+  const items = payload.filter((p: any) => p.value > 0).sort((a: any, b: any) => b.value - a.value)
+  if (items.length === 0) return null
+  return (
+    <div className="bg-white border border-surface-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-1">
+      <p className="font-semibold text-gray-700 mb-1">{label}</p>
+      {items.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: p.color }} />
+            <span className="text-gray-600 truncate">{p.dataKey}</span>
+          </span>
+          <span className="font-mono font-semibold text-gray-800 shrink-0">{fmtK(p.value)}</span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -613,10 +642,10 @@ export default function DashboardPage() {
   }))
 
   const lineSeries: { key: string; color: string; dash?: boolean }[] = [
-    { key: 'Entrate', color: HEAT_COLORS.green.dark },
-    { key: 'Uscite', color: HEAT_COLORS.red.dark },
-    { key: 'Risparmio', color: HEAT_COLORS.blue.dark, dash: true },
-    ...(liquidita.length > 0 ? [{ key: 'Liquidità', color: '#c3b6dd' }] : []),
+    { key: 'Entrate', color: BAR_COLORS.entrate },
+    { key: 'Uscite', color: BAR_COLORS.uscite },
+    { key: 'Risparmio', color: BAR_COLORS.risparmio, dash: true },
+    ...(liquidita.length > 0 ? [{ key: 'Liquidità', color: BAR_COLORS.liquidita }] : []),
   ]
 
   const rawPieData = Object.entries(cfUscite)
@@ -895,14 +924,14 @@ export default function DashboardPage() {
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-green-50 py-1.5 px-3 text-xs font-bold text-green-800">Totale entrate</td>
                     {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtTotale(ytdIn)}</td>
+                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtK(ytdIn)}</td>
                     <MediaCell value={mediaEntrateMensili} className="border-l-2 border-surface-300" />
                     <MediaCell value={medieStoricheAnnoPrec['TOTALE_ENTRATE']} />
                   </tr>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-red-50 py-1.5 px-3 text-xs font-bold text-red-800">Totale uscite</td>
                     {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtTotale(ytdOut)}</td>
+                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtK(ytdOut)}</td>
                     <MediaCell value={mediaUsciteMensili} className="border-l-2 border-surface-300" />
                     <MediaCell value={medieStoricheAnnoPrec['TOTALE_USCITE']} />
                   </tr>
@@ -910,7 +939,7 @@ export default function DashboardPage() {
                     <tr className="border-b border-surface-100">
                       <td className="sticky left-0 z-10 bg-blue-50 py-1.5 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
                       {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
-                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtTotale(ytdInv)}</td>
+                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtK(ytdInv)}</td>
                       <MediaCell value={ytdInv / nMesi} className="border-l-2 border-surface-300" />
                       <MediaCell value={medieStoricheAnnoPrec['TOTALE_INVESTIMENTI']} />
                     </tr>
@@ -920,7 +949,7 @@ export default function DashboardPage() {
                     {cfRisparmio.map((v, i) => (
                       <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
                     ))}
-                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtTotale(ytdRisp)}</td>
+                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
                     <MediaCell value={ytdRisp / nMesi} className="border-l-2 border-surface-300" />
                     <MediaCell value={medieStoricheAnnoPrec['RISPARMIO_NETTO']} />
                   </tr>
@@ -999,7 +1028,7 @@ export default function DashboardPage() {
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtTotale} />
+                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
                         <MediaCell value={total / nMesi} className="border-l-2 border-surface-300" />
                         <MediaCell value={medieStoricheAnnoPrec[cat]} />
                       </tr>
@@ -1018,7 +1047,7 @@ export default function DashboardPage() {
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtTotale} />
+                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
                         <MediaCell value={total / nMesi} className="border-l-2 border-surface-300" />
                         <MediaCell value={medieStoricheAnnoPrec[cat]} />
                       </tr>
@@ -1038,7 +1067,7 @@ export default function DashboardPage() {
                         <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                           <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
                           {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
-                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtTotale} />
+                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
                           <MediaCell value={total / nMesi} className="border-l-2 border-surface-300" />
                           <MediaCell value={medieStoricheAnnoPrec[cat]} />
                         </tr>
@@ -1058,16 +1087,16 @@ export default function DashboardPage() {
               <p className="num-display text-sm font-semibold text-gray-900">Spese per categoria</p>
               <p className="text-xs text-gray-400 mt-0.5 mb-4">Confronto mensile per categoria di spesa</p>
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
+                <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
                   <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
-                  <Tooltip formatter={(v: number) => fmtK(v)} wrapperStyle={{ zIndex: 50 }} />
+                  <Tooltip content={<SpeseCategoriaTooltip />} wrapperStyle={{ zIndex: 50 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   {allUsciteCats.map((cat, i) => (
-                    <Bar key={cat} dataKey={cat} fill={PASTEL_COLORS[i % PASTEL_COLORS.length]} radius={[4, 4, 0, 0]} />
+                    <Bar key={cat} dataKey={cat} stackId="spese" fill={BAR_COLORS.categorie[i % BAR_COLORS.categorie.length]} />
                   ))}
-                  <Bar key="Altro" dataKey="Altro" fill={PASTEL_ALTRO} radius={[4, 4, 0, 0]} />
+                  <Bar key="Altro" dataKey="Altro" stackId="spese" fill={BAR_COLORS.altro} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

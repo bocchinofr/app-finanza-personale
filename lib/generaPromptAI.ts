@@ -14,8 +14,13 @@ function pct(n: number | null, decimali = 1): string {
 export function generaPromptAI(a: AnalisiFinanziaria): string {
   const { situazione: s, risparmioInvestimento: ri, allocazione: al, spese, trend, concentrazione, runway, fire, fiscale } = a
 
-  const righeSpese = spese.top3
-    .map(c => `  - ${c.categoria}: ${euro(c.totale)} (${pct(c.pctSuTotale)} delle uscite totali)`)
+  const righeSpese = spese.principali
+    .map(c => `  - ${c.categoria}: ${euro(c.totale)} (${pct(c.pctSuTotale)} delle uscite totali)${c.superflua ? ' [superflua]' : ''}`)
+    .join('\n')
+
+  const rs = spese.riduzioneSuperflue
+  const righeSuperflue = rs.categorie
+    .map(c => `  - ${c.categoria}: ${euro(c.totale)}`)
     .join('\n')
 
   const righeConcentrazione = concentrazione.top3
@@ -49,6 +54,13 @@ export function generaPromptAI(a: AnalisiFinanziaria): string {
 
 ## 4. Spese per categoria (principali voci)
 ${righeSpese || '  (nessuna spesa registrata)'}
+
+## 4bis. Spese superflue e potenziale di risparmio investibile
+Categorie classificate come discrezionali/comprimibili (RISTORANTI, TEMPO LIBERO, ABBIGLIAMENTO, AMAZON & CO, VACANZE):
+${righeSuperflue || '  (nessuna spesa in queste categorie)'}
+- Totale spese superflue: ${euro(rs.totaleSuperflue)}
+- Ipotesi di riduzione: ${rs.pctIpotesiRiduzione}% → risparmio potenziale annuo: ${euro(rs.risparmioPotenzialeAnnuo)}
+- Se questo risparmio venisse investito ogni anno per ${rs.orizzonteProiezioneAnni} anni al rendimento medio ipotizzato (6%): ${euro(rs.valoreSeInvestito)}
 
 ## 5. Trend recente
 - Ultimo mese con dati: ${trend.meseRecente ?? 'N/D'}

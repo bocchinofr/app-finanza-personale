@@ -55,9 +55,22 @@ export function generaSezioniReport(a: AnalisiFinanziaria): SezioneReport[] {
     },
     {
       titolo: 'Spese per categoria (principali)',
-      righe: spese.top3.length > 0
-        ? spese.top3.map(c => `${c.categoria}: ${euro(c.totale)} (${pct(c.pctSuTotale)})`)
+      righe: spese.principali.length > 0
+        ? spese.principali.map(c => `${c.categoria}: ${euro(c.totale)} (${pct(c.pctSuTotale)})${c.superflua ? ' — superflua' : ''}`)
         : ['Nessuna spesa registrata'],
+    },
+    {
+      titolo: 'Spese superflue e risparmio investibile',
+      righe: (() => {
+        const rs = spese.riduzioneSuperflue
+        if (rs.totaleSuperflue === 0) return ['Nessuna spesa nelle categorie discrezionali monitorate']
+        return [
+          ...rs.categorie.map(c => `${c.categoria}: ${euro(c.totale)}`),
+          `Totale spese superflue: ${euro(rs.totaleSuperflue)}`,
+          `Risparmio potenziale con riduzione del ${rs.pctIpotesiRiduzione}%: ${euro(rs.risparmioPotenzialeAnnuo)}/anno`,
+          `Se investito ogni anno per ${rs.orizzonteProiezioneAnni} anni al 6%: ${euro(rs.valoreSeInvestito)}`,
+        ]
+      })(),
     },
     {
       titolo: 'Trend recente',

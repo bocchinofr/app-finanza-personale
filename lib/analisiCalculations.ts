@@ -30,6 +30,16 @@ const ETA_DEFAULT_SE_MANCANTE = 40
 // esplicitamente nell'UI e nel prompt.
 const BUFFER_MESI_DEFAULT = 6
 
+// Categorie di CATEGORIE_USCITE considerate "superflue" (discrezionali, comprimibili
+// senza impatto su necessità primarie). Classificazione euristica: va verificata/
+// adattata da Francesco se non riflette le sue priorità reali.
+const CATEGORIE_SUPERFLUE = ['RISTORANTI', 'TEMPO LIBERO', 'ABBIGLIAMENTO', 'AMAZON & CO', 'VACANZE']
+
+// Ipotesi di quanto delle spese superflue sia realisticamente comprimibile,
+// e su quanti anni proiettare il risparmio se investito invece che speso.
+const PCT_RIDUZIONE_IPOTESI = 20
+const ORIZZONTE_PROIEZIONE_RISPARMIO_ANNI = 10
+
 export interface AnalisiInput {
   anno: number
   movimenti: Movimento[]
@@ -75,11 +85,22 @@ export interface CategoriaSpesa {
   categoria: string
   totale: number
   pctSuTotale: number
+  superflua: boolean
+}
+
+export interface RiduzioneSpeseSuperflue {
+  categorie: CategoriaSpesa[] // solo le categorie classificate come superflue, con importo > 0
+  totaleSuperflue: number
+  pctIpotesiRiduzione: number // ipotesi di riduzione applicata (es. 20%)
+  risparmioPotenzialeAnnuo: number // totaleSuperflue * pctIpotesiRiduzione
+  orizzonteProiezioneAnni: number
+  valoreSeInvestito: number // valore futuro se il risparmio annuo viene investito ogni anno per orizzonteProiezioneAnni
 }
 
 export interface AnalisiSpese {
   categorie: CategoriaSpesa[]
-  top3: CategoriaSpesa[]
+  principali: CategoriaSpesa[] // le categorie di uscita più pesanti (almeno 5, se presenti)
+  riduzioneSuperflue: RiduzioneSpeseSuperflue
 }
 
 export interface TrendMensile {
@@ -216,11 +237,39 @@ export function calcolaAnalisiFinanziaria(input: AnalisiInput): AnalisiFinanziar
       const totale = input.movimenti
         .filter(m => m.categoria === cat)
         .reduce((s, m) => s + (m.uscite ?? 0), 0)
-      return { categoria: cat, totale, pctSuTotale: usciteAnnue > 0 ? (totale / usciteAnnue) * 100 : 0 }
+      return {
+        categoria: cat,
+        totale,
+        pctSuTotale: usciteAnnue > 0 ? (totale / usciteAnnue) * 100 : 0,
+        superflua: CATEGORIE_SUPERFLUE.includes(cat),
+      }
     })
     .filter(c => c.totale > 0)
     .sort((a, b) => b.totale - a.totale)
-  const spese: AnalisiSpese = { categorie, top3: categorie.slice(0, 3) }
+
+  const categorieSuperflue = categorie.filter(c => c.superflua)
+  const totaleSuperflue = categorieSuperflue.reduce((s, c) => s + c.totale, 0)
+  const risparmioPotenzialeAnnuo = totaleSuperflue * (PCT_RIDUZIONE_IPOTESI / 100)
+  // Valore futuro di un versamento annuo costante (risparmioPotenzialeAnnuo) per
+  // N anni, allo stesso rendimento di riferimento usato nella proiezione FIRE:
+  // FV = rata * (((1+r)^n - 1) / r)
+  const rTasso = DEFAULT_RENDIMENTO_INVESTIMENTI / 100
+  const valoreSeInvestito = risparmioPotenzialeAnnuo > 0
+    ? risparmioPotenzialeAnnuo * ((Math.pow(1 + rTasso, ORIZZONTE_PROIEZIONE_RISPARMIO_ANNI) - 1) / rTasso)
+    : 0
+
+  const spese: AnalisiSpese = {
+    categorie,
+    principali: categorie.slice(0, 5),
+    riduzioneSuperflue: {
+      categorie: categorieSuperflue,
+      totaleSuperflue,
+      pctIpotesiRiduzione: PCT_RIDUZIONE_IPOTESI,
+      risparmioPotenzialeAnnuo,
+      orizzonteProiezioneAnni: ORIZZONTE_PROIEZIONE_RISPARMIO_ANNI,
+      valoreSeInvestito,
+    },
+  }
 
   // --- 5. Trend mensile ---
   const mesiConMovimenti = MESI.filter(m => input.movimenti.some(mv => mv.mese === m))

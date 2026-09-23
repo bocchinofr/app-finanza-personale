@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import NotificationBell from '@/components/NotificationBell'
 import SnapshotReminder from '@/components/SnapshotReminder'
 import ContactModal from '@/components/ContactModal'
+import AnalisiFinanziariaModal from '@/components/analisi/AnalisiFinanziariaModal'
 import { AnnoProvider, useAnno } from '@/lib/AnnoContext'
 
 export const APP_NAME = 'Nucleo Finanza Personale'
@@ -167,6 +168,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-2">
           <AnnoSelect />
           <SyncButton compact />
+          <AnalisiFinanziariaModal compact />
           <SnapshotReminder compact />
           <NotificationBell />
           <button
@@ -215,6 +217,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             <NotificationBell />
           </div>
           <SyncButton />
+          <AnalisiFinanziariaModal />
           <SnapshotReminder />
         </div>
         {navLinks}

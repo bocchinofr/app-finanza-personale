@@ -53,7 +53,7 @@ export default function AnalisiFinanziariaModal({ compact = false }: { compact?:
 
     // Prezzi correnti via lo stesso proxy usato in Patrimonio; se fallisce si
     // ricade sul prezzo di carico (nessun blocco della UI).
-    let prezziAttuali: Record<string, number> = {}
+    const prezziAttuali: Record<string, number> = {}
     const tickers = portafoglio
       .filter(a => statoAttuale(a).quantita > 0)
       .map(a => a.ticker)

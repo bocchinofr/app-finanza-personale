@@ -1087,16 +1087,16 @@ export default function DashboardPage() {
               <p className="num-display text-sm font-semibold text-gray-900">Spese per categoria</p>
               <p className="text-xs text-gray-400 mt-0.5 mb-4">Confronto mensile per categoria di spesa</p>
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barCategoryGap="20%">
+                <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
                   <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
                   <Tooltip content={<SpeseCategoriaTooltip />} wrapperStyle={{ zIndex: 50 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   {allUsciteCats.map((cat, i) => (
-                    <Bar key={cat} dataKey={cat} stackId="spese" fill={BAR_COLORS.categorie[i % BAR_COLORS.categorie.length]} />
+                    <Bar key={cat} dataKey={cat} fill={BAR_COLORS.categorie[i % BAR_COLORS.categorie.length]} radius={[4, 4, 0, 0]} />
                   ))}
-                  <Bar key="Altro" dataKey="Altro" stackId="spese" fill={BAR_COLORS.altro} radius={[4, 4, 0, 0]} />
+                  <Bar key="Altro" dataKey="Altro" fill={BAR_COLORS.altro} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

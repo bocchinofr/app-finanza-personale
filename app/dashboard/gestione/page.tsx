@@ -174,9 +174,21 @@ function HeatCell({ value, values, palette, format, total = false }: {
 function MediaCell({ value, className = '' }: { value: number | undefined; className?: string }) {
   return (
     <td className={`text-center p-0.5 ${className}`}>
-      {/* Colore testo di queste celle "secondarie": cambia qui text-gray-400 */}
-      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${value == null ? 'text-gray-300' : 'text-gray-400'}`}>
+      {/* Colore testo di queste celle "secondarie": cambia qui text-gray-500 */}
+      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${value == null ? 'text-gray-300' : 'text-gray-500'}`}>
         {value == null ? '–' : fmtK(value)}
+      </div>
+    </td>
+  )
+}
+
+// Cella percentuale in stile "secondario" (stesse dimensioni/colore di MediaCell), usata per
+// le medie delle righe "% Risparmio del mese" / "% Risparmio investito" (anno corrente e precedente).
+function PctCell({ value, className = '' }: { value: number | null | undefined; className?: string }) {
+  return (
+    <td className={`text-center p-0.5 ${className}`}>
+      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${value == null ? 'text-gray-300' : 'text-gray-500'}`}>
+        {value == null ? '–' : `${value.toFixed(0)}%`}
       </div>
     </td>
   )
@@ -188,8 +200,8 @@ function VarCell({ attuale, precedente, className = '' }: { attuale: number; pre
   const pct = precedente ? ((attuale - precedente) / Math.abs(precedente)) * 100 : null
   return (
     <td className={`text-center p-0.5 ${className}`}>
-      {/* Colore testo di queste celle "secondarie": cambia qui text-gray-400 */}
-      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${pct == null ? 'text-gray-300' : 'text-gray-400'}`}>
+      {/* Colore testo di queste celle "secondarie": cambia qui text-gray-500 */}
+      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${pct == null ? 'text-gray-300' : 'text-gray-500'}`}>
         {pct == null ? '–' : `${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct).toFixed(0)}%`}
       </div>
     </td>
@@ -652,6 +664,33 @@ export default function DashboardPage() {
   const pctInvestitoSuEntrate = ytdIn > 0 ? (ytdInv / ytdIn) * 100 : 0
   const savingRate = ytdIn > 0 ? (ytdRisp / ytdIn) * 100 : 0
 
+  // Media delle percentuali mensili (diversa dal rapporto YTD "Totale" sopra, perché pesa ogni mese allo stesso modo)
+  const pctRisparmioMensile = mesiPresenti.map((_, i) => cfTotIn[i] > 0 ? (cfRisparmio[i] / cfTotIn[i]) * 100 : null)
+  const pctRisparmioMediaMensile = (() => {
+    const vals = pctRisparmioMensile.filter((v): v is number => v != null)
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+  })()
+  const pctInvestitoMensile = mesiPresenti.map((_, i) => {
+    const lordo = cfRisparmio[i]
+    return lordo > 0 ? (cfTotInv[i] / lordo) * 100 : (cfTotInv[i] > 0 ? null : 0)
+  })
+  const pctInvestitoMediaMensile = (() => {
+    const vals = pctInvestitoMensile.filter((v): v is number => v != null)
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+  })()
+
+  // Anno precedente: non abbiamo il dettaglio mensile, solo gli aggregati storicoAnnoPrec (media/totale per categoria)
+  const entratePrecTot = storicoAnnoPrec['TOTALE_ENTRATE']?.totale
+  const entratePrecMedia = storicoAnnoPrec['TOTALE_ENTRATE']?.media
+  const rispPrecTot = storicoAnnoPrec['RISPARMIO_NETTO']?.totale
+  const rispPrecMedia = storicoAnnoPrec['RISPARMIO_NETTO']?.media
+  const investPrecTot = storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale
+  const investPrecMedia = storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media
+  const pctRisparmioPrecTotale = entratePrecTot && entratePrecTot > 0 ? ((rispPrecTot ?? 0) / entratePrecTot) * 100 : null
+  const pctRisparmioPrecMedia = entratePrecMedia && entratePrecMedia > 0 ? ((rispPrecMedia ?? 0) / entratePrecMedia) * 100 : null
+  const pctInvestitoPrecTotale = rispPrecTot && rispPrecTot > 0 ? ((investPrecTot ?? 0) / rispPrecTot) * 100 : null
+  const pctInvestitoPrecMedia = rispPrecMedia && rispPrecMedia > 0 ? ((investPrecMedia ?? 0) / rispPrecMedia) * 100 : null
+
   const lineData = mesiPresenti.map((m, i) => ({
     mese: MESI_LABEL[m],
     Entrate: Math.round(cfTotIn[i]),
@@ -933,13 +972,13 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 border-l-2 border-surface-300 min-w-[100px]">Totale</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 border-l-2 border-surface-200 min-w-[52px] leading-tight">Media</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[56px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[56px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 border-l-2 border-surface-200 min-w-[52px] leading-tight">Media</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[56px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[56px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -989,8 +1028,8 @@ export default function DashboardPage() {
                   </tr>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio del mese</td>
-                    <td className="bg-white" />
-                    <td className="bg-white border-r-2 border-surface-200" />
+                    <PctCell value={pctRisparmioPrecMedia} />
+                    <PctCell value={pctRisparmioPrecTotale} className="border-r-2 border-surface-200" />
                     {mesiPresenti.map((m, i) => {
                       const lordo = cfTotIn[i] - cfTotOut[i]
                       const pct = cfTotIn[i] > 0 ? (lordo / cfTotIn[i]) * 100 : null
@@ -1001,14 +1040,14 @@ export default function DashboardPage() {
                       )
                     })}
                     <td className={`py-1.5 px-3 text-right font-bold border-l-2 border-surface-300 ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
-                    <td className="border-l-2 border-surface-200 bg-white" />
+                    <PctCell value={pctRisparmioMediaMensile} className="border-l-2 border-surface-200" />
                     <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="bg-white" />
                   </tr>
                   <tr>
                     <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio investito</td>
-                    <td className="bg-white" />
-                    <td className="bg-white border-r-2 border-surface-200" />
+                    <PctCell value={pctInvestitoPrecMedia} />
+                    <PctCell value={pctInvestitoPrecTotale} className="border-r-2 border-surface-200" />
                     {mesiPresenti.map((m, i) => {
                       const lordo = cfTotIn[i] - cfTotOut[i]
                       const pct = lordo > 0 ? (cfTotInv[i] / lordo) * 100 : (cfTotInv[i] > 0 ? null : 0)
@@ -1021,7 +1060,7 @@ export default function DashboardPage() {
                     <td className="py-1.5 px-3 text-right font-bold text-gray-700 bg-surface-50">
                       {ytdRisp > 0 ? `${((ytdInv / ytdRisp) * 100).toFixed(0)}%` : '–'}
                     </td>
-                    <td className="border-l-2 border-surface-200 bg-white" />
+                    <PctCell value={pctInvestitoMediaMensile} className="border-l-2 border-surface-200" />
                     <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="bg-white" />
                   </tr>
@@ -1049,13 +1088,13 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[48px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[48px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[48px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[48px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-300">Totale</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[48px] leading-tight">Media</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[48px] leading-tight">Media</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
                   </tr>
                 </thead>
                 <tbody>

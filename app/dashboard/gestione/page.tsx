@@ -177,6 +177,19 @@ function MediaCell({ value, className = '' }: { value: number | undefined; class
   )
 }
 
+// Variazione % del valore attuale rispetto allo stesso valore dell'anno precedente.
+// Neutra come le altre celle di sintesi: solo una freccia a indicare la direzione.
+function VarCell({ attuale, precedente, className = '' }: { attuale: number; precedente: number | undefined; className?: string }) {
+  const pct = precedente ? ((attuale - precedente) / Math.abs(precedente)) * 100 : null
+  return (
+    <td className={`text-center p-0.5 ${className}`}>
+      <div className={`bg-surface-50 py-1 rounded-lg text-xs font-medium ${pct == null ? 'text-gray-300' : 'text-gray-700'}`}>
+        {pct == null ? '–' : `${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct).toFixed(0)}%`}
+      </div>
+    </td>
+  )
+}
+
 // Tooltip per "Spese per categoria": mostra solo le voci realmente presenti nel mese
 // (le prime 10 categorie di quel mese + Altro), non l'intero elenco di dataKey del grafico.
 type SpeseTooltipPayload = { dataKey: string; value: number; color: string }
@@ -233,7 +246,7 @@ export default function DashboardPage() {
   >([])
   // Media mensile dell'anno precedente, per categoria (inserita manualmente su Supabase
   // quando non ci sono movimenti dettagliati per quell'anno). '–' se assente.
-  const [medieStoricheAnnoPrec, setMedieStoricheAnnoPrec] = useState<Record<string, number>>({})
+  const [storicoAnnoPrec, setStoricoAnnoPrec] = useState<Record<string, { media: number; totale: number }>>({})
 
   // Soglie di allerta portafoglio
   const [soglie, setSoglie] = useState<AlertSoglia[]>([])
@@ -332,8 +345,8 @@ export default function DashboardPage() {
     setPortafoglio((portRes.data as AssetPortafoglio[]) ?? [])
     setSoglie((sogRes.data as AlertSoglia[]) ?? [])
     setProfilo((profRes.data as Profilo) ?? null)
-    setMedieStoricheAnnoPrec(
-      Object.fromEntries(((medieRes.data as MediaStorica[]) ?? []).map(r => [r.categoria, r.media]))
+    setStoricoAnnoPrec(
+      Object.fromEntries(((medieRes.data as MediaStorica[]) ?? []).map(r => [r.categoria, { media: r.media, totale: r.totale }]))
     )
     setLoading(false)
   }, [anno])
@@ -914,47 +927,64 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px]">Media {anno - 1}</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px] border-r-2 border-surface-200">Totale {anno - 1}</th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-50 min-w-[100px]">Totale</th>
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-l-2 border-surface-200 min-w-[90px]">Media</th>
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[100px]">Media {anno - 1}</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px] border-l-2 border-surface-200">Var. Media</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px]">Var. Totale</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-green-50 py-1.5 px-3 text-xs font-bold text-green-800">Totale entrate</td>
+                    <MediaCell value={storicoAnnoPrec['TOTALE_ENTRATE']?.media} />
+                    <MediaCell value={storicoAnnoPrec['TOTALE_ENTRATE']?.totale} className="border-r-2 border-surface-200" />
                     {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
                     <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtK(ytdIn)}</td>
                     <MediaCell value={mediaEntrateMensili} className="border-l-2 border-surface-300" />
-                    <MediaCell value={medieStoricheAnnoPrec['TOTALE_ENTRATE']} />
+                    <VarCell attuale={mediaEntrateMensili} precedente={storicoAnnoPrec['TOTALE_ENTRATE']?.media} className="border-l-2 border-surface-200" />
+                    <VarCell attuale={ytdIn} precedente={storicoAnnoPrec['TOTALE_ENTRATE']?.totale} />
                   </tr>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-red-50 py-1.5 px-3 text-xs font-bold text-red-800">Totale uscite</td>
+                    <MediaCell value={storicoAnnoPrec['TOTALE_USCITE']?.media} />
+                    <MediaCell value={storicoAnnoPrec['TOTALE_USCITE']?.totale} className="border-r-2 border-surface-200" />
                     {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
                     <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtK(ytdOut)}</td>
                     <MediaCell value={mediaUsciteMensili} className="border-l-2 border-surface-300" />
-                    <MediaCell value={medieStoricheAnnoPrec['TOTALE_USCITE']} />
+                    <VarCell attuale={mediaUsciteMensili} precedente={storicoAnnoPrec['TOTALE_USCITE']?.media} className="border-l-2 border-surface-200" />
+                    <VarCell attuale={ytdOut} precedente={storicoAnnoPrec['TOTALE_USCITE']?.totale} />
                   </tr>
                   {invTotals.length > 0 && (
                     <tr className="border-b border-surface-100">
                       <td className="sticky left-0 z-10 bg-blue-50 py-1.5 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
+                      <MediaCell value={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media} />
+                      <MediaCell value={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale} className="border-r-2 border-surface-200" />
                       {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
                       <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtK(ytdInv)}</td>
                       <MediaCell value={ytdInv / nMesi} className="border-l-2 border-surface-300" />
-                      <MediaCell value={medieStoricheAnnoPrec['TOTALE_INVESTIMENTI']} />
+                      <VarCell attuale={ytdInv / nMesi} precedente={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media} className="border-l-2 border-surface-200" />
+                      <VarCell attuale={ytdInv} precedente={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale} />
                     </tr>
                   )}
                   <tr className="border-b-2 border-surface-200">
                     <td className={`sticky left-0 z-10 py-1.5 px-3 text-xs font-bold text-gray-800 ${ytdRisp >= 0 ? 'bg-green-50/50' : 'bg-red-50/50'}`}>Risparmio netto</td>
+                    <MediaCell value={storicoAnnoPrec['RISPARMIO_NETTO']?.media} />
+                    <MediaCell value={storicoAnnoPrec['RISPARMIO_NETTO']?.totale} className="border-r-2 border-surface-200" />
                     {cfRisparmio.map((v, i) => (
                       <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
                     ))}
                     <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
                     <MediaCell value={ytdRisp / nMesi} className="border-l-2 border-surface-300" />
-                    <MediaCell value={medieStoricheAnnoPrec['RISPARMIO_NETTO']} />
+                    <VarCell attuale={ytdRisp / nMesi} precedente={storicoAnnoPrec['RISPARMIO_NETTO']?.media} className="border-l-2 border-surface-200" />
+                    <VarCell attuale={ytdRisp} precedente={storicoAnnoPrec['RISPARMIO_NETTO']?.totale} />
                   </tr>
                   <tr className="border-b border-surface-100">
                     <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio del mese</td>
+                    <td className="bg-white" />
+                    <td className="bg-white border-r-2 border-surface-200" />
                     {mesiPresenti.map((m, i) => {
                       const lordo = cfTotIn[i] - cfTotOut[i]
                       const pct = cfTotIn[i] > 0 ? (lordo / cfTotIn[i]) * 100 : null
@@ -966,10 +996,13 @@ export default function DashboardPage() {
                     })}
                     <td className={`py-1.5 px-3 text-right font-bold ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
                     <td className="border-l-2 border-surface-200 bg-white" />
+                    <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="bg-white" />
                   </tr>
                   <tr>
                     <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio investito</td>
+                    <td className="bg-white" />
+                    <td className="bg-white border-r-2 border-surface-200" />
                     {mesiPresenti.map((m, i) => {
                       const lordo = cfTotIn[i] - cfTotOut[i]
                       const pct = lordo > 0 ? (cfTotInv[i] / lordo) * 100 : (cfTotInv[i] > 0 ? null : 0)
@@ -982,6 +1015,7 @@ export default function DashboardPage() {
                     <td className="py-1.5 px-3 text-right font-bold text-gray-700 bg-surface-50">
                       {ytdRisp > 0 ? `${((ytdInv / ytdRisp) * 100).toFixed(0)}%` : '–'}
                     </td>
+                    <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="bg-white" />
                   </tr>
@@ -1009,47 +1043,60 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">Media {anno - 1}</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px] border-r-2 border-surface-200">Totale {anno - 1}</th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-200">Totale</th>
                     <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[80px]">Media</th>
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px]">Media {anno - 1}</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px] border-l-2 border-surface-200">Var. Media</th>
+                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">Var. Totale</th>
                   </tr>
                 </thead>
                 <tbody>
                   {/* Entrate */}
                   <tr>
-                    <td colSpan={mesiPresenti.length + 4} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
+                    <td colSpan={mesiPresenti.length + 7} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
                   </tr>
                   {entrateTotals.map(({ cat, total }) => {
                     const vals = cfEntrate[cat];
                     const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
                     const totaliColonna = entrateTotals.map(e => e.total);
+                    const media = total / nMesi
+                    const prec = storicoAnnoPrec[cat]
                     return (
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+                        <MediaCell value={prec?.media} />
+                        <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
                         <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
-                        <MediaCell value={total / nMesi} className="border-l-2 border-surface-300" />
-                        <MediaCell value={medieStoricheAnnoPrec[cat]} />
+                        <MediaCell value={media} className="border-l-2 border-surface-300" />
+                        <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
+                        <VarCell attuale={total} precedente={prec?.totale} />
                       </tr>
                     )
                   })}
 
                   {/* Uscite */}
                   <tr>
-                    <td colSpan={mesiPresenti.length + 4} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
+                    <td colSpan={mesiPresenti.length + 7} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
                   </tr>
                   {usciteTotals.map(({ cat, total }) => {
                     const vals = cfUscite[cat];
                     const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
                     const totaliColonna = usciteTotals.map(u => u.total);
+                    const media = total / nMesi
+                    const prec = storicoAnnoPrec[cat]
                     return (
                       <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                         <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+                        <MediaCell value={prec?.media} />
+                        <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
                         <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
-                        <MediaCell value={total / nMesi} className="border-l-2 border-surface-300" />
-                        <MediaCell value={medieStoricheAnnoPrec[cat]} />
+                        <MediaCell value={media} className="border-l-2 border-surface-300" />
+                        <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
+                        <VarCell attuale={total} precedente={prec?.totale} />
                       </tr>
                     )
                   })}
@@ -1057,19 +1104,24 @@ export default function DashboardPage() {
                   {/* Investimenti */}
                   {invTotals.length > 0 && <>
                     <tr>
-                      <td colSpan={mesiPresenti.length + 4} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
+                      <td colSpan={mesiPresenti.length + 7} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
                     </tr>
                     {invTotals.map(({ cat, total }) => {
                       const vals = cfInv[cat];
                       const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
                       const totaliColonna = invTotals.map(v => v.total);
+                      const media = total / nMesi
+                      const prec = storicoAnnoPrec[cat]
                       return (
                         <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
                           <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+                          <MediaCell value={prec?.media} />
+                          <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
                           {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
                           <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
-                          <MediaCell value={total / nMesi} className="border-l-2 border-surface-300" />
-                          <MediaCell value={medieStoricheAnnoPrec[cat]} />
+                          <MediaCell value={media} className="border-l-2 border-surface-300" />
+                          <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
+                          <VarCell attuale={total} precedente={prec?.totale} />
                         </tr>
                       )
                     })}

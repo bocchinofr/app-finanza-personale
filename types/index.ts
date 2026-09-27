@@ -21,6 +21,7 @@ export interface MediaStorica {
   anno: number
   categoria: string
   media: number
+  totale: number
 }
 
 export interface Liquidita {

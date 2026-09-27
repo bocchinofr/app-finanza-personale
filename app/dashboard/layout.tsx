@@ -165,20 +165,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mobile top bar */}
       <div className="md:hidden sticky top-0 z-30 flex items-center justify-between bg-white border-b border-surface-200 px-4 py-3">
         <Logo size="sm" />
-        <div className="flex items-center gap-2">
-          <AnnoSelect />
-          <SyncButton compact />
-          <AnalisiFinanziariaModal compact />
-          <SnapshotReminder compact />
-          <NotificationBell />
-          <button
-            onClick={() => setMenuOpen(true)}
-            aria-label="Apri menu"
-            className="h-9 w-9 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600"
-          >
-            <span className="text-lg leading-none">☰</span>
-          </button>
-        </div>
+        <button
+          onClick={() => setMenuOpen(true)}
+          aria-label="Apri menu"
+          className="h-10 w-10 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600"
+        >
+          <span className="text-xl leading-none">☰</span>
+        </button>
       </div>
 
       {/* Mobile drawer overlay */}
@@ -192,7 +185,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mobile drawer */}
       <aside
         className={`md:hidden fixed top-0 left-0 h-full w-64 max-w-[80%] bg-white border-r border-surface-200 flex flex-col z-50
-          transform transition-transform duration-200
+          overflow-y-auto transform transition-transform duration-200
           ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="px-5 py-5 border-b border-surface-100 flex items-center justify-between">
@@ -205,6 +198,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             ✕
           </button>
         </div>
+
+        <div className="px-4 py-3 border-b border-surface-100 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <AnnoSelect />
+            <NotificationBell />
+          </div>
+          <SyncButton />
+          <AnalisiFinanziariaModal />
+          <SnapshotReminder />
+        </div>
+
         {navLinks}
       </aside>
 

@@ -23,13 +23,14 @@ function fmtEuro(n: number) {
 }
 
 function KpiCard({
-  label, value, sub, tone = 'neutral', delta,
+  label, value, sub, tone = 'neutral', delta, badge,
 }: {
   label: string
   value: string
   sub?: ReactNode
   tone?: 'neutral' | 'positive' | 'negative' | 'warning'
   delta?: { value: number; pct: number | null } | null
+  badge?: ReactNode
 }) {
   const toneClass =
     tone === 'positive' ? 'text-green-700' :
@@ -40,7 +41,10 @@ function KpiCard({
   return (
     <div className="card flex flex-col gap-1">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className={`num-display text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <p className={`num-display text-xl sm:text-2xl font-semibold ${toneClass}`}>{value}</p>
+        {badge}
+      </div>
       {sub}
       {delta !== undefined && (
         delta === null ? (
@@ -67,6 +71,7 @@ export default function PatrimonioPage() {
   const [portafoglioStorico, setPortafoglioStorico] = useState<{ mese: string; plus_minus: number; valore_mercato: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
   const [vistaPercentuale, setVistaPercentuale] = useState(false)
+  const [meseEspanso, setMeseEspanso] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -353,13 +358,53 @@ export default function PatrimonioPage() {
     }
   })
 
+  // Righe del riepilogo mensile, con delta calcolati vs il mese precedente.
+  // Calcolate una volta sola e riusate sia dalla tabella desktop sia
+  // dall'accordion mobile.
+  const riepilogoRows = storicoData.slice().reverse().map(row => {
+    const i = storicoData.findIndex(r => r.mese === row.mese)
+    const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
+    const rowPrec = i > 0 ? storicoData[i - 1] : null
+    const totalePrec = rowPrec ? rowPrec['Liquidità'] + rowPrec['Capitale investito'] + rowPrec['Fondo pensione'] : null
+    const varAssoluta = totalePrec != null ? totale - totalePrec : null
+    const varPct = totalePrec != null && totalePrec !== 0 ? (varAssoluta! / Math.abs(totalePrec)) * 100 : null
+    const varTone = varAssoluta == null ? 'text-gray-300' : varAssoluta >= 0 ? 'text-green-700' : 'text-red-700'
+    const plusMinusPrec = rowPrec ? rowPrec['Plus/minus'] : null
+    const plusMinusTone =
+      row['Plus/minus'] == null ? 'text-gray-300'
+      : row['Plus/minus'] < 0 ? 'text-red-700'
+      : plusMinusPrec == null ? 'text-green-700'
+      : row['Plus/minus'] >= plusMinusPrec ? 'text-green-700' : 'text-amber-600'
+    return { row, totale, varAssoluta, varPct, varTone, plusMinusTone }
+  })
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         <KpiCard
           label="Patrimonio totale"
           value={fmtEuro(patrimonioTotale)}
           delta={deltaPatrimonioTotale}
+          badge={
+            <span
+              className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                plusMinus < 0 ? 'bg-red-50 text-red-700'
+                : deltaPlusMinus && deltaPlusMinus.value < 0 ? 'bg-amber-50 text-amber-600'
+                : 'bg-green-50 text-green-700'
+              }`}
+              title="Plus/minus non realizzato"
+            >
+              {plusMinus >= 0 ? '+' : ''}{fmtEuro(plusMinus)}
+            </span>
+          }
+          sub={
+            <p className="text-xs text-gray-400">
+              Plus/minus: fondo pensione {fondoPensioneInteressi >= 0 ? '+' : ''}{fmtEuro(fondoPensioneInteressi)}
+              {' ('}{fondoPensionePct >= 0 ? '+' : ''}{fondoPensionePct.toFixed(1)}%{') · '}
+              investimenti {plusMinusInvestimenti >= 0 ? '+' : ''}{fmtEuro(plusMinusInvestimenti)}
+              {' ('}{plusMinusPct >= 0 ? '+' : ''}{plusMinusPct.toFixed(1)}%{')'}
+            </p>
+          }
         />
         <KpiCard
           label="Liquidità totale"
@@ -383,24 +428,6 @@ export default function PatrimonioPage() {
           label="Fondo pensione"
           value={fmtEuro(fondoPensioneTotale)}
           delta={deltaFondo}
-        />
-        <KpiCard
-          label="Plus/minus non realizzato"
-          value={`${plusMinus >= 0 ? '+' : ''}${fmtEuro(plusMinus)}`}
-          tone={
-            plusMinus < 0 ? 'negative'
-            : deltaPlusMinus && deltaPlusMinus.value < 0 ? 'warning'
-            : 'positive'
-          }
-          sub={
-            <p className="text-xs text-gray-400">
-              Fondo pensione {fondoPensioneInteressi >= 0 ? '+' : ''}{fmtEuro(fondoPensioneInteressi)}
-              {' ('}{fondoPensionePct >= 0 ? '+' : ''}{fondoPensionePct.toFixed(1)}%{') · '}
-              Investimenti {plusMinusInvestimenti >= 0 ? '+' : ''}{fmtEuro(plusMinusInvestimenti)}
-              {' ('}{plusMinusPct >= 0 ? '+' : ''}{plusMinusPct.toFixed(1)}%{')'}
-            </p>
-          }
-          delta={deltaPlusMinus}
         />
       </div>
 
@@ -474,37 +501,26 @@ export default function PatrimonioPage() {
       </div>
 
       {storicoData.length > 0 && (
-        <div className="card mt-4 overflow-x-auto">
+        <div className="card mt-4">
           <p className="num-display text-sm font-semibold text-gray-900 mb-3">Riepilogo mensile</p>
-          <table className="min-w-full text-xs border-collapse">
-            <thead>
-              <tr>
-                <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Mese</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Liquidità</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
-                <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. mese</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. %</th>
-                <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
-              </tr>
-            </thead>
-            <tbody>
-              {storicoData.slice().reverse().map((row) => {
-                const i = storicoData.findIndex(r => r.mese === row.mese)
-                const totale = row['Liquidità'] + row['Capitale investito'] + row['Fondo pensione']
-                const rowPrec = i > 0 ? storicoData[i - 1] : null
-                const totalePrec = rowPrec ? rowPrec['Liquidità'] + rowPrec['Capitale investito'] + rowPrec['Fondo pensione'] : null
-                const varAssoluta = totalePrec != null ? totale - totalePrec : null
-                const varPct = totalePrec != null && totalePrec !== 0 ? (varAssoluta! / Math.abs(totalePrec)) * 100 : null
-                const varTone = varAssoluta == null ? 'text-gray-300' : varAssoluta >= 0 ? 'text-green-700' : 'text-red-700'
-                const plusMinusPrec = rowPrec ? rowPrec['Plus/minus'] : null
-                const plusMinusTone =
-                  row['Plus/minus'] == null ? 'text-gray-300'
-                  : row['Plus/minus'] < 0 ? 'text-red-700'
-                  : plusMinusPrec == null ? 'text-green-700'
-                  : row['Plus/minus'] >= plusMinusPrec ? 'text-green-700' : 'text-amber-600'
-                return (
+
+          {/* Desktop: tabella completa */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="min-w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Mese</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Liquidità</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
+                  <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. mese</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. %</th>
+                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riepilogoRows.map(({ row, totale, varAssoluta, varPct, varTone, plusMinusTone }) => (
                   <tr key={row.mese}>
                     <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">
                       {row.mese}
@@ -531,10 +547,54 @@ export default function PatrimonioPage() {
                       {row['Plus/minus'] == null ? 'N/D' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
                     </td>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: accordion — riga sommaria sempre visibile, dettaglio a tap */}
+          <div className="md:hidden divide-y divide-surface-200/60">
+            {riepilogoRows.map(({ row, totale, varAssoluta, varPct, varTone, plusMinusTone }) => {
+              const isOpen = meseEspanso === row.mese
+              return (
+                <div key={row.mese}>
+                  <button
+                    type="button"
+                    onClick={() => setMeseEspanso(isOpen ? null : row.mese)}
+                    className="w-full flex items-center justify-between gap-2 py-2.5 text-left"
+                  >
+                    <span className="text-sm font-medium text-gray-700 w-12 shrink-0">{row.mese}</span>
+                    <span className="font-mono tabular-nums text-sm font-semibold text-gray-900 flex-1 text-right">
+                      {fmtEuro(totale)}
+                    </span>
+                    <span className={`font-mono tabular-nums text-xs font-medium w-16 text-right shrink-0 ${varTone}`}>
+                      {varPct == null ? '–' : `${varPct >= 0 ? '+' : ''}${varPct.toFixed(1)}%`}
+                    </span>
+                    <span className={`text-gray-300 text-xs shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+                  </button>
+                  {isOpen && (
+                    <div className="pb-3 pl-14 pr-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                      <span className="text-gray-400">Liquidità</span>
+                      <span className="font-mono tabular-nums text-gray-700 text-right">{fmtEuro(row['Liquidità'])}</span>
+                      <span className="text-gray-400">Capitale investito</span>
+                      <span className="font-mono tabular-nums text-gray-700 text-right">{fmtEuro(row['Capitale investito'])}</span>
+                      <span className="text-gray-400">Fondo pensione</span>
+                      <span className="font-mono tabular-nums text-gray-700 text-right">{fmtEuro(row['Fondo pensione'])}</span>
+                      <span className="text-gray-400">Var. mese</span>
+                      <span className={`font-mono tabular-nums text-right font-medium ${varTone}`}>
+                        {varAssoluta == null ? '–' : `${varAssoluta >= 0 ? '+' : ''}${fmtEuro(varAssoluta)}`}
+                      </span>
+                      <span className="text-gray-400">Plus/minus</span>
+                      <span className={`font-mono tabular-nums text-right font-medium ${plusMinusTone}`}>
+                        {row['Plus/minus'] == null ? 'N/D' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
           <p className="text-[11px] text-gray-400 mt-2">
             Var. mese/%: variazione del patrimonio totale rispetto al mese precedente.
             Plus/minus: <span className="text-green-700 font-medium">verde</span> se positivo e in crescita,{' '}

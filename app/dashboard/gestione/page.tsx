@@ -121,14 +121,18 @@ function interpolateColor(color1: string, color2: string, t: number): string {
 // Aumenta per colorare solo scostamenti più marcati, diminuisci per colorare anche variazioni lievi.
 const PEAK_DEVIATION_THRESHOLD = 0.35
 
-function HeatCell({ value, values, palette, format }: {
-  value: number; values: number[]; palette: 'green' | 'red' | 'blue'; format: (n: number) => string
+function HeatCell({ value, values, palette, format, total = false }: {
+  value: number; values: number[]; palette: 'green' | 'red' | 'blue'; format: (n: number) => string; total?: boolean
 }) {
+  // Colonna "Totale": bordo di separazione dai mesi + valore in grassetto, niente heat coloring
+  const tdClass = total ? 'text-center p-0.5 border-l-2 border-surface-300' : 'text-center p-0.5'
+  const weightClass = total ? 'font-bold' : 'font-medium'
+
   // Ignora valori <= 1
   if (value <= 1) {
     return (
-      <td className="text-center p-0.5">
-        <div className="bg-surface-50 text-gray-400 py-1 rounded-lg text-xs">–</div>
+      <td className={tdClass}>
+        <div className={`bg-surface-50 text-gray-400 py-1 rounded-lg text-xs ${total ? 'font-bold' : ''}`}>–</div>
       </td>
     );
   }
@@ -142,8 +146,8 @@ function HeatCell({ value, values, palette, format }: {
   // Riga/colonna "piatta" (nessun valore fuori scala) o valore nella norma → nessuna colorazione
   if (isFlat || value <= mean) {
     return (
-      <td className="text-center p-0.5">
-        <div className="bg-surface-50 text-gray-700 py-1 rounded-lg text-xs font-medium">{format(value)}</div>
+      <td className={tdClass}>
+        <div className={`${total ? 'bg-surface-100' : 'bg-surface-50'} text-gray-700 py-1 rounded-lg text-xs ${weightClass}`}>{format(value)}</div>
       </td>
     );
   }
@@ -154,10 +158,10 @@ function HeatCell({ value, values, palette, format }: {
   const textColor = t > 0.5 ? HEAT_COLORS[palette].textDark : HEAT_COLORS[palette].textLight;
 
   return (
-    <td className="text-center p-0.5">
+    <td className={tdClass}>
       <div
-        className="py-1 rounded-lg text-xs font-mono tabular-nums transition-transform duration-150 hover:scale-105 hover:shadow-md"
-        style={{ backgroundColor: bg, color: textColor, fontWeight: 500 + Math.round(t * 300) }}
+        className={`py-1 rounded-lg text-xs font-mono tabular-nums transition-transform duration-150 hover:scale-105 hover:shadow-md ${weightClass}`}
+        style={{ backgroundColor: bg, color: textColor, fontWeight: total ? 700 : 500 + Math.round(t * 300) }}
       >
         {format(value)}
       </div>
@@ -170,7 +174,8 @@ function HeatCell({ value, values, palette, format }: {
 function MediaCell({ value, className = '' }: { value: number | undefined; className?: string }) {
   return (
     <td className={`text-center p-0.5 ${className}`}>
-      <div className={`bg-surface-50 py-1 rounded-lg text-xs font-medium ${value == null ? 'text-gray-300' : 'text-gray-700'}`}>
+      {/* Colore testo di queste celle "secondarie": cambia qui text-gray-400 */}
+      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${value == null ? 'text-gray-300' : 'text-gray-400'}`}>
         {value == null ? '–' : fmtK(value)}
       </div>
     </td>
@@ -183,7 +188,8 @@ function VarCell({ attuale, precedente, className = '' }: { attuale: number; pre
   const pct = precedente ? ((attuale - precedente) / Math.abs(precedente)) * 100 : null
   return (
     <td className={`text-center p-0.5 ${className}`}>
-      <div className={`bg-surface-50 py-1 rounded-lg text-xs font-medium ${pct == null ? 'text-gray-300' : 'text-gray-700'}`}>
+      {/* Colore testo di queste celle "secondarie": cambia qui text-gray-400 */}
+      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${pct == null ? 'text-gray-300' : 'text-gray-400'}`}>
         {pct == null ? '–' : `${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct).toFixed(0)}%`}
       </div>
     </td>
@@ -927,13 +933,13 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px]">Media {anno - 1}</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px] border-r-2 border-surface-200">Totale {anno - 1}</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-50 min-w-[100px]">Totale</th>
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-l-2 border-surface-200 min-w-[90px]">Media</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px] border-l-2 border-surface-200">Var. Media</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[90px]">Var. Totale</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 border-l-2 border-surface-300 min-w-[100px]">Totale</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 border-l-2 border-surface-200 min-w-[52px] leading-tight">Media</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[56px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[56px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -942,7 +948,7 @@ export default function DashboardPage() {
                     <MediaCell value={storicoAnnoPrec['TOTALE_ENTRATE']?.media} />
                     <MediaCell value={storicoAnnoPrec['TOTALE_ENTRATE']?.totale} className="border-r-2 border-surface-200" />
                     {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50">{fmtK(ytdIn)}</td>
+                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50 border-l-2 border-surface-300">{fmtK(ytdIn)}</td>
                     <MediaCell value={mediaEntrateMensili} className="border-l-2 border-surface-300" />
                     <VarCell attuale={mediaEntrateMensili} precedente={storicoAnnoPrec['TOTALE_ENTRATE']?.media} className="border-l-2 border-surface-200" />
                     <VarCell attuale={ytdIn} precedente={storicoAnnoPrec['TOTALE_ENTRATE']?.totale} />
@@ -952,7 +958,7 @@ export default function DashboardPage() {
                     <MediaCell value={storicoAnnoPrec['TOTALE_USCITE']?.media} />
                     <MediaCell value={storicoAnnoPrec['TOTALE_USCITE']?.totale} className="border-r-2 border-surface-200" />
                     {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50">{fmtK(ytdOut)}</td>
+                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50 border-l-2 border-surface-300">{fmtK(ytdOut)}</td>
                     <MediaCell value={mediaUsciteMensili} className="border-l-2 border-surface-300" />
                     <VarCell attuale={mediaUsciteMensili} precedente={storicoAnnoPrec['TOTALE_USCITE']?.media} className="border-l-2 border-surface-200" />
                     <VarCell attuale={ytdOut} precedente={storicoAnnoPrec['TOTALE_USCITE']?.totale} />
@@ -963,7 +969,7 @@ export default function DashboardPage() {
                       <MediaCell value={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media} />
                       <MediaCell value={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale} className="border-r-2 border-surface-200" />
                       {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
-                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50">{fmtK(ytdInv)}</td>
+                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50 border-l-2 border-surface-300">{fmtK(ytdInv)}</td>
                       <MediaCell value={ytdInv / nMesi} className="border-l-2 border-surface-300" />
                       <VarCell attuale={ytdInv / nMesi} precedente={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media} className="border-l-2 border-surface-200" />
                       <VarCell attuale={ytdInv} precedente={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale} />
@@ -976,7 +982,7 @@ export default function DashboardPage() {
                     {cfRisparmio.map((v, i) => (
                       <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
                     ))}
-                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
+                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white border-l-2 border-surface-300 ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
                     <MediaCell value={ytdRisp / nMesi} className="border-l-2 border-surface-300" />
                     <VarCell attuale={ytdRisp / nMesi} precedente={storicoAnnoPrec['RISPARMIO_NETTO']?.media} className="border-l-2 border-surface-200" />
                     <VarCell attuale={ytdRisp} precedente={storicoAnnoPrec['RISPARMIO_NETTO']?.totale} />
@@ -994,7 +1000,7 @@ export default function DashboardPage() {
                         </td>
                       )
                     })}
-                    <td className={`py-1.5 px-3 text-right font-bold ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
+                    <td className={`py-1.5 px-3 text-right font-bold border-l-2 border-surface-300 ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
                     <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="border-l-2 border-surface-200 bg-white" />
                     <td className="bg-white" />
@@ -1043,13 +1049,13 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b border-surface-200">
                     <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">Media {anno - 1}</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px] border-r-2 border-surface-200">Totale {anno - 1}</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[48px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[48px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
                     {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-200">Totale</th>
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500 min-w-[80px]">Media</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px] border-l-2 border-surface-200">Var. Media</th>
-                    <th className="py-2 px-3 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">Var. Totale</th>
+                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-300">Totale</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[48px] leading-tight">Media</th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
+                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-300 min-w-[52px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1069,7 +1075,7 @@ export default function DashboardPage() {
                         <MediaCell value={prec?.media} />
                         <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} />
+                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} total />
                         <MediaCell value={media} className="border-l-2 border-surface-300" />
                         <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
                         <VarCell attuale={total} precedente={prec?.totale} />
@@ -1093,7 +1099,7 @@ export default function DashboardPage() {
                         <MediaCell value={prec?.media} />
                         <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
                         {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} />
+                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} total />
                         <MediaCell value={media} className="border-l-2 border-surface-300" />
                         <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
                         <VarCell attuale={total} precedente={prec?.totale} />
@@ -1118,7 +1124,7 @@ export default function DashboardPage() {
                           <MediaCell value={prec?.media} />
                           <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
                           {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
-                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} />
+                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} total />
                           <MediaCell value={media} className="border-l-2 border-surface-300" />
                           <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
                           <VarCell attuale={total} precedente={prec?.totale} />

@@ -2,7 +2,7 @@ name: Supabase Keep Alive
 
 on:
   schedule:
-    - cron: '0 8 */1 * *'   # ogni 1 giorni alle 08:00 UTC
+    - cron: '0 */6 * * *'   # ogni 1 giorni alle 08:00 UTC
   workflow_dispatch: {}      # permette run manuale da tab Actions
 
 jobs:
@@ -20,3 +20,9 @@ jobs:
           -H "Content-Type: application/json" \
           -H "Prefer: return=representation" \
           -d "{\"last_ping\":\"$TIMESTAMP\"}"
+    - name: Read liqiodita
+      run: |
+        curl -s -o /dev/null -w "%{http_code}\n" \
+          "${{ secrets.SUPABASE_URL }}/rest/v1/liquidita?select=id&limit=1" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"

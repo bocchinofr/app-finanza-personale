@@ -876,7 +876,7 @@ export default function DashboardPage() {
           {/* Table */}
           <div className="card p-0 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[640px]">
                 <thead>
                   <tr>
                     {([
@@ -1737,7 +1737,7 @@ export default function DashboardPage() {
                 )}
 
                 <div className="overflow-x-auto mt-3">
-                  <table className="w-full">
+                  <table className="w-full min-w-[640px]">
                     <thead>
                       <tr>
                         <th className="table-th">Asset</th>

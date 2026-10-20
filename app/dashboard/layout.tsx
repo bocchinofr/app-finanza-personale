@@ -161,9 +161,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="min-h-screen md:flex">
+    <div className="min-h-screen lg:flex">
       {/* Mobile top bar */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between bg-white border-b border-surface-200 px-4 py-3">
+      <div className="lg:hidden sticky top-0 z-30 flex items-center justify-between bg-white border-b border-surface-200 px-4 py-3">
         <Logo size="sm" />
         <button
           onClick={() => setMenuOpen(true)}
@@ -177,14 +177,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mobile drawer overlay */}
       {menuOpen && (
         <div
-          className="md:hidden fixed inset-0 z-40 bg-black/30"
+          className="lg:hidden fixed inset-0 z-40 bg-black/30"
           onClick={() => setMenuOpen(false)}
         />
       )}
 
       {/* Mobile drawer */}
       <aside
-        className={`md:hidden fixed top-0 left-0 h-full w-64 max-w-[80%] bg-white border-r border-surface-200 flex flex-col z-50
+        className={`lg:hidden fixed top-0 left-0 h-full w-64 max-w-[80%] bg-white border-r border-surface-200 flex flex-col z-50
           overflow-y-auto transform transition-transform duration-200
           ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
@@ -213,7 +213,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 bg-white border-r border-surface-200 flex-col fixed h-full">
+      <aside className="hidden lg:flex w-60 bg-white border-r border-surface-200 flex-col fixed h-full">
         <div className="px-5 py-5 border-b border-surface-100 space-y-3">
           <Logo />
           <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         {navLinks}
       </aside>
 
-      <main className="flex-1 md:ml-60">
+      <main className="flex-1 min-w-0 lg:ml-60">
         <div className="p-4 md:p-6">
           {children}
         </div>

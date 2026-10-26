@@ -78,6 +78,7 @@ export interface AlertSoglia {
   tipo: 'storico' | 'mensile' | 'acquisto'
   soglia_pct: number
   attivo: boolean
+  accumulo?: boolean | null // false = solo notifica, nessuna quota di budget/importo suggerito (default true)
   in_breach: boolean
   ultima_notifica_at?: string | null
   created_at?: string

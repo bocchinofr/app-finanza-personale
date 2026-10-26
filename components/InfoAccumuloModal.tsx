@@ -43,7 +43,8 @@ export default function InfoAccumuloModal({ ddMax, frazioneAPmc = 0.4 }: Props) 
                 <p className="font-semibold text-gray-800 mb-1">1. Quanta riserva spetta a ciascun asset</p>
                 <p>
                   La riserva totale (asset e liquidità svincolati) viene divisa tra tutti gli asset che hanno almeno una
-                  soglia di alert attiva. Non in parti uguali: chi ha impostato una <strong>soglia più bassa</strong> (es. -5%
+                  soglia di alert attiva <strong>e la casella &ldquo;Accum.&rdquo; spuntata</strong> in Anagrafica (togliendola l&apos;asset resta in
+                  &ldquo;solo notifica&rdquo;: ricevi l&apos;avviso ma nessun importo né quota di budget). Non in parti uguali: chi ha impostato una <strong>soglia più bassa</strong> (es. -5%
                   invece di -20%) segnala di voler accumulare prima, e riceve una fetta più grande. Il peso di ogni asset è
                   proporzionale a <code className="bg-gray-100 px-1 rounded">1 / soglia%</code>.
                 </p>
@@ -63,6 +64,16 @@ export default function InfoAccumuloModal({ ddMax, frazioneAPmc = 0.4 }: Props) 
                     del budget quando il ribasso sotto il PMC raggiunge il <strong>DD max</strong> del tuo profilo (oggi {Math.round(ddMax * 100)}%).
                   </li>
                 </ul>
+              </div>
+
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">Se scattano più soglie sullo stesso asset</p>
+                <p>
+                  Le soglie (dal massimo e nel mese) servono solo a <strong>far partire la notifica</strong>: l&apos;importo non dipende
+                  da quale scatta. Se scattano insieme, ricevi <strong>una sola riga per asset</strong> con tutte le soglie elencate e
+                  <strong> un unico importo</strong>, che <strong>non va sommato</strong>. Nel calcolo del budget conta la soglia
+                  più bassa tra quelle attive dell&apos;asset.
+                </p>
               </div>
 
               <div className="bg-surface-50 rounded-lg p-3">

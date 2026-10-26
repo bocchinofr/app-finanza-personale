@@ -37,8 +37,8 @@ function fmtEuro(n: number) {
 }
 
 function valoreAttualeAsset(a: AssetPortafoglio, prezzi: Record<string, QuoteInfo>): number {
-  const { quantita } = statoAttuale(a)
-  const p = a.ticker && prezzi[a.ticker] ? prezzi[a.ticker].price : a.prezzo_acquisto
+  const { quantita, prezzoCarico } = statoAttuale(a)
+  const p = a.ticker && prezzi[a.ticker] ? prezzi[a.ticker].price : prezzoCarico
   return p * quantita
 }
 
@@ -90,7 +90,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, soglie, pre
   const budgetPerAsset = useMemo(() => {
     const sogliePerAsset = new Map<string, number[]>()
     for (const s of soglie) {
-      if (!s.attivo) continue
+      if (!s.attivo || s.accumulo === false) continue
       const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
       arr.push(s.soglia_pct)
       sogliePerAsset.set(s.portafoglio_id, arr)
@@ -129,7 +129,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, soglie, pre
     if (assetSelezionato?.ticker && prezziAttuali[assetSelezionato.ticker]?.high52) {
       setPrezzoMassimo(prezziAttuali[assetSelezionato.ticker].high52)
     } else if (assetSelezionato) {
-      setPrezzoMassimo(assetSelezionato.prezzo_acquisto)
+      setPrezzoMassimo(statoAttuale(assetSelezionato).prezzoCarico)
     } else {
       setPrezzoMassimo(null) // aggregato: non serve, si lavora in %
     }
@@ -155,7 +155,7 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, soglie, pre
     // impostabile (drawdown equivalente), perché un paniere di asset diversi
     // non ha un PMC unico.
     const budget = isAggregato ? riservaTotale : budgetUsatoAssetSingolo
-    const pmcEquivalente = isAggregato ? 1 - ddAlPmcAggregato / 100 : (assetSelezionato?.prezzo_acquisto ?? 0)
+    const pmcEquivalente = isAggregato ? 1 - ddAlPmcAggregato / 100 : (assetSelezionato ? statoAttuale(assetSelezionato).prezzoCarico : 0)
     const massimoEquivalente = isAggregato ? 1 : (prezzoMassimo as number)
 
     for (let i = 1; i <= MAX_STEP; i++) {
@@ -332,12 +332,12 @@ export default function SimulatoreAccumulo({ portafoglio, liquidita, soglie, pre
                 />
                 <p className="text-[11px] text-gray-400 mt-1">
                   Ogni step della simulazione scende del {stepPct}% da questo prezzo (precompilato col massimo a 52
-                  settimane). Modalità variabile: rampa lineare fino al PMC ({assetSelezionato ? fmtEuro(assetSelezionato.prezzo_acquisto) : '–'}),
+                  settimane). Modalità variabile: rampa lineare fino al PMC ({assetSelezionato ? fmtEuro(statoAttuale(assetSelezionato).prezzoCarico) : '–'}),
                   poi accelerazione sotto il PMC.
                 </p>
                 {assetSenzaSoglieProprie && (
                   <p className="text-[11px] text-amber-600 mt-1">
-                    Questo asset non ha soglie attive configurate: nel sistema reale non riceverebbe una fetta
+                    Questo asset non ha soglie attive con accumulo abilitato: nel sistema reale non riceverebbe una fetta
                     dedicata di riserva. Qui, solo per esplorare, uso l&apos;intera riserva come budget.
                   </p>
                 )}

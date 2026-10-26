@@ -21,8 +21,8 @@ function fmtEuro(n: number) {
 }
 
 function valoreAttualeAsset(a: AssetPortafoglio, prezzi: Record<string, QuoteInfo>): number {
-  const { quantita } = statoAttuale(a)
-  const p = a.ticker && prezzi[a.ticker] ? prezzi[a.ticker].price : a.prezzo_acquisto
+  const { quantita, prezzoCarico } = statoAttuale(a)
+  const p = a.ticker && prezzi[a.ticker] ? prezzi[a.ticker].price : prezzoCarico
   return p * quantita
 }
 
@@ -120,7 +120,7 @@ export default function RiservaAccumulo({
   const budgetPerAsset = useMemo(() => {
     const sogliePerAsset = new Map<string, number[]>()
     for (const s of soglie) {
-      if (!s.attivo) continue
+      if (!s.attivo || s.accumulo === false) continue
       const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
       arr.push(s.soglia_pct)
       sogliePerAsset.set(s.portafoglio_id, arr)
@@ -130,21 +130,36 @@ export default function RiservaAccumulo({
   }, [soglie, riservaTotale])
 
   // Importo consigliato: rampa lineare dal massimo al PMC, poi accelerazione
-  // convessa sotto il PMC (stessa formula usata nelle email di alert).
-  const suggerimenti = breachesConDrawdown
-    .map(({ soglia, asset, quote, drawdown }) => {
-      const budgetAsset = budgetPerAsset.get(soglia.portafoglio_id) ?? 0
-      if (!asset || !quote?.high52 || budgetAsset <= 0) return null
+  // convessa sotto il PMC (stessa formula usata nelle notifiche e nelle email).
+  // Una sola riga per asset: se scattano più soglie (dal massimo + nel mese)
+  // l'importo è unico, dipende solo da prezzo, massimo 52 sett., PMC e budget.
+  const TIPO_LABEL: Record<string, string> = { storico: 'dal massimo', mensile: 'nel mese', acquisto: 'da acquisto' }
+  const suggerimenti = (() => {
+    const perAsset = new Map<string, typeof breachesConDrawdown>()
+    for (const b of breachesConDrawdown) {
+      const arr = perAsset.get(b.soglia.portafoglio_id) ?? []
+      arr.push(b)
+      perAsset.set(b.soglia.portafoglio_id, arr)
+    }
+    const out: { id: string; asset: AssetPortafoglio; importo: number; trigger: { tipo: string; drawdown: number }[] }[] = []
+    for (const [assetId, items] of perAsset.entries()) {
+      const { asset, quote } = items[0]
+      const budgetAsset = budgetPerAsset.get(assetId) ?? 0
+      if (!asset || !quote?.high52 || budgetAsset <= 0) continue
       const importo = calcolaImportoConsigliato({
         prezzoAttuale: quote.price,
         prezzoMassimo: quote.high52,
-        pmc: asset.prezzo_acquisto,
+        pmc: statoAttuale(asset).prezzoCarico,
         budgetAsset,
         ddMaxSottoPmc: ddMax,
       })
-      return { soglia, asset, importo, drawdown }
-    })
-    .filter((x): x is NonNullable<typeof x> => x != null)
+      out.push({
+        id: assetId, asset, importo,
+        trigger: items.map(i => ({ tipo: i.soglia.tipo, drawdown: i.drawdown as number })),
+      })
+    }
+    return out
+  })()
 
   const conti = [...new Set(liquidita.map(l => l.conto))]
 
@@ -195,15 +210,16 @@ export default function RiservaAccumulo({
             <InfoAccumuloModal ddMax={ddMax} />
           </div>
           <ul className="space-y-1">
-            {suggerimenti.map(({ soglia, asset, importo, drawdown }) => (
-              <li key={soglia.id} className="text-xs text-brand-800">
-                <strong>{asset?.nome || asset?.descrizione || asset?.ticker}</strong>
-                {' — '}{drawdown?.toFixed(1)}%: investire circa <strong>{fmtEuro(importo)}</strong>
+            {suggerimenti.map(({ id, asset, importo, trigger }) => (
+              <li key={id} className="text-xs text-brand-800">
+                <strong>{asset.nome || asset.descrizione || asset.ticker}</strong>
+                {' — '}{trigger.map(t => `${t.drawdown.toFixed(1)}% ${TIPO_LABEL[t.tipo] ?? t.tipo}`).join(' · ')}: investire circa <strong>{fmtEuro(importo)}</strong>
+                {trigger.length > 1 && <span className="text-brand-700/70"> (importo unico)</span>}
               </li>
             ))}
           </ul>
           <p className="text-[10px] text-brand-700/70 mt-2">
-            Budget diviso tra gli asset con soglia attiva in base all&apos;aggressività della soglia; l&apos;importo cresce mano a mano che il prezzo scende verso il PMC e accelera sotto il PMC.
+            Budget diviso tra gli asset con soglia attiva e accumulo abilitato, in base all&apos;aggressività della soglia; l&apos;importo cresce mano a mano che il prezzo scende verso il PMC e accelera sotto il PMC.
           </p>
         </div>
       )}

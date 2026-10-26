@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MediaStorica, MESI, statoAttuale } from '@/types'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
 import SimulatoreAccumulo from '@/components/SimulatoreAccumulo'
+import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
 import { HeatmapCell } from '@/components/charts/HeatmapCell'
@@ -233,6 +234,8 @@ function SpeseCategoriaTooltip({ active, payload, label }: {
   )
 }
 
+type DraftSoglia = { massimo: number; mensile: number; attivo: boolean; accumulo: boolean }
+
 const PAGE_SIZE = 20
 type SortKey = 'mese' | 'data_operazione' | 'descrizione' | 'importo' | 'categoria' | 'componente'
 type SortDir = 'asc' | 'desc'
@@ -272,7 +275,7 @@ export default function DashboardPage() {
   const [showSoglieForm, setShowSoglieForm] = useState(false)
   const [globalSogliaMax, setGlobalSogliaMax] = useState(15)
   const [globalSogliaMese, setGlobalSogliaMese] = useState(10)
-  const [draftSoglie, setDraftSoglie] = useState<Record<string, { massimo: number; mensile: number; attivo: boolean }>>({})
+  const [draftSoglie, setDraftSoglie] = useState<Record<string, DraftSoglia>>({})
   const [savingSoglie, setSavingSoglie] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [bannerChiusuraDismissed, setBannerChiusuraDismissed] = useState(false)
@@ -374,7 +377,7 @@ export default function DashboardPage() {
   // Inizializza il form soglie con i valori salvati (o i default globali)
   useEffect(() => {
     setDraftSoglie(prev => {
-      const next: Record<string, { massimo: number; mensile: number; attivo: boolean }> = {}
+      const next: Record<string, DraftSoglia> = {}
       portafoglio.forEach(a => {
         if (!a.id) return
         const sMax = soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico')
@@ -383,6 +386,7 @@ export default function DashboardPage() {
           massimo: sMax?.soglia_pct ?? globalSogliaMax,
           mensile: sMese?.soglia_pct ?? globalSogliaMese,
           attivo: sMax?.attivo ?? sMese?.attivo ?? true,
+          accumulo: sMax?.accumulo ?? sMese?.accumulo ?? true,
         }
       })
       return next
@@ -518,7 +522,7 @@ export default function DashboardPage() {
       const next = { ...prev }
       portafoglio.forEach(a => {
         if (!a.id) return
-        next[a.id] = { ...(next[a.id] ?? { attivo: true }), massimo: globalSogliaMax, mensile: globalSogliaMese }
+        next[a.id] = { ...(next[a.id] ?? { attivo: true, accumulo: true }), massimo: globalSogliaMax, mensile: globalSogliaMese }
       })
       return next
     })
@@ -535,8 +539,8 @@ export default function DashboardPage() {
       if (!a.id) return
       const d = draftSoglie[a.id]
       if (!d) return
-      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'storico', soglia_pct: d.massimo, attivo: d.attivo })
-      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'mensile', soglia_pct: d.mensile, attivo: d.attivo })
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'storico', soglia_pct: d.massimo, attivo: d.attivo, accumulo: d.accumulo })
+      rows.push({ user_id: user.id, portafoglio_id: a.id, tipo: 'mensile', soglia_pct: d.mensile, attivo: d.attivo, accumulo: d.accumulo })
     })
 
     if (rows.length === 0) {
@@ -737,8 +741,8 @@ export default function DashboardPage() {
   const assetClasses = [...new Set(portafoglio.map(a => a.asset).filter(Boolean))]
   const valoreCaricoTotale = portafoglio.reduce((s, a) => { const { quantita, prezzoCarico } = statoAttuale(a); return s + prezzoCarico * quantita }, 0)
   const valoreAttualeTotale = portafoglio.reduce((s, a) => {
-    const { quantita } = statoAttuale(a)
-    const prezzoAtt = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : a.prezzo_acquisto
+    const { quantita, prezzoCarico } = statoAttuale(a)
+    const prezzoAtt = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : prezzoCarico
     return s + (prezzoAtt * quantita)
   }, 0)
   const plusminus = valoreAttualeTotale - valoreCaricoTotale
@@ -748,8 +752,8 @@ export default function DashboardPage() {
   const piePortafoglio = assetClasses.map(cls => {
     const assetsInClass = portafoglio.filter(a => a.asset === cls)
     const valore = assetsInClass.reduce((s, a) => {
-      const { quantita } = statoAttuale(a)
-      const p = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : a.prezzo_acquisto
+      const { quantita, prezzoCarico } = statoAttuale(a)
+      const p = a.ticker && prezziAttuali[a.ticker] ? prezziAttuali[a.ticker].price : prezzoCarico
       return s + p * quantita
     }, 0)
     return {
@@ -1694,6 +1698,7 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
                   <div className="flex items-center gap-3">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Anagrafica portafoglio</p>
+                    <InfoAccumuloModal ddMax={profilo?.dd_max ?? 0.30} />
                     <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
                       {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
                     </button>
@@ -1720,7 +1725,7 @@ export default function DashboardPage() {
                 {showSoglieForm && (
                   <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
                     <p className="text-[10px] text-gray-400 w-full">
-                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso.
+                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Spuntando &ldquo;Accum.&rdquo; l&apos;asset partecipa anche alla riserva di accumulo (budget e importo suggerito); senza spunta riceve solo la notifica.
                     </p>
                     <div>
                       <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
@@ -1753,6 +1758,7 @@ export default function DashboardPage() {
                         <th className="table-th w-24 text-center">Svincolato</th>
                         <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
                         <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
+                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Accumulo: se spuntato l'asset riceve una quota di riserva e l'importo suggerito; se no, solo notifica">Accum.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1833,10 +1839,10 @@ export default function DashboardPage() {
                                 <div className="flex items-center justify-center gap-1">
                                   <input type="number" min={0} step={0.5}
                                     value={dSoglia?.massimo ?? globalSogliaMax}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), massimo: Number(e.target.value) } }))}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), massimo: Number(e.target.value) } }))}
                                     className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
                                   <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), attivo: e.target.checked } }))} />
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), attivo: e.target.checked } }))} />
                                 </div>
                               ) : (
                                 <span className="text-xs tabular-nums text-gray-500">
@@ -1848,11 +1854,21 @@ export default function DashboardPage() {
                               {showSoglieForm && a.id ? (
                                 <input type="number" min={0} step={0.5}
                                   value={dSoglia?.mensile ?? globalSogliaMese}
-                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true }), mensile: Number(e.target.value) } }))}
+                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), mensile: Number(e.target.value) } }))}
                                   className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
                               ) : (
                                 <span className="text-xs tabular-nums text-gray-500">
                                   {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="table-td text-center px-1 bg-amber-50/40">
+                              {showSoglieForm && a.id ? (
+                                <input type="checkbox" title="Accumulo attivo (altrimenti solo notifica)" checked={dSoglia?.accumulo ?? true}
+                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), accumulo: e.target.checked } }))} />
+                              ) : (
+                                <span className="text-xs text-gray-500">
+                                  {(sMaxSaved?.attivo || sMeseSaved?.attivo) && (sMaxSaved?.accumulo ?? sMeseSaved?.accumulo) !== false ? '✓' : <span className="text-gray-300">–</span>}
                                 </span>
                               )}
                             </td>

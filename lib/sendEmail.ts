@@ -15,12 +15,16 @@ function getTransporter() {
   return transporter
 }
 
-export interface AlertEmailRiga {
-  nomeAsset: string
+export interface AlertEmailTrigger {
   tipoLabel: string
   sogliaPct: number
   drawdown: number
   numAttivazione: number
+}
+
+export interface AlertEmailRiga {
+  nomeAsset: string
+  trigger: AlertEmailTrigger[]
   importoConsigliato?: number
   nuovoPesoAzionario?: number
 }
@@ -45,19 +49,23 @@ export async function sendAlertEmail(
   const plurale = righe.length > 1
 
   const righeHtml = righe.map(r => {
-    const segnoDrawdown = r.drawdown >= 0 ? '+' : ''
+    const triggerHtml = r.trigger.map(t => {
+      const segno = t.drawdown >= 0 ? '+' : ''
+      return `
+        <div style="font-size: 13px; color: #55524a;">
+          Soglia <strong>${t.tipoLabel}</strong> superata: variazione <strong>${segno}${t.drawdown.toFixed(1)}%</strong>
+          (soglia impostata -${t.sogliaPct}%) — attivazione <strong>#${t.numAttivazione}</strong>
+        </div>`
+    }).join('')
     let riga = `
       <li style="margin-bottom: 14px; padding: 12px 14px; background: #f7f6f0; border-left: 3px solid #c65d3b; border-radius: 4px;">
-        <div style="font-weight: 600; color: #2d2a26; margin-bottom: 4px;">${r.nomeAsset}</div>
-        <div style="font-size: 13px; color: #55524a;">
-          Soglia <strong>${r.tipoLabel}</strong> superata: variazione <strong>${segnoDrawdown}${r.drawdown.toFixed(1)}%</strong>
-          (soglia impostata -${r.sogliaPct}%) — attivazione <strong>#${r.numAttivazione}</strong>
-        </div>`
+        <div style="font-weight: 600; color: #2d2a26; margin-bottom: 4px;">${r.nomeAsset}</div>${triggerHtml}`
     if (r.importoConsigliato != null) {
       riga += `
         <div style="font-size: 13px; color: #4a5d43; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8d5c8;">
           💰 Investimento consigliato dalla riserva: <strong>${fmtEuro(r.importoConsigliato)}</strong>
           ${r.nuovoPesoAzionario != null ? `— nuovo peso azionario stimato: <strong>${r.nuovoPesoAzionario.toFixed(1)}%</strong>` : ''}
+          ${r.trigger.length > 1 ? '<br><span style="font-size: 11px; color: #888;">Importo unico per l\'asset: non si somma tra le soglie scattate.</span>' : ''}
         </div>`
     }
     riga += `</li>`
@@ -73,7 +81,7 @@ export async function sendAlertEmail(
       <h2 style="color: #4a5d43; margin-bottom: 4px;">⚠️ ${righe.length} nuovo${plurale ? 'i' : ''} alert${plurale ? '' : ''} sul portafoglio</h2>
       <p style="font-size: 13px; color: #888; margin-top: 0; text-transform: capitalize;">${oggi}</p>
       <p>${saluto}</p>
-      <p style="font-size: 14px;">Oggi ${plurale ? 'sono scattate' : 'è scattata'} ${righe.length} nuov${plurale ? 'e' : 'a'} soglia${plurale ? 'e' : ''} di alert:</p>
+      <p style="font-size: 14px;">Oggi ${plurale ? 'sono scattati alert su' : 'è scattato un alert su'} ${righe.length} asset${plurale ? '' : ''}:</p>
       <ul style="list-style: none; padding: 0; margin: 16px 0;">
         ${righeHtml}
       </ul>

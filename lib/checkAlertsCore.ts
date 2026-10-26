@@ -13,6 +13,7 @@ interface AssetRow {
   classe_rischio: 'azionario' | 'obbligazionario' | 'altro' | null
   svincolato: boolean | null
   prezzo_acquisto: number
+  prezzo_carico_attuale: number | null
   quantita: number
   quantita_attuale: number | null
 }
@@ -23,6 +24,7 @@ interface SogliaRow {
   tipo: 'storico' | 'mensile' | 'acquisto'
   soglia_pct: number
   attivo: boolean
+  accumulo?: boolean | null
   in_breach: boolean
 }
 interface LiquiditaRow {
@@ -47,6 +49,11 @@ export interface CheckAlertsResult {
 
 const ORDINE_MESE = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic']
 const TIPO_LABEL: Record<string, string> = { storico: 'dal massimo', mensile: 'nel mese', acquisto: 'da acquisto' }
+
+// PMC corrente: si aggiorna con gli acquisti (stessa logica di statoAttuale in types)
+function pmcAsset(a: { prezzo_carico_attuale: number | null; prezzo_acquisto: number }): number {
+  return a.prezzo_carico_attuale ?? a.prezzo_acquisto
+}
 
 function fmtEuro(n: number) {
   return `€${Math.round(n).toLocaleString('it-IT')}`
@@ -75,7 +82,7 @@ export async function checkAlertsForUser(
   const portafoglioIds = [...new Set(soglie.map(s => s.portafoglio_id))]
   const { data: assetsData } = await admin
     .from('portafoglio')
-    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, quantita, quantita_attuale')
+    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale')
     .in('id', portafoglioIds)
   const assets = (assetsData as AssetRow[]) ?? []
   const tickers = [...new Set(assets.map(a => a.ticker).filter(Boolean) as string[])]
@@ -101,7 +108,7 @@ export async function checkAlertsForUser(
   // riserva totale e pesi azionario/obbligazionario in modo coerente con la UI.
   const { data: interoPortafoglioData } = await admin
     .from('portafoglio')
-    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, quantita, quantita_attuale')
+    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale')
     .eq('user_id', userId)
   const interoPortafoglio = (interoPortafoglioData as AssetRow[]) ?? []
   const tickersInteri = [...new Set(interoPortafoglio.map(a => a.ticker).filter(Boolean) as string[])]
@@ -113,7 +120,7 @@ export async function checkAlertsForUser(
 
   function valoreAttualeAsset(a: AssetRow): number {
     const qta = a.quantita_attuale ?? a.quantita
-    const p = a.ticker && quotes[a.ticker] ? quotes[a.ticker]!.price : a.prezzo_acquisto
+    const p = a.ticker && quotes[a.ticker] ? quotes[a.ticker]!.price : pmcAsset(a)
     return p * qta
   }
 
@@ -186,6 +193,7 @@ export async function checkAlertsForUser(
   if (profiloDinamico && riservaTotale > 0) {
     const sogliePerAsset = new Map<string, number[]>()
     for (const s of soglie) {
+      if (s.accumulo === false) continue // asset "solo notifica": nessuna quota di budget
       const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
       arr.push(s.soglia_pct)
       sogliePerAsset.set(s.portafoglio_id, arr)
@@ -193,33 +201,54 @@ export async function checkAlertsForUser(
     budgetPerAsset = calcolaBudgetPerAsset(riservaTotale, sogliePerAsset)
   }
 
-  // Conteggio attivazioni storiche per asset+tipo (per il testo "attivazione #N")
+  // Conteggio attivazioni storiche per asset+tipo (per il testo "attivazione #N").
+  // Una notifica può contenere più soglie dello stesso asset: si conta quindi
+  // anche dal testo ("dal massimo (soglia" / "nel mese (soglia"), oltre che dal campo tipo.
   const { data: notificheStoricheData } = await admin
     .from('notifiche')
-    .select('portafoglio_id, tipo')
+    .select('portafoglio_id, tipo, messaggio')
     .eq('user_id', userId)
     .in('portafoglio_id', portafoglioIds)
-  const notificheStoriche = (notificheStoricheData as { portafoglio_id: string; tipo: string }[]) ?? []
-  const conteggio = (portafoglioId: string, tipo: string) =>
-    notificheStoriche.filter(n => n.portafoglio_id === portafoglioId && n.tipo === tipo).length + 1
+  const notificheStoriche = (notificheStoricheData as { portafoglio_id: string; tipo: string; messaggio: string | null }[]) ?? []
+  const conteggio = (portafoglioId: string, tipo: string) => {
+    const tipoLabel = TIPO_LABEL[tipo] ?? tipo
+    return notificheStoriche.filter(n =>
+      n.portafoglio_id === portafoglioId &&
+      (n.tipo === tipo || (n.messaggio ?? '').includes(`${tipoLabel} (soglia`))
+    ).length + 1
+  }
+
+  // Una sola notifica per asset: se scattano più soglie (es. dal massimo + nel mese)
+  // vengono elencate insieme, con un unico importo consigliato (non si somma).
+  const nuoveBreachPerAsset = new Map<string, { asset: AssetRow; breaches: { s: SogliaRow; drawdown: number }[] }>()
+  for (const { s, asset, drawdown } of nuoveBreach) {
+    const entry = nuoveBreachPerAsset.get(s.portafoglio_id) ?? { asset, breaches: [] }
+    entry.breaches.push({ s, drawdown })
+    nuoveBreachPerAsset.set(s.portafoglio_id, entry)
+  }
 
   const nuoveNotifiche: { user_id: string; portafoglio_id: string; tipo: string; messaggio: string }[] = []
   const righeEmail: AlertEmailRiga[] = []
 
-  for (const { s, asset, drawdown } of nuoveBreach) {
+  for (const [portafoglioId, { asset, breaches }] of nuoveBreachPerAsset.entries()) {
     const nomeAsset = (asset.nome || asset.descrizione || asset.ticker) as string
-    const numAttivazione = conteggio(s.portafoglio_id, s.tipo)
-    const tipoLabel = TIPO_LABEL[s.tipo] ?? s.tipo
+
+    const trigger = breaches.map(({ s, drawdown }) => ({
+      tipoLabel: TIPO_LABEL[s.tipo] ?? s.tipo,
+      sogliaPct: s.soglia_pct,
+      drawdown,
+      numAttivazione: conteggio(portafoglioId, s.tipo),
+    }))
 
     let importoConsigliato: number | undefined
     let nuovoPesoAzionario: number | undefined
     const quote = asset.ticker ? quotes[asset.ticker] : undefined
-    const budgetAsset = budgetPerAsset.get(s.portafoglio_id) ?? 0
+    const budgetAsset = budgetPerAsset.get(portafoglioId) ?? 0
     if (profiloDinamico && budgetAsset > 0 && quote?.high52) {
       importoConsigliato = calcolaImportoConsigliato({
         prezzoAttuale: quote.price,
         prezzoMassimo: quote.high52,
-        pmc: asset.prezzo_acquisto,
+        pmc: pmcAsset(asset),
         budgetAsset,
         ddMaxSottoPmc: ddMax,
       })
@@ -230,17 +259,19 @@ export async function checkAlertsForUser(
       }
     }
 
-    let riga = `${nomeAsset}: ${drawdown.toFixed(1)}% ${tipoLabel} (soglia ${s.soglia_pct}%, attivazione #${numAttivazione})`
+    const testoTrigger = trigger
+      .map(t => `${t.drawdown.toFixed(1)}% ${t.tipoLabel} (soglia ${t.sogliaPct}%, attivazione #${t.numAttivazione})`)
+      .join(' · ')
+    let riga = `${nomeAsset}: ${testoTrigger}`
     if (importoConsigliato != null) {
       riga += ` → investimento consigliato €${Math.round(importoConsigliato).toLocaleString('it-IT')}`
+      if (trigger.length > 1) riga += ' (importo unico, non si somma tra le soglie)'
       if (nuovoPesoAzionario != null) riga += `, nuovo peso azionario ${nuovoPesoAzionario.toFixed(1)}%`
     }
 
-    nuoveNotifiche.push({ user_id: userId, portafoglio_id: s.portafoglio_id, tipo: s.tipo, messaggio: riga })
-    righeEmail.push({
-      nomeAsset, tipoLabel, sogliaPct: s.soglia_pct, drawdown, numAttivazione,
-      importoConsigliato, nuovoPesoAzionario,
-    })
+    // tipo = prima soglia scattata (valore valido per il vincolo della colonna)
+    nuoveNotifiche.push({ user_id: userId, portafoglio_id: portafoglioId, tipo: breaches[0].s.tipo, messaggio: riga })
+    righeEmail.push({ nomeAsset, trigger, importoConsigliato, nuovoPesoAzionario })
   }
 
   await admin.from('notifiche').insert(nuoveNotifiche)

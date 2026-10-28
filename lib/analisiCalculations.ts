@@ -18,7 +18,7 @@ const DEFAULT_SWR = 4
 const DEFAULT_INFLAZIONE = 2
 const DEFAULT_TASSAZIONE_INTERESSI = 26
 const DEFAULT_TASSAZIONE_FONDO = 15
-const DEFAULT_ORIZZONTE = 50
+const DEFAULT_ORIZZONTE = 100
 const DEFAULT_ETA_RITIRO_FONDO = 67
 const DEFAULT_QUOTA_CAPITALE_FONDO = 50
 const DEFAULT_RENDIMENTO_INVESTIMENTI = 6
@@ -331,6 +331,8 @@ export function calcolaAnalisiFinanziaria(input: AnalisiInput): AnalisiFinanziar
   const parametriFire: FireParametri = {
     annoIniziale: annoCorrente,
     etaIniziale: input.etaAttuale ?? ETA_DEFAULT_SE_MANCANTE,
+    entrateAnnueBase: entrateAnnue,
+    crescitaEntratePct: DEFAULT_INFLAZIONE,
     speseAnnueBase: usciteAnnue,
     crescitaSpesePct: DEFAULT_INFLAZIONE,
     investimentoAnnuoBase: investimentiAnnui,

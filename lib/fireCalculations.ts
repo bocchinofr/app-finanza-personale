@@ -40,6 +40,9 @@ export interface FireParametri {
   annoIniziale: number; // anno corrente
   etaIniziale: number; // calcolata da data_nascita profilo
 
+  entrateAnnueBase: number; // entrate ricorrenti annue attuali (stipendi, assegno unico, bonus), solo fase accumulo
+  crescitaEntratePct: number; // 0 = costanti, altrimenti % annua
+
   speseAnnueBase: number; // media spese annue attuali (comprensive di rate debiti)
   crescitaSpesePct: number; // 0 = costanti, altrimenti % annua (default consigliato: inflazione)
 
@@ -63,14 +66,16 @@ export interface FireParametri {
 
   debiti: Debito[];
 
-  orizzonteAnni: number; // quanti anni proiettare (default 50) — orizzonte su cui si verifica la sostenibilità
+  orizzonteAnni: number; // quanti anni proiettare (default 100) — orizzonte su cui si verifica la sostenibilità
 }
 
 export interface AnnoProiezione {
   anno: number;
   eta: number;
   fase: "accumulo" | "decumulo";
+  entrateAnnue: number; // entrate da lavoro: 0 in fase decumulo
   speseAnnue: number; // nette: dopo rate debiti estinte e integrazione pensione
+  risparmioAnnuo: number; // entrate - spese (negativo in decumulo: è il prelievo dal capitale)
   investimentoAnnuo: number; // 0 in fase decumulo
   patrimonioInvestito: number; // fine anno
   fondoPensione: number; // fine anno (0 dopo lo sblocco)
@@ -83,7 +88,7 @@ export interface AnnoProiezione {
   capitaleEsaurito: boolean; // patrimonio rilevante <= 0 in fase decumulo
 }
 
-const DEFAULT_ORIZZONTE = 50;
+const DEFAULT_ORIZZONTE = 100;
 
 /** Rendimento netto dopo tassazione sugli interessi/plusvalenze. */
 function rendimentoNetto(rendimentoLordoPct: number, tassazionePct: number): number {
@@ -159,6 +164,11 @@ function simulaUnAnno(
   );
   const speseAnnue = Math.max(0, speseDopoDebiti - integrazionePensioneAnnua);
 
+  // --- Entrate da lavoro: solo in fase di accumulo ---
+  const entrateAnnue: number = inAccumulo
+    ? (params.entrateAnnueBase ?? 0) * Math.pow(1 + (params.crescitaEntratePct ?? 0) / 100, i)
+    : 0;
+
   // --- Investimento annuo: solo in fase di accumulo ---
   const investimentoAnnuo: number = inAccumulo
     ? params.investimentoAnnuoBase * Math.pow(1 + params.crescitaInvestimentoPct / 100, i)
@@ -193,7 +203,9 @@ function simulaUnAnno(
       anno,
       eta,
       fase: inAccumulo ? "accumulo" : "decumulo",
+      entrateAnnue,
       speseAnnue,
+      risparmioAnnuo: entrateAnnue - speseAnnue,
       investimentoAnnuo,
       patrimonioInvestito,
       fondoPensione,
@@ -435,4 +447,81 @@ export function confrontaConSnapshot(
     patrimonioSimulato,
     scostamentoPatrimonioPct,
   };
+}
+
+export interface RigaConfrontoProiezioni {
+  anno: number;
+  patrimonioPrecedente: number;
+  patrimonioNuovo: number;
+  deltaAssoluto: number;
+  deltaPct: number; // (nuovo - precedente) / |precedente| * 100
+}
+
+export interface EsitoRicalcolo {
+  esito: "migliorata" | "peggiorata" | "invariata";
+  righe: RigaConfrontoProiezioni[]; // stesso anno nelle due proiezioni; l'ultima riga decide l'esito
+  annoFirePrecedente: number | null;
+  annoFireNuovo: number | null;
+}
+
+const SOGLIA_INVARIATA_PCT = 0.5;
+
+/**
+ * Confronta la proiezione appena ricalcolata con la precedente, SULLO STESSO
+ * ANNO: patrimonio totale a fine anno corrente e a fine anno FIRE (della nuova
+ * proiezione, se esiste e la precedente lo copre; altrimenti l'ultimo anno
+ * comune). L'esito si basa sull'ultima riga. Restituisce null se le due
+ * proiezioni non hanno anni in comune.
+ */
+export function confrontaProiezioni(
+  nuova: AnnoProiezione[],
+  precedente: AnnoProiezione[]
+): EsitoRicalcolo | null {
+  const mappaPrecedente = new Map<number, AnnoProiezione>(precedente.map((a) => [a.anno, a]));
+  const comuni = nuova.filter((a) => mappaPrecedente.has(a.anno));
+  if (comuni.length === 0) return null;
+
+  const annoFireNuovo = nuova.find((a) => a.fireRaggiunto)?.anno ?? null;
+  const annoFirePrecedente = precedente.find((a) => a.fireRaggiunto)?.anno ?? null;
+
+  const annoCorrente = comuni[0].anno;
+  const annoRiferimento =
+    annoFireNuovo !== null && mappaPrecedente.has(annoFireNuovo)
+      ? annoFireNuovo
+      : comuni[comuni.length - 1].anno;
+
+  const anni = annoRiferimento === annoCorrente ? [annoCorrente] : [annoCorrente, annoRiferimento];
+  const righe: RigaConfrontoProiezioni[] = anni.map((anno) => {
+    const n = nuova.find((a) => a.anno === anno) as AnnoProiezione;
+    const p = mappaPrecedente.get(anno) as AnnoProiezione;
+    const deltaAssoluto = n.patrimonioTotale - p.patrimonioTotale;
+    const deltaPct = p.patrimonioTotale !== 0 ? (deltaAssoluto / Math.abs(p.patrimonioTotale)) * 100 : 0;
+    return {
+      anno,
+      patrimonioPrecedente: p.patrimonioTotale,
+      patrimonioNuovo: n.patrimonioTotale,
+      deltaAssoluto,
+      deltaPct,
+    };
+  });
+
+  // Esito: prima conta l'anno FIRE (arrivarci prima è un miglioramento netto, anche se
+  // in quell'anno il patrimonio confrontato è in fasi diverse); se l'anno FIRE non cambia
+  // (o non esiste in nessuna delle due) decide il patrimonio nello stesso anno.
+  const decisiva = righe[righe.length - 1];
+  let esito: EsitoRicalcolo["esito"];
+  if (annoFireNuovo !== annoFirePrecedente && (annoFireNuovo !== null || annoFirePrecedente !== null)) {
+    if (annoFireNuovo === null) esito = "peggiorata";
+    else if (annoFirePrecedente === null) esito = "migliorata";
+    else esito = annoFireNuovo < annoFirePrecedente ? "migliorata" : "peggiorata";
+  } else {
+    esito =
+      Math.abs(decisiva.deltaPct) < SOGLIA_INVARIATA_PCT
+        ? "invariata"
+        : decisiva.deltaPct > 0
+          ? "migliorata"
+          : "peggiorata";
+  }
+
+  return { esito, righe, annoFirePrecedente, annoFireNuovo };
 }

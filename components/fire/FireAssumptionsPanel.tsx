@@ -14,6 +14,7 @@ interface FireAssumptionsPanelProps {
 // con la palette dell'app) così le quattro sezioni si distinguono senza bordi
 // pesanti o card-in-card.
 const ACCENTI = {
+  entrate: "border-t-sky-600",
   spese: "border-t-stone-400",
   investimenti: "border-t-emerald-600",
   fondo: "border-t-teal-600",
@@ -95,7 +96,24 @@ export default function FireAssumptionsPanel({
 
       {aperto && (
         <div className="space-y-6 border-t border-stone-200 px-4 py-4">
-          <div className="grid grid-cols-2 gap-x-5 gap-y-6 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-6 lg:grid-cols-5">
+            <Colonna titolo="Entrate" accento={ACCENTI.entrate}>
+              <Campo
+                label="Entrate annue base"
+                value={parametri.entrateAnnueBase}
+                onChange={(v) => set("entrateAnnueBase", v)}
+                suffix="€/anno"
+                nota="Media annualizzata di stipendi, assegno unico e bonus. Esclusi interessi, rimborsi e vendita titoli. Si azzerano quando raggiungi il FIRE."
+              />
+              <Campo
+                label="Crescita entrate"
+                value={parametri.crescitaEntratePct}
+                onChange={(v) => set("crescitaEntratePct", v)}
+                suffix="%/anno"
+                step={0.1}
+              />
+            </Colonna>
+
             <Colonna titolo="Spese" accento={ACCENTI.spese}>
               <Campo
                 label="Spese annue base"

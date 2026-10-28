@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, type Mese, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
+import PatrimonioAnnuale from '@/components/PatrimonioAnnuale'
 
 const MESI_LABEL: Record<string, string> = {
   gen: 'Gen', feb: 'Feb', mar: 'Mar', apr: 'Apr', mag: 'Mag', giu: 'Giu',
@@ -603,6 +604,8 @@ export default function PatrimonioPage() {
           </p>
         </div>
       )}
+
+      <PatrimonioAnnuale />
     </div>
   )
 }

@@ -2,16 +2,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import {
-  CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from 'recharts'
 import { createClient } from '@/lib/supabase'
 import {
   AssetPortafoglio, ContoFlag, FondoPensione, Liquidita, MESI, statoAttuale,
 } from '@/types/index'
 import {
   Correlazione, NOTA_FISCALE, QualitaCopertura, TipoStrumento,
-  betaPosizione, calcolaCurva, calcolaGrigliaMercato, calcolaScenari, calcolaSizing,
+  betaPosizione, calcolaGrigliaMercato, calcolaScenari, calcolaSizing,
   corrPosizione, qualitaCopertura,
 } from '@/lib/speculativoCalculations'
 import SpeculativoInfoBox from '@/components/speculativo/SpeculativoInfoBox'
@@ -19,31 +16,19 @@ import SpeculativoInfoBox from '@/components/speculativo/SpeculativoInfoBox'
 type QuoteInfo = { price: number }
 type Fonte = 'riserva' | 'liquidita' | 'entrambe'
 
-interface DatiPatrimonio {
-  patrimonio: number
-  valoreLong: number
-  riserva: number
-  liquidita: number
-  riservaAsset: number
-  basketLong: string
-}
-
+interface AssetRow { id: string; nome: string; ticker: string; valore: number; azionario: boolean }
+interface Dati { patrimonio: number; riserva: number; liquidita: number; riservaAsset: number; assets: AssetRow[] }
 interface Candidato {
-  tipo: TipoStrumento
-  ticker: string
-  prezzo: string
-  corr: Correlazione | null
-  stato: 'idle' | 'loading' | 'errore'
-  errore: string
+  tipo: TipoStrumento; ticker: string; prezzo: string
+  corr: Correlazione | null; stato: 'idle' | 'loading' | 'errore'; errore: string
 }
 
-const CAND_VUOTO = (tipo: TipoStrumento): Candidato => ({
-  tipo, ticker: '', prezzo: '', corr: null, stato: 'idle', errore: '',
-})
+const CAND_VUOTO = (tipo: TipoStrumento): Candidato => ({ tipo, ticker: '', prezzo: '', corr: null, stato: 'idle', errore: '' })
 
 const fmtEuro = (n: number) => `${n < 0 ? '-' : ''}€${Math.abs(Math.round(n)).toLocaleString('it-IT')}`
 const fmtDelta = (n: number) => `${n > 0 ? '+' : ''}${fmtEuro(n)}`
 const fmtPct = (n: number, d = 1) => `${n > 0 ? '+' : ''}${n.toFixed(d).replace('.', ',')}%`
+const fmt2 = (n: number | null) => (n === null ? 'n.d.' : n.toFixed(2).replace('.', ','))
 const num = (s: string) => Number(s.replace(',', '.')) || 0
 
 const BADGE: Record<QualitaCopertura, { testo: string; cls: string }> = {
@@ -70,39 +55,43 @@ function ultimiPerChiave<T extends { anno: number; mese: string }>(righe: T[], c
   return [...m.values()]
 }
 
-function Campo({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+function Riga({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block">
-      <span className="text-xs text-stone-500">{label}</span>
-      <div className="mt-1">{children}</div>
-      {hint && <span className="mt-0.5 block text-[11px] text-stone-400">{hint}</span>}
-    </label>
+    <div className="flex items-center justify-between gap-3 py-2">
+      <span className="text-sm text-stone-500">{label}</span>
+      <div className="text-right">{children}</div>
+    </div>
   )
 }
 
 function NumInput({ value, onChange, suffix }: { value: number; onChange: (v: number) => void; suffix: string }) {
   return (
-    <div className="relative">
+    <div className="relative w-24">
       <input
         type="number" step="0.1" min="0" value={value}
         onChange={e => onChange(Number(e.target.value))}
-        className="input pr-8 font-mono"
+        className="input !py-1 pr-6 text-right font-mono"
       />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-stone-400">{suffix}</span>
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-stone-400">{suffix}</span>
     </div>
   )
 }
 
+const CARD = 'rounded-xl border border-stone-200 bg-white p-4'
+
 export default function SpeculativoPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [dati, setDati] = useState<DatiPatrimonio | null>(null)
+  const [dati, setDati] = useState<Dati | null>(null)
 
   const [fonte, setFonte] = useState<Fonte>('riserva')
   const [rischioPct, setRischioPct] = useState(0.5)
   const [tettoPct, setTettoPct] = useState(30)
   const [stopPct, setStopPct] = useState(10)
   const [targetPct, setTargetPct] = useState(20)
+
+  const [selez, setSelez] = useState<Set<string>>(new Set())
+  const [paniereAperto, setPaniereAperto] = useState(false)
 
   const [cands, setCands] = useState<Candidato[]>([CAND_VUOTO('etf_inverso'), CAND_VUOTO('azione')])
   const [sel, setSel] = useState(0)
@@ -135,30 +124,24 @@ export default function SpeculativoPage() {
         .filter(c => flags.find(f => f.conto === c.conto)?.svincolata)
         .reduce((s, c) => s + (c.saldo ?? 0), 0)
       const riservaAsset = port.filter(a => a.svincolato).reduce((s, a) => s + valoreAsset(a, prezzi), 0)
-
-      const fondiRighe = (fondoRes.data ?? []) as FondoPensione[]
-      const fondo = ultimiPerChiave(fondiRighe, r => r.fondo).reduce((s, f) => s + (f.saldo ?? 0), 0)
-
+      const fondo = ultimiPerChiave((fondoRes.data ?? []) as FondoPensione[], r => r.fondo)
+        .reduce((s, f) => s + (f.saldo ?? 0), 0)
       const valorePort = port.reduce((s, a) => s + valoreAsset(a, prezzi), 0)
-      const azionari = port.filter(a => a.classe_rischio === 'azionario')
-      const baseLong = azionari.length > 0 ? azionari : port
-      const valoreLong = baseLong.reduce((s, a) => s + valoreAsset(a, prezzi), 0)
-      const basketLong = baseLong
-        .filter(a => a.ticker)
-        .map(a => ({ t: a.ticker, v: valoreAsset(a, prezzi) }))
-        .sort((x, y) => y.v - x.v)
-        .slice(0, 8)
-        .map(x => `${encodeURIComponent(x.t)}:${Math.round(x.v)}`)
-        .join(',')
 
-      setDati({
-        patrimonio: liquidita + valorePort + fondo,
-        valoreLong,
-        riserva: riservaAsset + riservaLiq,
-        liquidita,
-        riservaAsset,
-        basketLong,
-      })
+      const assets: AssetRow[] = port
+        .map((a, i) => ({
+          id: a.id ?? String(i),
+          nome: a.nome || a.descrizione || a.asset || a.ticker,
+          ticker: a.ticker ?? '',
+          valore: valoreAsset(a, prezzi),
+          azionario: a.classe_rischio === 'azionario',
+        }))
+        .filter(a => a.valore > 0)
+        .sort((x, y) => y.valore - x.valore)
+      const azionari = assets.filter(a => a.azionario)
+
+      setSelez(new Set((azionari.length > 0 ? azionari : assets).map(a => a.id)))
+      setDati({ patrimonio: liquidita + valorePort + fondo, riserva: riservaAsset + riservaLiq, liquidita, riservaAsset, assets })
       setLoading(false)
     }
     load()
@@ -168,24 +151,39 @@ export default function SpeculativoPage() {
   const aggiorna = (i: number, patch: Partial<Candidato>) =>
     setCands(cs => cs.map((c, k) => (k === i ? { ...c, ...patch } : c)))
 
+  const long = useMemo(() => (dati ? dati.assets.filter(a => selez.has(a.id)) : []), [dati, selez])
+  const valoreLong = long.reduce((s, a) => s + a.valore, 0)
+  const basketLong = long
+    .filter(a => a.ticker)
+    .slice(0, 8)
+    .map(a => `${encodeURIComponent(a.ticker)}:${Math.round(a.valore)}`)
+    .join(',')
+
+  function cambiaPaniere(next: Set<string>) {
+    setSelez(next)
+    setCands(cs => cs.map(c => ({ ...c, corr: null })))
+  }
+  function toggleAsset(id: string) {
+    const next = new Set(selez)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    cambiaPaniere(next)
+  }
+
   async function analizza(i: number) {
     const c = cands[i]
     const ticker = c.ticker.trim()
-    if (!ticker || !dati) return
+    if (!ticker) return
     aggiorna(i, { stato: 'loading', errore: '', corr: null })
     try {
       const [q, r] = await Promise.all([
         fetch(`/api/quote?tickers=${encodeURIComponent(ticker)}`).then(x => x.json()),
-        fetch(`/api/correlazione?strumento=${encodeURIComponent(ticker)}&long=${dati.basketLong}`),
+        fetch(`/api/correlazione?strumento=${encodeURIComponent(ticker)}&long=${basketLong}`),
       ])
       const prezzo: number | undefined = q?.[ticker]?.price
       const corrJson = await r.json()
       if (!r.ok) throw new Error(corrJson?.error ?? 'Analisi non riuscita')
-      aggiorna(i, {
-        stato: 'idle',
-        prezzo: prezzo ? String(prezzo) : c.prezzo,
-        corr: corrJson as Correlazione,
-      })
+      aggiorna(i, { stato: 'idle', prezzo: prezzo ? String(prezzo) : c.prezzo, corr: corrJson as Correlazione })
     } catch (e) {
       aggiorna(i, { stato: 'errore', errore: e instanceof Error ? e.message : 'Errore' })
     }
@@ -198,9 +196,10 @@ export default function SpeculativoPage() {
     return dati.liquidita + dati.riservaAsset
   }, [dati, fonte])
 
+  const patrimonio = dati?.patrimonio ?? 0
   const sizing = useMemo(
-    () => calcolaSizing({ patrimonio: dati?.patrimonio ?? 0, disponibile, rischioPct, tettoPct, stopPct }),
-    [dati, disponibile, rischioPct, tettoPct, stopPct]
+    () => calcolaSizing({ patrimonio, disponibile, rischioPct, tettoPct, stopPct }),
+    [patrimonio, disponibile, rischioPct, tettoPct, stopPct]
   )
 
   const cand = cands[sel]
@@ -211,268 +210,256 @@ export default function SpeculativoPage() {
   const capitaleEff = quantita !== null ? quantita * prezzo : capitale
 
   const scenari = useMemo(
-    () => calcolaScenari({
-      patrimonio: dati?.patrimonio ?? 0, valoreLong: dati?.valoreLong ?? 0,
-      capitale: capitaleEff, stopPct, targetPct, betaPos,
-    }),
-    [dati, capitaleEff, stopPct, targetPct, betaPos]
+    () => calcolaScenari({ patrimonio, valoreLong, capitale: capitaleEff, stopPct, targetPct, betaPos }),
+    [patrimonio, valoreLong, capitaleEff, stopPct, targetPct, betaPos]
   )
   const griglia = useMemo(
-    () => calcolaGrigliaMercato({
-      patrimonio: dati?.patrimonio ?? 0, valoreLong: dati?.valoreLong ?? 0, capitale: capitaleEff, betaPos,
-    }),
-    [dati, capitaleEff, betaPos]
+    () => calcolaGrigliaMercato({ patrimonio, valoreLong, capitale: capitaleEff, betaPos }),
+    [patrimonio, valoreLong, capitaleEff, betaPos]
   )
-  const maxSlider = Math.max(Math.round(Math.max(disponibile, sizing.importo)), 1000)
-  const curva = useMemo(() => calcolaCurva(maxSlider, stopPct, targetPct), [maxSlider, stopPct, targetPct])
 
   if (loading || !dati) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-400">Caricamento…</div>
   }
 
+  const maxSlider = Math.max(Math.round(Math.max(disponibile, sizing.importo)), 1000)
+  const pos = (v: number) => `${Math.min(100, (v / maxSlider) * 100)}%`
   const perdStop = (capitaleEff * stopPct) / 100
   const utileTarget = (capitaleEff * targetPct) / 100
-  const pctPatr = (v: number) => (dati.patrimonio > 0 ? (v / dati.patrimonio) * 100 : 0)
+  const pctPatr = (v: number) => (patrimonio > 0 ? (v / patrimonio) * 100 : 0)
   const pctDisp = disponibile > 0 ? (capitaleEff / disponibile) * 100 : 0
-  const etichetteScenario = { stop: 'Stop', neutro: 'Neutro', target: 'Target' }
+  const q = qualitaCopertura(corrPosizione(cand.tipo, cand.corr))
+  const nomeScenario = { stop: 'Stop', neutro: 'Neutro', target: 'Target' }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-1.5">
-        <div>
-          <h1 className="font-serif text-2xl text-stone-800">Speculativo</h1>
-          <p className="text-sm text-stone-500">
-            Quanto capitale libero usare per uno short di breve periodo, e cosa succede al patrimonio.
+    <div className="space-y-4">
+      {/* Intestazione fissa */}
+      <div className="sticky top-[65px] lg:top-0 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 px-4 md:px-6 py-3 bg-surface-50 border-b border-surface-200">
+        <div className="flex items-center gap-1.5">
+          <h1 className="font-serif text-xl text-stone-800">Speculativo</h1>
+          <SpeculativoInfoBox />
+          <p className="ml-2 hidden sm:block text-sm text-stone-500">
+            Quanto capitale libero usare per uno short di breve periodo.
           </p>
         </div>
-        <SpeculativoInfoBox />
       </div>
 
-      {/* KPI */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-stone-200 bg-white p-5">
-          <p className="text-sm text-stone-500">Patrimonio totale</p>
-          <p className="mt-1 font-serif text-2xl text-stone-800">{fmtEuro(dati.patrimonio)}</p>
+      {/* Parametri + strumento */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className={`${CARD} divide-y divide-stone-100`}>
+          <Riga label="Patrimonio totale"><span className="font-mono text-sm text-stone-800">{fmtEuro(patrimonio)}</span></Riga>
+          <Riga label="Capitale disponibile">
+            <div className="flex flex-col items-end gap-1">
+              <span className="font-mono text-sm text-stone-800">{fmtEuro(disponibile)}</span>
+              <div className="flex rounded-lg bg-surface-50 p-0.5 text-[11px]">
+                {([['riserva', 'Riserva'], ['liquidita', 'Liquidità'], ['entrambe', 'Entrambe']] as [Fonte, string][]).map(([k, l]) => (
+                  <button
+                    key={k} onClick={() => { setFonte(k); setOverride(null) }}
+                    className={`rounded-md px-2 py-0.5 transition-colors ${fonte === k ? 'bg-white text-brand-700 font-medium shadow-sm' : 'text-stone-500'}`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Riga>
+          <div>
+            <button onClick={() => setPaniereAperto(v => !v)} className="flex w-full items-center justify-between gap-3 py-2 text-left">
+              <span className="text-sm text-stone-500">Paniere long</span>
+              <span className="font-mono text-sm text-stone-800">
+                {long.length} asset · {fmtEuro(valoreLong)} <span className="text-stone-400">{paniereAperto ? '▴' : '▾'}</span>
+              </span>
+            </button>
+            {paniereAperto && (
+              <div className="mb-2 rounded-lg bg-surface-50 p-2">
+                <div className="mb-1 flex gap-3 text-[11px] text-brand-700">
+                  <button onClick={() => cambiaPaniere(new Set(dati.assets.filter(a => a.azionario).map(a => a.id)))}>Solo azionari</button>
+                  <button onClick={() => cambiaPaniere(new Set(dati.assets.map(a => a.id)))}>Tutti</button>
+                  <button onClick={() => cambiaPaniere(new Set())}>Nessuno</button>
+                </div>
+                <div className="max-h-44 overflow-y-auto">
+                  {dati.assets.map(a => (
+                    <label key={a.id} className="flex items-center gap-2 py-1 text-xs text-stone-600">
+                      <input type="checkbox" checked={selez.has(a.id)} onChange={() => toggleAsset(a.id)} className="accent-brand-600" />
+                      <span className="min-w-0 flex-1 truncate">{a.nome}{!a.ticker && <span className="text-amber-600"> · senza ticker</span>}</span>
+                      <span className="font-mono text-stone-500">{fmtEuro(a.valore)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <Riga label="Perdita max (% patrimonio)"><NumInput value={rischioPct} onChange={v => { setRischioPct(v); setOverride(null) }} suffix="%" /></Riga>
+          <Riga label="Tetto su disponibile"><NumInput value={tettoPct} onChange={v => { setTettoPct(v); setOverride(null) }} suffix="%" /></Riga>
+          <Riga label="Stop loss"><NumInput value={stopPct} onChange={v => { setStopPct(v); setOverride(null) }} suffix="%" /></Riga>
+          <Riga label="Target"><NumInput value={targetPct} onChange={setTargetPct} suffix="%" /></Riga>
         </div>
-        <div className="rounded-xl border border-stone-200 bg-white p-5">
-          <p className="text-sm text-stone-500">Capitale disponibile</p>
-          <p className="mt-1 font-serif text-2xl text-stone-800">{fmtEuro(disponibile)}</p>
-          <div className="mt-2 flex rounded-lg bg-surface-50 p-0.5 text-[11px]">
-            {([['riserva', 'Riserva'], ['liquidita', 'Liquidità'], ['entrambe', 'Entrambe']] as [Fonte, string][]).map(([k, l]) => (
+
+        <div className={CARD}>
+          <div className="flex rounded-lg bg-surface-50 p-0.5 text-sm">
+            {['A', 'B'].map((l, i) => (
               <button
-                key={k} onClick={() => { setFonte(k); setOverride(null) }}
-                className={`flex-1 rounded-md px-2 py-1 transition-colors ${fonte === k ? 'bg-white text-brand-700 font-medium shadow-sm' : 'text-stone-500'}`}
+                key={l} onClick={() => { setSel(i); setOverride(null) }}
+                className={`flex-1 rounded-md px-3 py-1 transition-colors ${sel === i ? 'bg-white text-brand-700 font-medium shadow-sm' : 'text-stone-500'}`}
               >
-                {l}
+                Strumento {l}
               </button>
             ))}
           </div>
-        </div>
-        <div className="rounded-xl border border-stone-200 bg-white p-5">
-          <p className="text-sm text-stone-500">Valore long azionari</p>
-          <p className="mt-1 font-serif text-2xl text-stone-800">{fmtEuro(dati.valoreLong)}</p>
-          <p className="mt-0.5 text-xs text-stone-400">paniere usato per correlazione e scenari</p>
-        </div>
-      </div>
-
-      {/* Parametri */}
-      <div className="rounded-xl border border-stone-200 bg-white p-5">
-        <p className="text-sm font-medium text-stone-700">Parametri di rischio</p>
-        <div className="mt-3 grid gap-4 grid-cols-2 lg:grid-cols-4">
-          <Campo label="Perdita max (% patrimonio)"><NumInput value={rischioPct} onChange={v => { setRischioPct(v); setOverride(null) }} suffix="%" /></Campo>
-          <Campo label="Tetto su capitale disponibile"><NumInput value={tettoPct} onChange={v => { setTettoPct(v); setOverride(null) }} suffix="%" /></Campo>
-          <Campo label="Stop loss"><NumInput value={stopPct} onChange={v => { setStopPct(v); setOverride(null) }} suffix="%" /></Campo>
-          <Campo label="Target"><NumInput value={targetPct} onChange={setTargetPct} suffix="%" /></Campo>
-        </div>
-      </div>
-
-      {/* Candidati */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {cands.map((c, i) => {
-          const q = qualitaCopertura(corrPosizione(c.tipo, c.corr))
-          const attivo = sel === i
-          return (
-            <div key={i} className={`rounded-xl border bg-white p-5 transition-colors ${attivo ? 'border-brand-500 ring-1 ring-brand-500' : 'border-stone-200'}`}>
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-stone-700">Strumento {i === 0 ? 'A' : 'B'}</p>
-                <button
-                  onClick={() => { setSel(i); setOverride(null) }}
-                  className={`text-xs rounded-full px-2.5 py-0.5 border ${attivo ? 'bg-brand-50 border-brand-200 text-brand-700' : 'border-stone-200 text-stone-500 hover:bg-surface-50'}`}
-                >
-                  {attivo ? 'In simulazione' : 'Usa per simulare'}
-                </button>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-3">
-                <Campo label="Tipo">
-                  <select
-                    value={c.tipo}
-                    onChange={e => aggiorna(i, { tipo: e.target.value as TipoStrumento })}
-                    className="input"
-                  >
-                    <option value="etf_inverso">ETF inverso</option>
-                    <option value="azione">Azione short</option>
-                  </select>
-                </Campo>
-                <Campo label="Ticker (Yahoo)">
-                  <input value={c.ticker} onChange={e => aggiorna(i, { ticker: e.target.value.toUpperCase() })} className="input font-mono" placeholder="es. XSPS.MI" />
-                </Campo>
-                <Campo label="Prezzo">
-                  <input value={c.prezzo} onChange={e => aggiorna(i, { prezzo: e.target.value })} className="input font-mono" inputMode="decimal" />
-                </Campo>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button onClick={() => analizza(i)} disabled={!c.ticker.trim() || c.stato === 'loading'} className="btn-secondary">
-                  {c.stato === 'loading' ? 'Analisi…' : 'Analizza'}
-                </button>
-                {q && <span className={`text-xs rounded-full border px-2.5 py-0.5 ${BADGE[q].cls}`}>{BADGE[q].testo}</span>}
-                {c.stato === 'errore' && <span className="text-xs text-red-600">{c.errore}</span>}
-              </div>
-              {c.corr && (
-                <p className="mt-2 font-mono text-xs text-stone-500">
-                  correlazione {corrPosizione(c.tipo, c.corr)?.toFixed(2).replace('.', ',')} · beta {betaPosizione(c.tipo, c.corr)?.toFixed(2).replace('.', ',')} · {c.corr.n} giorni
-                </p>
-              )}
-              {c.tipo === 'etf_inverso' && (
-                <p className="mt-2 text-[11px] text-amber-700">Ricalcolo giornaliero: su settimane o mesi può discostarsi dal rendimento atteso.</p>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Sizing */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-stone-200 bg-white p-5 lg:col-span-1">
-          <p className="text-sm text-stone-500">Capitale impiegato</p>
-          <p className="mt-1 font-serif text-3xl text-stone-800">{fmtEuro(capitaleEff)}</p>
-          <p className="mt-0.5 text-xs text-stone-400">
-            {override === null
-              ? `suggerito, limita il ${sizing.vincolo === 'rischio' ? 'rischio' : 'tetto sul capitale'}`
-              : `scelto da te (suggerito ${fmtEuro(sizing.importo)})`}
-          </p>
-          <div className="mt-4 space-y-1.5 border-t border-stone-100 pt-4 text-sm">
-            <div className="flex justify-between"><span className="text-stone-500">Quantità</span><span className="font-mono text-stone-800">{quantita === null ? 'inserisci prezzo' : quantita.toLocaleString('it-IT')}</span></div>
-            <div className="flex justify-between"><span className="text-stone-500">Perdita a stop</span><span className="font-mono text-red-700">{fmtEuro(-perdStop)} ({fmtPct(-pctPatr(perdStop), 2)} patr.)</span></div>
-            <div className="flex justify-between"><span className="text-stone-500">Utile a target</span><span className="font-mono text-emerald-700">{fmtDelta(utileTarget)} ({fmtPct(pctPatr(utileTarget), 2)} patr.)</span></div>
-            <div className="flex justify-between"><span className="text-stone-500">Accumulo sottratto</span><span className="font-mono text-stone-800">{pctDisp.toFixed(0)}% del disponibile</span></div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <label className="block text-xs text-stone-500">Tipo
+              <select value={cand.tipo} onChange={e => aggiorna(sel, { tipo: e.target.value as TipoStrumento, corr: null })} className="input mt-1 !py-1">
+                <option value="etf_inverso">ETF inverso</option>
+                <option value="azione">Azione short</option>
+              </select>
+            </label>
+            <label className="block text-xs text-stone-500">Ticker (Yahoo)
+              <input value={cand.ticker} onChange={e => aggiorna(sel, { ticker: e.target.value.toUpperCase(), corr: null })} className="input mt-1 !py-1 font-mono" />
+            </label>
+            <label className="block text-xs text-stone-500">Prezzo
+              <input value={cand.prezzo} onChange={e => aggiorna(sel, { prezzo: e.target.value })} inputMode="decimal" className="input mt-1 !py-1 font-mono" />
+            </label>
           </div>
-          <p className="mt-3 text-[11px] text-stone-400">
-            Limite rischio {fmtEuro(sizing.limiteRischio)} · limite capitale {fmtEuro(sizing.limiteCapitale)}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={() => analizza(sel)} disabled={!cand.ticker.trim() || cand.stato === 'loading' || !basketLong} className="btn-secondary !py-1">
+              {cand.stato === 'loading' ? 'Analisi…' : 'Analizza'}
+            </button>
+            {q && <span className={`text-xs rounded-full border px-2.5 py-0.5 ${BADGE[q].cls}`}>{BADGE[q].testo}</span>}
+            {cand.stato === 'errore' && <span className="text-xs text-red-600">{cand.errore}</span>}
+            {!basketLong && <span className="text-xs text-amber-700">Seleziona almeno un asset con ticker nel paniere.</span>}
+          </div>
+          {cand.corr && (
+            <p className="mt-2 font-mono text-xs text-stone-500">
+              correlazione {fmt2(corrPosizione(cand.tipo, cand.corr))} · beta {fmt2(betaPos)} · {cand.corr.n} giorni
+            </p>
+          )}
+          <p className="mt-2 text-[11px] leading-snug text-stone-400">
+            {cand.tipo === 'etf_inverso' ? 'Ricalcolo giornaliero: su settimane o mesi può discostarsi dal rendimento atteso. ' : ''}
+            {NOTA_FISCALE[cand.tipo]}
           </p>
         </div>
+      </div>
 
-        <div className="rounded-xl border border-stone-200 bg-white p-5 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-stone-700">Curva: quanto capitale, quanto rischio</p>
-            {override !== null && (
-              <button onClick={() => setOverride(null)} className="text-xs text-brand-700 hover:underline">Torna al suggerito</button>
-            )}
+      {/* Capitale e slider */}
+      <div className={CARD}>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <div>
+            <p className="text-xs text-stone-500">Capitale impiegato</p>
+            <p className="font-serif text-3xl text-stone-800">{fmtEuro(capitaleEff)}</p>
+            <p className="text-[11px] text-stone-400">
+              {override === null ? `suggerito, limita il ${sizing.vincolo === 'rischio' ? 'rischio' : 'tetto sul capitale'}` : `scelto da te (suggerito ${fmtEuro(sizing.importo)})`}
+              {override !== null && <button onClick={() => setOverride(null)} className="ml-1 text-brand-700 hover:underline">ripristina</button>}
+            </p>
           </div>
-          <div className="mt-3 h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={curva} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="#ececE1" vertical={false} />
-                <XAxis dataKey="capitale" tickFormatter={v => `${Math.round(v / 1000)}k`} tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={v => `${Math.round(v / 1000)}k`} tick={{ fontSize: 11 }} width={36} />
-                <Tooltip formatter={(v: number) => fmtEuro(v)} labelFormatter={l => `Capitale ${fmtEuro(Number(l))}`} />
-                <ReferenceLine y={-(dati.patrimonio * rischioPct) / 100} stroke="#c65d3b" strokeDasharray="4 4" />
-                <ReferenceLine x={Math.round(capitaleEff)} stroke="#3f6b4f" />
-                <Line type="monotone" dataKey="perdita" name="Perdita a stop" stroke="#c65d3b" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey="utile" name="Utile a target" stroke="#3f6b4f" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
+            <div><p className="text-stone-400">Quantità</p><p className="font-mono text-sm text-stone-800">{quantita === null ? 'serve prezzo' : quantita.toLocaleString('it-IT')}</p></div>
+            <div><p className="text-stone-400">Perdita a stop</p><p className="font-mono text-sm text-red-700">{fmtEuro(-perdStop)} <span className="text-stone-400">{fmtPct(-pctPatr(perdStop), 2)}</span></p></div>
+            <div><p className="text-stone-400">Utile a target</p><p className="font-mono text-sm text-emerald-700">{fmtDelta(utileTarget)} <span className="text-stone-400">{fmtPct(pctPatr(utileTarget), 2)}</span></p></div>
+            <div><p className="text-stone-400">Disponibile usato</p><p className="font-mono text-sm text-stone-800">{pctDisp.toFixed(0)}%</p></div>
           </div>
+        </div>
+        <div className="relative mt-4">
           <input
             type="range" min={0} max={maxSlider} step={Math.max(50, Math.round(maxSlider / 200))}
-            value={Math.min(capitale, maxSlider)}
-            onChange={e => setOverride(Number(e.target.value))}
-            className="mt-2 w-full accent-brand-600"
-            aria-label="Capitale impiegato"
+            value={Math.min(capitale, maxSlider)} onChange={e => setOverride(Number(e.target.value))}
+            className="w-full accent-brand-600" aria-label="Capitale impiegato"
           />
-          <p className="text-[11px] text-stone-400">Linea tratteggiata: perdita massima accettata. Linea verde: capitale attuale.</p>
+          <div className="pointer-events-none relative h-2">
+            <span className="absolute top-0 h-2 w-0.5 -translate-x-1/2 bg-red-500" style={{ left: pos(sizing.limiteRischio) }} />
+            <span className="absolute top-0 h-2 w-0.5 -translate-x-1/2 bg-accent2-600" style={{ left: pos(sizing.limiteCapitale) }} />
+          </div>
         </div>
+        <p className="mt-1 text-[11px] text-stone-400">
+          <span className="text-red-600">▮</span> limite rischio {fmtEuro(sizing.limiteRischio)} · <span className="text-accent2-600">▮</span> limite capitale {fmtEuro(sizing.limiteCapitale)} · il più basso è il suggerito
+        </p>
       </div>
 
       {/* Scenari */}
-      <div>
+      <div className={CARD}>
         <p className="mb-2 text-sm font-medium text-stone-700">Scenari sul patrimonio</p>
-        <div className="grid gap-4 md:grid-cols-3">
-          {scenari.map(s => (
-            <div key={s.chiave} className="rounded-xl border border-stone-200 bg-white p-5">
-              <p className="text-sm text-stone-500">{etichetteScenario[s.chiave]}</p>
-              <p className={`mt-1 font-serif text-2xl ${s.deltaNetto < 0 ? 'text-red-700' : s.deltaNetto > 0 ? 'text-emerald-700' : 'text-stone-800'}`}>
-                {fmtDelta(s.deltaNetto)}
-              </p>
-              <p className="text-xs text-stone-400">{fmtPct(pctPatr(s.deltaNetto), 2)} del patrimonio · finale {fmtEuro(s.patrimonioFinale)}</p>
-              <div className="mt-3 space-y-1 border-t border-stone-100 pt-3 text-sm">
-                <div className="flex justify-between"><span className="text-stone-500">Posizione</span><span className="font-mono">{fmtDelta(s.pnlShort)}</span></div>
-                <div className="flex justify-between">
-                  <span className="text-stone-500">Long {s.mercatoPct !== null && s.chiave !== 'neutro' ? `(${fmtPct(s.mercatoPct, 0)})` : ''}</span>
-                  <span className="font-mono">{s.mercatoPct === null && s.chiave !== 'neutro' ? 'n.d.' : fmtDelta(s.pnlLong)}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        {betaPos === null && (
-          <p className="mt-2 text-xs text-amber-700">Premi Analizza sullo strumento in simulazione per stimare l&apos;effetto sui long. Nel frattempo vedi solo la posizione.</p>
-        )}
-        {betaPos !== null && Math.abs(betaPos) < 0.15 && (
-          <p className="mt-2 text-xs text-amber-700">Beta vicino a zero: la posizione non si muove con i long, effetto sui long non stimabile.</p>
-        )}
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-right text-stone-400">
+              <th className="w-20 pb-1 text-left font-medium" />
+              {scenari.map(s => <th key={s.chiave} className="pb-1 font-medium">{nomeScenario[s.chiave]}</th>)}
+            </tr>
+          </thead>
+          <tbody className="font-mono text-right">
+            <tr className="border-t border-stone-100">
+              <td className="py-1 text-left font-sans text-stone-500">Posizione</td>
+              {scenari.map(s => <td key={s.chiave} className="py-1">{fmtDelta(s.pnlShort)}</td>)}
+            </tr>
+            <tr className="border-t border-stone-100">
+              <td className="py-1 text-left font-sans text-stone-500">Long</td>
+              {scenari.map(s => (
+                <td key={s.chiave} className="py-1">
+                  {s.mercatoPct === null && s.chiave !== 'neutro' ? 'n.d.' : fmtDelta(s.pnlLong)}
+                  {s.mercatoPct !== null && s.chiave !== 'neutro' && <span className="block text-[10px] text-stone-400">{fmtPct(s.mercatoPct, 0)}</span>}
+                </td>
+              ))}
+            </tr>
+            <tr className="border-t border-stone-100 font-semibold">
+              <td className="py-1 text-left font-sans text-stone-600">Variazione</td>
+              {scenari.map(s => (
+                <td key={s.chiave} className={`py-1 ${s.deltaNetto < 0 ? 'text-red-700' : s.deltaNetto > 0 ? 'text-emerald-700' : 'text-stone-800'}`}>
+                  {fmtDelta(s.deltaNetto)}
+                  <span className="block text-[10px] font-normal text-stone-400">{fmtPct(pctPatr(s.deltaNetto), 2)}</span>
+                </td>
+              ))}
+            </tr>
+            <tr className="border-t border-stone-100">
+              <td className="py-1 text-left font-sans text-stone-500">Patrimonio</td>
+              {scenari.map(s => <td key={s.chiave} className="py-1">{fmtEuro(s.patrimonioFinale)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+        {betaPos === null && <p className="mt-2 text-[11px] text-amber-700">Premi Analizza per stimare l&apos;effetto sui long: per ora vedi solo la posizione.</p>}
+        {betaPos !== null && Math.abs(betaPos) < 0.15 && <p className="mt-2 text-[11px] text-amber-700">Beta vicino a zero: effetto sui long non stimabile.</p>}
       </div>
 
       {/* Mercato e confronto */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-stone-200 bg-white p-5">
-          <p className="text-sm font-medium text-stone-700">Se il mercato (i tuoi long) si muove di…</p>
-          <table className="mt-3 w-full text-sm">
+        <div className={CARD}>
+          <p className="mb-2 text-sm font-medium text-stone-700">Se i tuoi long si muovono di…</p>
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-xs text-stone-400">
-                <th className="pb-2 font-medium">Mercato</th><th className="pb-2 font-medium">Senza short</th><th className="pb-2 font-medium">Con short</th>
+              <tr className="text-right text-stone-400">
+                <th className="pb-1 text-left font-medium">Mercato</th><th className="pb-1 font-medium">Senza short</th><th className="pb-1 font-medium">Con short</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="font-mono text-right">
               {griglia.map(r => (
                 <tr key={r.mercatoPct} className="border-t border-stone-100">
-                  <td className="py-1.5 font-mono">{fmtPct(r.mercatoPct, 0)}</td>
-                  <td className="py-1.5 font-mono text-stone-600">{fmtEuro(r.senzaShort)}</td>
-                  <td className="py-1.5 font-mono text-stone-800">{r.conShort === null ? 'n.d.' : fmtEuro(r.conShort)}</td>
+                  <td className="py-1 text-left">{fmtPct(r.mercatoPct, 0)}</td>
+                  <td className="py-1 text-stone-500">{fmtEuro(r.senzaShort)}</td>
+                  <td className="py-1 text-stone-800">{r.conShort === null ? 'n.d.' : fmtEuro(r.conShort)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div className="rounded-xl border border-stone-200 bg-white p-5">
-          <p className="text-sm font-medium text-stone-700">Confronto strumenti (stesso capitale e stop)</p>
-          <table className="mt-3 w-full text-sm">
+        <div className={CARD}>
+          <p className="mb-2 text-sm font-medium text-stone-700">Confronto A / B (stesso capitale e stop)</p>
+          <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-xs text-stone-400">
-                <th className="pb-2 font-medium" />
-                <th className="pb-2 font-medium">A</th>
-                <th className="pb-2 font-medium">B</th>
-              </tr>
+              <tr className="text-right text-stone-400"><th className="pb-1 text-left font-medium" /><th className="pb-1 font-medium">A</th><th className="pb-1 font-medium">B</th></tr>
             </thead>
-            <tbody>
-              {[
-                ['Tipo', (c: Candidato) => (c.tipo === 'etf_inverso' ? 'ETF inverso' : 'Azione short')],
-                ['Correlazione', (c: Candidato) => { const v = corrPosizione(c.tipo, c.corr); return v === null ? 'n.d.' : v.toFixed(2).replace('.', ',') }],
-                ['Beta sui long', (c: Candidato) => { const v = betaPosizione(c.tipo, c.corr); return v === null ? 'n.d.' : v.toFixed(2).replace('.', ',') }],
-                ['Mercato -10%', (c: Candidato) => { const b = betaPosizione(c.tipo, c.corr); return b === null ? 'n.d.' : fmtDelta((capitaleEff * b * -10) / 100) }],
-                ['Perdita a stop', () => fmtEuro(-perdStop)],
-              ].map(([label, fn]) => (
-                <tr key={label as string} className="border-t border-stone-100">
-                  <td className="py-1.5 text-stone-500">{label as string}</td>
-                  {cands.map((c, i) => <td key={i} className="py-1.5 font-mono text-stone-800">{(fn as (c: Candidato) => string)(c)}</td>)}
+            <tbody className="font-mono text-right">
+              {([
+                ['Tipo', (c: Candidato) => (c.tipo === 'etf_inverso' ? 'ETF inv.' : 'Azione')],
+                ['Correlazione', (c: Candidato) => fmt2(corrPosizione(c.tipo, c.corr))],
+                ['Beta sui long', (c: Candidato) => fmt2(betaPosizione(c.tipo, c.corr))],
+                ['Se long -10%', (c: Candidato) => { const b = betaPosizione(c.tipo, c.corr); return b === null ? 'n.d.' : fmtDelta((capitaleEff * b * -10) / 100) }],
+              ] as [string, (c: Candidato) => string][]).map(([label, fn]) => (
+                <tr key={label} className="border-t border-stone-100">
+                  <td className="py-1 text-left font-sans text-stone-500">{label}</td>
+                  {cands.map((c, i) => <td key={i} className="py-1 text-stone-800">{fn(c)}</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="mt-3 space-y-1 border-t border-stone-100 pt-3 text-[11px] text-stone-500">
-            {cands.map((c, i) => <p key={i}><strong>{i === 0 ? 'A' : 'B'}:</strong> {NOTA_FISCALE[c.tipo]}</p>)}
-            <p className="text-stone-400">Promemoria generale, non consulenza fiscale: verifica con il commercialista.</p>
-          </div>
+          <p className="mt-2 text-[11px] text-stone-400">Promemoria fiscale generale, non consulenza: verifica con il commercialista.</p>
         </div>
       </div>
     </div>

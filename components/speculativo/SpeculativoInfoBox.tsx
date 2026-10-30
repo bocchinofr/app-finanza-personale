@@ -1,6 +1,7 @@
 // components/speculativo/SpeculativoInfoBox.tsx
 'use client'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export default function SpeculativoInfoBox() {
   const [open, setOpen] = useState(false)
@@ -15,7 +16,7 @@ export default function SpeculativoInfoBox() {
         i
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
           onClick={() => setOpen(false)}
@@ -45,7 +46,17 @@ export default function SpeculativoInfoBox() {
                   L&apos;importo suggerito è il <strong>più basso</strong> tra due limiti. Limite di rischio: perdita
                   massima accettata (% del patrimonio totale) divisa per la distanza dello stop. Limite di capitale:
                   quota massima del capitale disponibile che accetti di usare. L&apos;etichetta indica quale dei due
-                  sta limitando. Lo slider ti permette di provare importi diversi.
+                  sta limitando. Lo slider ti permette di provare importi diversi: i segni sulla barra indicano i due limiti, il più basso è il suggerito.
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">Paniere long</p>
+                <p>
+                  Sono gli asset dei tuoi long usati per stimare correlazione, beta e effetto sul patrimonio. Di
+                  default sono gli asset classificati come azionari (se non ce ne sono, tutti). Puoi sceglierli tu:
+                  dopo ogni modifica premi di nuovo Analizza. Gli asset senza ticker contano nel valore ma non nella
+                  correlazione.
                 </p>
               </div>
 
@@ -89,7 +100,8 @@ export default function SpeculativoInfoBox() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

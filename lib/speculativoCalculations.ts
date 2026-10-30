@@ -111,17 +111,6 @@ export function calcolaGrigliaMercato(p: {
   })
 }
 
-export function calcolaCurva(maxCapitale: number, stopPct: number, targetPct: number, punti = 24) {
-  return Array.from({ length: punti + 1 }, (_, k) => {
-    const capitale = (maxCapitale * k) / punti
-    return {
-      capitale: Math.round(capitale),
-      perdita: -Math.round((capitale * stopPct) / 100),
-      utile: Math.round((capitale * targetPct) / 100),
-    }
-  })
-}
-
 export const NOTA_FISCALE: Record<TipoStrumento, string> = {
   etf_inverso:
     'Utili da ETF: redditi di capitale, non compensabili con minusvalenze. Perdite: redditi diversi, compensabili solo con plusvalenze di tipo diverso.',

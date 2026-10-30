@@ -11,7 +11,7 @@ export default function SpeculativoInfoBox() {
       <button
         onClick={() => setOpen(true)}
         aria-label="Come funziona il pannello Speculativo"
-        className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-gray-500 text-[11px] font-semibold hover:bg-gray-100 hover:text-gray-700 transition-colors"
+        className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-gray-500 text-xs font-semibold hover:bg-gray-100 hover:text-gray-700 transition-colors"
       >
         i
       </button>

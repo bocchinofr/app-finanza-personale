@@ -245,13 +245,13 @@ export default function SpeculativoPage() {
       </div>
 
       {/* Parametri + strumento */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-3">
         <div className={`${CARD} divide-y divide-stone-100`}>
           <Riga label="Patrimonio totale"><span className="font-mono text-sm text-stone-800">{fmtEuro(patrimonio)}</span></Riga>
           <Riga label="Capitale disponibile">
             <div className="flex flex-col items-end gap-1">
               <span className="font-mono text-sm text-stone-800">{fmtEuro(disponibile)}</span>
-              <div className="flex rounded-lg bg-surface-50 p-0.5 text-[11px]">
+              <div className="flex rounded-lg bg-surface-50 p-0.5 text-xs">
                 {([['riserva', 'Riserva'], ['liquidita', 'Liquidità'], ['entrambe', 'Entrambe']] as [Fonte, string][]).map(([k, l]) => (
                   <button
                     key={k} onClick={() => { setFonte(k); setOverride(null) }}
@@ -272,7 +272,7 @@ export default function SpeculativoPage() {
             </button>
             {paniereAperto && (
               <div className="mb-2 rounded-lg bg-surface-50 p-2">
-                <div className="mb-1 flex gap-3 text-[11px] text-brand-700">
+                <div className="mb-1 flex gap-3 text-xs text-brand-700">
                   <button onClick={() => cambiaPaniere(new Set(dati.assets.filter(a => a.azionario).map(a => a.id)))}>Solo azionari</button>
                   <button onClick={() => cambiaPaniere(new Set(dati.assets.map(a => a.id)))}>Tutti</button>
                   <button onClick={() => cambiaPaniere(new Set())}>Nessuno</button>
@@ -333,51 +333,51 @@ export default function SpeculativoPage() {
               correlazione {fmt2(corrPosizione(cand.tipo, cand.corr))} · beta {fmt2(betaPos)} · {cand.corr.n} giorni
             </p>
           )}
-          <p className="mt-2 text-[11px] leading-snug text-stone-400">
+          <p className="mt-2 text-xs leading-snug text-stone-400">
             {cand.tipo === 'etf_inverso' ? 'Ricalcolo giornaliero: su settimane o mesi può discostarsi dal rendimento atteso. ' : ''}
             {NOTA_FISCALE[cand.tipo]}
           </p>
         </div>
-      </div>
 
-      {/* Capitale e slider */}
-      <div className={CARD}>
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-          <div>
-            <p className="text-xs text-stone-500">Capitale impiegato</p>
-            <p className="font-serif text-3xl text-stone-800">{fmtEuro(capitaleEff)}</p>
-            <p className="text-[11px] text-stone-400">
-              {override === null ? `suggerito, limita il ${sizing.vincolo === 'rischio' ? 'rischio' : 'tetto sul capitale'}` : `scelto da te (suggerito ${fmtEuro(sizing.importo)})`}
-              {override !== null && <button onClick={() => setOverride(null)} className="ml-1 text-brand-700 hover:underline">ripristina</button>}
-            </p>
+        {/* Capitale e slider */}
+        <div className={CARD}>
+          <p className="text-sm text-stone-500">Capitale impiegato</p>
+          <p className="font-serif text-3xl text-stone-800">{fmtEuro(capitaleEff)}</p>
+          <p className="text-xs text-stone-400">
+            {override === null ? `suggerito, limita il ${sizing.vincolo === 'rischio' ? 'rischio' : 'tetto sul capitale'}` : `scelto da te (suggerito ${fmtEuro(sizing.importo)})`}
+            {override !== null && <button onClick={() => setOverride(null)} className="ml-1 text-brand-700 hover:underline">ripristina</button>}
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
+            <div><p className="text-xs text-stone-400">Quantità</p><p className="font-mono text-sm text-stone-800">{quantita === null ? 'serve prezzo' : quantita.toLocaleString('it-IT')}</p></div>
+            <div><p className="text-xs text-stone-400">Disponibile usato</p><p className="font-mono text-sm text-stone-800">{pctDisp.toFixed(0)}%</p></div>
+            <div><p className="text-xs text-stone-400">Perdita a stop</p><p className="font-mono text-sm text-red-700">{fmtEuro(-perdStop)}</p><p className="font-mono text-xs text-stone-400">{fmtPct(-pctPatr(perdStop), 2)} patr.</p></div>
+            <div><p className="text-xs text-stone-400">Utile a target</p><p className="font-mono text-sm text-emerald-700">{fmtDelta(utileTarget)}</p><p className="font-mono text-xs text-stone-400">{fmtPct(pctPatr(utileTarget), 2)} patr.</p></div>
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
-            <div><p className="text-stone-400">Quantità</p><p className="font-mono text-sm text-stone-800">{quantita === null ? 'serve prezzo' : quantita.toLocaleString('it-IT')}</p></div>
-            <div><p className="text-stone-400">Perdita a stop</p><p className="font-mono text-sm text-red-700">{fmtEuro(-perdStop)} <span className="text-stone-400">{fmtPct(-pctPatr(perdStop), 2)}</span></p></div>
-            <div><p className="text-stone-400">Utile a target</p><p className="font-mono text-sm text-emerald-700">{fmtDelta(utileTarget)} <span className="text-stone-400">{fmtPct(pctPatr(utileTarget), 2)}</span></p></div>
-            <div><p className="text-stone-400">Disponibile usato</p><p className="font-mono text-sm text-stone-800">{pctDisp.toFixed(0)}%</p></div>
+          <div className="relative mt-4">
+            <input
+              type="range" min={0} max={maxSlider} step={Math.max(50, Math.round(maxSlider / 200))}
+              value={Math.min(capitale, maxSlider)} onChange={e => setOverride(Number(e.target.value))}
+              className="w-full accent-brand-600" aria-label="Capitale impiegato"
+            />
+            <div className="pointer-events-none relative h-2">
+              <span className="absolute top-0 h-2 w-0.5 -translate-x-1/2 bg-red-500" style={{ left: pos(sizing.limiteRischio) }} />
+              <span className="absolute top-0 h-2 w-0.5 -translate-x-1/2 bg-accent2-600" style={{ left: pos(sizing.limiteCapitale) }} />
+            </div>
+          </div>
+          <div className="mt-2 space-y-0.5 text-sm text-stone-600">
+            <p><span className="text-red-600">▮</span> Limite rischio <span className="font-mono">{fmtEuro(sizing.limiteRischio)}</span></p>
+            <p><span className="text-accent2-600">▮</span> Limite capitale <span className="font-mono">{fmtEuro(sizing.limiteCapitale)}</span></p>
+            <p className="text-xs text-stone-400">Il più basso è il suggerito.</p>
           </div>
         </div>
-        <div className="relative mt-4">
-          <input
-            type="range" min={0} max={maxSlider} step={Math.max(50, Math.round(maxSlider / 200))}
-            value={Math.min(capitale, maxSlider)} onChange={e => setOverride(Number(e.target.value))}
-            className="w-full accent-brand-600" aria-label="Capitale impiegato"
-          />
-          <div className="pointer-events-none relative h-2">
-            <span className="absolute top-0 h-2 w-0.5 -translate-x-1/2 bg-red-500" style={{ left: pos(sizing.limiteRischio) }} />
-            <span className="absolute top-0 h-2 w-0.5 -translate-x-1/2 bg-accent2-600" style={{ left: pos(sizing.limiteCapitale) }} />
-          </div>
-        </div>
-        <p className="mt-1 text-[11px] text-stone-400">
-          <span className="text-red-600">▮</span> limite rischio {fmtEuro(sizing.limiteRischio)} · <span className="text-accent2-600">▮</span> limite capitale {fmtEuro(sizing.limiteCapitale)} · il più basso è il suggerito
-        </p>
       </div>
 
-      {/* Scenari */}
-      <div className={CARD}>
+      {/* Scenari, mercato, confronto */}
+      <div className="grid gap-4 xl:grid-cols-3">
+        {/* Scenari */}
+        <div className={CARD}>
         <p className="mb-2 text-sm font-medium text-stone-700">Scenari sul patrimonio</p>
-        <table className="w-full text-xs">
+        <table className="w-full text-sm">
           <thead>
             <tr className="text-right text-stone-400">
               <th className="w-20 pb-1 text-left font-medium" />
@@ -394,7 +394,7 @@ export default function SpeculativoPage() {
               {scenari.map(s => (
                 <td key={s.chiave} className="py-1">
                   {s.mercatoPct === null && s.chiave !== 'neutro' ? 'n.d.' : fmtDelta(s.pnlLong)}
-                  {s.mercatoPct !== null && s.chiave !== 'neutro' && <span className="block text-[10px] text-stone-400">{fmtPct(s.mercatoPct, 0)}</span>}
+                  {s.mercatoPct !== null && s.chiave !== 'neutro' && <span className="block text-xs text-stone-400">{fmtPct(s.mercatoPct, 0)}</span>}
                 </td>
               ))}
             </tr>
@@ -403,7 +403,7 @@ export default function SpeculativoPage() {
               {scenari.map(s => (
                 <td key={s.chiave} className={`py-1 ${s.deltaNetto < 0 ? 'text-red-700' : s.deltaNetto > 0 ? 'text-emerald-700' : 'text-stone-800'}`}>
                   {fmtDelta(s.deltaNetto)}
-                  <span className="block text-[10px] font-normal text-stone-400">{fmtPct(pctPatr(s.deltaNetto), 2)}</span>
+                  <span className="block text-xs font-normal text-stone-400">{fmtPct(pctPatr(s.deltaNetto), 2)}</span>
                 </td>
               ))}
             </tr>
@@ -413,15 +413,12 @@ export default function SpeculativoPage() {
             </tr>
           </tbody>
         </table>
-        {betaPos === null && <p className="mt-2 text-[11px] text-amber-700">Premi Analizza per stimare l&apos;effetto sui long: per ora vedi solo la posizione.</p>}
-        {betaPos !== null && Math.abs(betaPos) < 0.15 && <p className="mt-2 text-[11px] text-amber-700">Beta vicino a zero: effetto sui long non stimabile.</p>}
+        {betaPos === null && <p className="mt-2 text-xs text-amber-700">Premi Analizza per stimare l&apos;effetto sui long: per ora vedi solo la posizione.</p>}
+        {betaPos !== null && Math.abs(betaPos) < 0.15 && <p className="mt-2 text-xs text-amber-700">Beta vicino a zero: effetto sui long non stimabile.</p>}
       </div>
-
-      {/* Mercato e confronto */}
-      <div className="grid gap-4 lg:grid-cols-2">
         <div className={CARD}>
           <p className="mb-2 text-sm font-medium text-stone-700">Se i tuoi long si muovono di…</p>
-          <table className="w-full text-xs">
+          <table className="w-full text-sm">
             <thead>
               <tr className="text-right text-stone-400">
                 <th className="pb-1 text-left font-medium">Mercato</th><th className="pb-1 font-medium">Senza short</th><th className="pb-1 font-medium">Con short</th>
@@ -441,7 +438,7 @@ export default function SpeculativoPage() {
 
         <div className={CARD}>
           <p className="mb-2 text-sm font-medium text-stone-700">Confronto A / B (stesso capitale e stop)</p>
-          <table className="w-full text-xs">
+          <table className="w-full text-sm">
             <thead>
               <tr className="text-right text-stone-400"><th className="pb-1 text-left font-medium" /><th className="pb-1 font-medium">A</th><th className="pb-1 font-medium">B</th></tr>
             </thead>
@@ -459,7 +456,7 @@ export default function SpeculativoPage() {
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[11px] text-stone-400">Promemoria fiscale generale, non consulenza: verifica con il commercialista.</p>
+          <p className="mt-2 text-xs text-stone-400">Promemoria fiscale generale, non consulenza: verifica con il commercialista.</p>
         </div>
       </div>
     </div>

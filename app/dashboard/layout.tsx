@@ -15,6 +15,7 @@ const navItems = [
   { href: '/dashboard', label: 'Patrimonio', icon: '◆' },
   { href: '/dashboard/gestione', label: 'Gestione', icon: '◈' },
   { href: '/dashboard/fire', label: 'FIRE', icon: '🔥' },
+  { href: '/dashboard/speculativo', label: 'Speculativo', icon: '◇' },
   { href: '/dashboard/upload', label: 'Importa dati', icon: '↑' },
   { href: '/dashboard/profilo', label: 'Profilo', icon: '○' },
 ]

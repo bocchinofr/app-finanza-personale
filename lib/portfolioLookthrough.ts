@@ -9,8 +9,21 @@ export interface VocePeso {
   peso: number // percentuale 0-100 all'interno dell'ETF
 }
 
+// Metadati degli strumenti "nuovi" della libreria simulatore (righe con id che inizia per "sim:")
+export interface MetaStrumento {
+  nome: string
+  ticker: string
+  classe: 'azionario' | 'obbligazionario' | 'altro'
+  leva: number // 1 = normale, -1 / -2 = inverso
+  riferimentoId?: string | null // per gli inversi: ETF reale di cui usare la composizione
+  prezzo?: number | null // ultimo prezzo noto in euro
+  valuta?: 'EUR' | 'USD'
+  azioneSingola?: boolean
+}
+
 export interface ComposizioneEtf {
   portafoglio_id: string
+  meta?: MetaStrumento | null
   top_holdings: VocePeso[]
   settori: VocePeso[]
   paesi: VocePeso[]

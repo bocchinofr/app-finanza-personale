@@ -6,7 +6,7 @@ import {
   ModoOperazione, Operazione, StatoPortafoglio, StrumentoSim, simula,
 } from '@/lib/portfolioSimulation'
 import {
-  COLORI_CLASSE, fmtEuro, fmtPct, fmtPp, fmtPrezzo, fmtQta,
+  COLORI_CLASSE, fmtEuro, fmtEuroDelta, fmtPct, fmtPp, fmtPrezzo, fmtQta,
 } from '@/lib/portfolioFormat'
 import AllocazioneDonut from './AllocazioneDonut'
 import SimulatoreInfoBox from './SimulatoreInfoBox'
@@ -47,26 +47,26 @@ function TabellaConfronto({
     return { ...r, p, d, delta: d - p }
   }).sort((a, b) => Math.max(Math.abs(b.p), Math.abs(b.d)) - Math.max(Math.abs(a.p), Math.abs(a.d))).slice(0, maxRighe)
   const maxDelta = Math.max(...calc.map(c => Math.abs(c.delta)), 0.01)
-  if (calc.length === 0) return <p className="text-xs text-gray-400">Nessun dato inserito.</p>
+  if (calc.length === 0) return <p className="text-[13px] text-gray-400">Nessun dato inserito.</p>
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[460px]">
+      <table className="w-full min-w-[380px]">
         <thead>
           <tr>
             <th className="table-th">{intestazione}</th>
             <th className="table-th text-right">Prima</th>
             <th className="table-th text-right">Dopo</th>
             <th className="table-th text-right">Δ</th>
-            <th className="table-th w-28" />
+            <th className="table-th w-20" />
           </tr>
         </thead>
         <tbody>
           {calc.map(c => (
             <tr key={c.nome}>
-              <td className="table-td !py-1.5 text-xs text-gray-800 truncate max-w-[180px]" title={c.nome}>{c.nome}</td>
-              <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums text-gray-500">{fmtPct(c.p, 2)}</td>
-              <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums font-medium">{fmtPct(c.d, 2)}</td>
-              <td className={`table-td !py-1.5 text-right text-xs font-mono tabular-nums ${
+              <td className="table-td !py-1.5 text-[13px] text-gray-800 truncate max-w-[180px]" title={c.nome}>{c.nome}</td>
+              <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums text-gray-500">{fmtPct(c.p, 2)}</td>
+              <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums font-medium">{fmtPct(c.d, 2)}</td>
+              <td className={`table-td !py-1.5 text-right text-[13px] font-mono tabular-nums ${
                 Math.abs(c.delta) < 0.005 ? 'text-gray-400' : c.delta > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
                 {fmtPp(c.delta)}
               </td>
@@ -100,31 +100,14 @@ function unisci(
   return [...m.values()]
 }
 
-function KpiConf({ label, prima, dopo, formato = fmtEuro, invertiColori }: {
-  label: string; prima: number; dopo: number; formato?: (n: number) => string; invertiColori?: boolean
-}) {
-  const delta = dopo - prima
-  const bene = invertiColori ? delta < 0 : delta > 0
-  return (
-    <div className="px-4 py-3">
-      <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="num-display text-lg font-bold tabular-nums text-gray-900">{formato(dopo)}</p>
-      <p className="text-[11px] font-mono tabular-nums text-gray-400">
-        da {formato(prima)}{' '}
-        {Math.abs(delta) > 0.5 && (
-          <span className={bene ? 'text-emerald-700' : 'text-rose-600'}>({delta > 0 ? '+' : ''}{formato(delta)})</span>
-        )}
-      </p>
-    </div>
-  )
-}
-
 export default function SimulatoreRiallocazione({
   strumentiReali, composizioni, liquidita, onNuovo, onEditComposizione, onElimina,
 }: Props) {
   const [ops, setOps] = useState<Operazione[]>([])
   const [liqExtra, setLiqExtra] = useState(0)
-  const [vistaEsp, setVistaEsp] = useState<'settori' | 'paesi'>('settori')
+  const [tabRis, setTabRis] = useState<'riepilogo' | 'fiscale' | 'esposizioni'>('riepilogo')
+  const [vistaEsp, setVistaEsp] = useState<'societa' | 'settori' | 'paesi'>('societa')
+  const [libAperta, setLibAperta] = useState(false)
   const [quote, setQuote] = useState<Record<string, number>>({})
   const contatore = useRef(0)
 
@@ -205,246 +188,285 @@ export default function SimulatoreRiallocazione({
   )
   const righeEsp = vistaEsp === 'settori'
     ? unisci(prima.lt.settori, dopo.lt.settori)
-    : unisci(prima.lt.paesi, dopo.lt.paesi)
+    : vistaEsp === 'paesi' ? unisci(prima.lt.paesi, dopo.lt.paesi) : righeSoc
+
+  const spesaTotale = totali.imposta + totali.costi
+  const legenda = fette(prima).map((f, i) => ({
+    nome: f.nome, colore: f.colore,
+    p: prima.patrimonio > 0 ? (f.valore / prima.patrimonio) * 100 : 0,
+    d: dopo.patrimonio > 0 ? (fette(dopo)[i].valore / dopo.patrimonio) * 100 : 0,
+  }))
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-gray-900">Simulatore di riallocazione</h3>
         <SimulatoreInfoBox />
-        <span className="text-[11px] text-gray-400">Nessuna operazione viene eseguita: il portafoglio reale non cambia.</span>
+        <span className="text-[11px] text-gray-400">Il portafoglio reale non cambia.</span>
       </div>
 
-      {/* Operazioni */}
-      <div className="card !p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => aggiungi('vendi')} className="btn-secondary text-xs">− Vendi</button>
-          <button onClick={() => aggiungi('acquista')} className="btn-secondary text-xs">+ Acquista</button>
-          <button onClick={onNuovo} className="btn-secondary text-xs">+ Nuovo strumento</button>
-          <div className="flex items-center gap-1.5 ml-auto text-xs text-gray-500">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-start">
+        {/* ===== Colonna sinistra: operazioni (fissa durante lo scroll) ===== */}
+        <div className="card !p-3 space-y-2 lg:col-span-2 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button onClick={() => aggiungi('vendi')} className="btn-secondary !px-2.5 !py-1 text-[13px]">− Vendi</button>
+            <button onClick={() => aggiungi('acquista')} className="btn-secondary !px-2.5 !py-1 text-[13px]">+ Acquista</button>
+            <button onClick={onNuovo} className="btn-secondary !px-2.5 !py-1 text-[13px]">+ Nuovo</button>
+            {haOp && <button onClick={() => setOps([])} className="ml-auto text-[11px] text-gray-400 hover:text-rose-600">Azzera</button>}
+          </div>
+
+          {ops.length === 0 && (
+            <p className="text-[13px] text-gray-400 py-1">Aggiungi una vendita o un acquisto per vedere l&apos;effetto.</p>
+          )}
+
+          {ops.map(o => {
+            const d = dettPerId.get(o.id)
+            const elenco = o.tipo === 'vendi' ? strumenti.filter(s => s.qta > 0) : strumenti
+            const modi = o.tipo === 'vendi' ? MODI_VENDITA : MODI_ACQUISTO
+            return (
+              <div key={o.id} className={`rounded-lg border-l-2 border border-surface-200 bg-surface-50/60 p-2 ${o.tipo === 'vendi' ? '!border-l-rose-400' : '!border-l-emerald-500'}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[11px] font-bold w-6 text-center ${o.tipo === 'vendi' ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    {o.tipo === 'vendi' ? 'V' : 'A'}
+                  </span>
+                  <select className="input !py-1 text-[13px] flex-1 min-w-0" value={o.strumentoId} onChange={e => aggiorna(o.id, { strumentoId: e.target.value })}>
+                    {elenco.map(s => <option key={s.id} value={s.id}>{s.nome}{s.nuovo ? ' (nuovo)' : ''}</option>)}
+                  </select>
+                  <button onClick={() => rimuovi(o.id)} className="text-gray-300 hover:text-rose-600 px-1 leading-none" aria-label="Rimuovi operazione">✕</button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pl-[30px]">
+                  <select
+                    className="input !py-1 !w-auto text-[13px]" value={o.modo}
+                    onChange={e => aggiorna(o.id, { modo: e.target.value as ModoOperazione, valore: e.target.value === 'percentuale' ? 100 : 0 })}
+                  >
+                    {modi.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                  {o.modo !== 'tutto' && (
+                    <input
+                      type="number" step="any" className="input !py-1 !w-20 text-[13px] font-mono"
+                      value={o.valore === 0 ? '' : o.valore} placeholder="0"
+                      onChange={e => aggiorna(o.id, { valore: Number(e.target.value) || 0 })}
+                    />
+                  )}
+                  {o.tipo === 'vendi' && (
+                    <label className="flex items-center gap-1 text-[11px] text-gray-400" title="Aliquota sulla plusvalenza">
+                      tasse %
+                      <input
+                        type="number" step="any" className="input !py-1 !w-14 text-[13px] font-mono" value={o.aliquota}
+                        onChange={e => aggiorna(o.id, { aliquota: Number(e.target.value) || 0 })}
+                      />
+                    </label>
+                  )}
+                  <label className="flex items-center gap-1 text-[11px] text-gray-400" title="Costi di transazione">
+                    costi €
+                    <input
+                      type="number" step="any" className="input !py-1 !w-14 text-[13px] font-mono" value={o.costi === 0 ? '' : o.costi} placeholder="0"
+                      onChange={e => aggiorna(o.id, { costi: Number(e.target.value) || 0 })}
+                    />
+                  </label>
+                </div>
+                {d && d.avvisi.length > 0 && (
+                  <p className="text-[11px] text-amber-700 mt-1 pl-[30px]">{d.avvisi.join(' · ')}</p>
+                )}
+              </div>
+            )
+          })}
+
+          <div className="flex items-center gap-2 pt-1 border-t border-surface-100 text-[11px] text-gray-500">
             <span>Variazione liquidità €</span>
             <input
-              type="number" step="any" className="input !w-24 text-xs font-mono"
+              type="number" step="any" className="input !py-1 !w-20 text-[13px] font-mono ml-auto"
               value={liqExtra === 0 ? '' : liqExtra} placeholder="0"
               onChange={e => setLiqExtra(Number(e.target.value) || 0)}
             />
           </div>
-        </div>
 
-        {ops.length === 0 && (
-          <p className="text-xs text-gray-400 py-2">
-            Aggiungi una vendita o un acquisto per vedere l&apos;effetto su portafoglio, esposizioni e tasse.
-          </p>
-        )}
-
-        {ops.map(o => {
-          const d = dettPerId.get(o.id)
-          const elenco = o.tipo === 'vendi' ? strumenti.filter(s => s.qta > 0) : strumenti
-          const modi = o.tipo === 'vendi' ? MODI_VENDITA : MODI_ACQUISTO
-          return (
-            <div key={o.id} className="rounded-lg border border-surface-200 bg-surface-50/50 p-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-[11px] font-semibold px-2 py-1 rounded-md ${o.tipo === 'vendi' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {o.tipo === 'vendi' ? 'VENDI' : 'ACQUISTA'}
-                </span>
-                <select className="input !w-auto text-xs min-w-[150px] flex-1 sm:flex-none" value={o.strumentoId} onChange={e => aggiorna(o.id, { strumentoId: e.target.value })}>
-                  {elenco.map(s => <option key={s.id} value={s.id}>{s.nome}{s.nuovo ? ' (nuovo)' : ''}</option>)}
-                </select>
-                <select
-                  className="input !w-auto text-xs" value={o.modo}
-                  onChange={e => aggiorna(o.id, { modo: e.target.value as ModoOperazione, valore: e.target.value === 'percentuale' ? 100 : 0 })}
-                >
-                  {modi.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
-                {o.modo !== 'tutto' && (
-                  <input
-                    type="number" step="any" className="input !w-24 text-xs font-mono"
-                    value={o.valore === 0 ? '' : o.valore} placeholder="0"
-                    onChange={e => aggiorna(o.id, { valore: Number(e.target.value) || 0 })}
-                  />
-                )}
-                {o.tipo === 'vendi' && (
-                  <label className="flex items-center gap-1 text-[11px] text-gray-500">
-                    Imposta %
-                    <input
-                      type="number" step="any" className="input !w-16 text-xs font-mono" value={o.aliquota}
-                      onChange={e => aggiorna(o.id, { aliquota: Number(e.target.value) || 0 })}
-                    />
-                  </label>
-                )}
-                <label className="flex items-center gap-1 text-[11px] text-gray-500">
-                  Costi €
-                  <input
-                    type="number" step="any" className="input !w-16 text-xs font-mono" value={o.costi === 0 ? '' : o.costi} placeholder="0"
-                    onChange={e => aggiorna(o.id, { costi: Number(e.target.value) || 0 })}
-                  />
-                </label>
-                <button onClick={() => rimuovi(o.id)} className="ml-auto text-gray-400 hover:text-rose-600 px-1" aria-label="Rimuovi operazione">✕</button>
-              </div>
-              {d && (
-                <p className="text-[11px] text-gray-500 mt-1.5 font-mono tabular-nums">
-                  {fmtQta(d.qta)} quote × {fmtPrezzo(d.strumento.prezzo)} = {fmtEuro(d.lordo)}
-                  {o.tipo === 'vendi' && <> · plus {fmtEuro(d.plus)} · imposta {fmtEuro(d.imposta)} · netto {fmtEuro(d.netto)}</>}
-                  {d.avvisi.map(a => <span key={a} className="text-amber-700"> · {a}</span>)}
-                </p>
+          {libreria.length > 0 && (
+            <div className="border-t border-surface-100 pt-1.5">
+              <button onClick={() => setLibAperta(v => !v)} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800 w-full">
+                <span>{libAperta ? '▾' : '▸'}</span> Libreria strumenti nuovi ({libreria.length})
+              </button>
+              {libAperta && (
+                <div className="mt-1.5 space-y-1">
+                  {libreria.map(c => {
+                    const m = c.meta!
+                    const ha = c.top_holdings.length + c.settori.length + c.paesi.length > 0
+                    return (
+                      <div key={c.portafoglio_id} className="flex items-center gap-1.5 text-[13px]">
+                        <span className="text-gray-800 truncate flex-1">{m.nome}</span>
+                        <span className="font-mono text-[11px] text-gray-400">{m.ticker}{m.leva !== 1 ? ` ${m.leva}x` : ''}</span>
+                        {m.leva === 1 && (
+                          <button
+                            onClick={() => onEditComposizione(c.portafoglio_id)}
+                            className={`text-[11px] px-1.5 py-0.5 rounded-full border ${ha ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}
+                          >{ha ? 'Dati' : 'Inserisci'}</button>
+                        )}
+                        <button onClick={() => onElimina(c.portafoglio_id)} className="text-gray-300 hover:text-rose-600 px-0.5" aria-label="Elimina dalla libreria">✕</button>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
-          )
-        })}
+          )}
+        </div>
 
-        {libreria.length > 0 && (
-          <div className="pt-2 border-t border-surface-100">
-            <p className="text-[11px] text-gray-400 mb-1.5">Libreria strumenti nuovi</p>
-            <div className="flex flex-wrap gap-2">
-              {libreria.map(c => {
-                const m = c.meta!
-                const ha = c.top_holdings.length + c.settori.length + c.paesi.length > 0
-                return (
-                  <span key={c.portafoglio_id} className="inline-flex items-center gap-1.5 text-xs pl-2.5 pr-1 py-1 rounded-full bg-white border border-surface-200">
-                    <span className="text-gray-800">{m.nome}</span>
-                    <span className="font-mono text-gray-400">{m.ticker}{m.leva !== 1 ? ` ${m.leva}x` : ''}</span>
-                    {m.leva === 1 && (
-                      <button
-                        onClick={() => onEditComposizione(c.portafoglio_id)}
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full border ${ha ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}
-                      >{ha ? 'Dati' : 'Inserisci dati'}</button>
+        {/* ===== Colonna destra: risultati a schede ===== */}
+        <div className="lg:col-span-3 space-y-3 min-w-0">
+          {sim.avvisi.map(a => (
+            <div key={a} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[13px] text-amber-800">{a}</div>
+          ))}
+
+          {!haOp ? (
+            <div className="card !p-6 text-center text-[13px] text-gray-400">
+              I risultati (valore, tasse, esposizioni prima/dopo) appaiono qui appena aggiungi un&apos;operazione.
+            </div>
+          ) : (
+            <>
+              {/* Barra riassuntiva */}
+              <div className="card !p-0 grid grid-cols-2 sm:grid-cols-4 divide-x divide-surface-100">
+                {[
+                  { l: 'Patrimonio', v: fmtEuro(dopo.patrimonio), d: dopo.patrimonio - prima.patrimonio, inv: false },
+                  { l: 'Liquidità', v: fmtEuro(dopo.liquidita), d: dopo.liquidita - prima.liquidita, inv: false },
+                  { l: 'Tasse + costi', v: fmtEuro(spesaTotale), d: 0, inv: true },
+                  { l: 'Netto da vendite', v: fmtEuro(totali.nettoReinvestibile), d: 0, inv: false },
+                ].map(k => (
+                  <div key={k.l} className="px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">{k.l}</p>
+                    <p className="num-display text-base font-bold tabular-nums text-gray-900 leading-tight">{k.v}</p>
+                    {Math.abs(k.d) > 0.5 && (
+                      <p className={`text-[11px] font-mono tabular-nums ${k.d > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {fmtEuroDelta(k.d)}
+                      </p>
                     )}
-                    <button onClick={() => onElimina(c.portafoglio_id)} className="text-gray-300 hover:text-rose-600 px-1" aria-label="Elimina dalla libreria">✕</button>
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {sim.avvisi.map(a => (
-        <div key={a} className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">{a}</div>
-      ))}
-
-      {haOp && (
-        <>
-          {/* KPI prima/dopo */}
-          <div className="card !p-0 grid grid-cols-2 lg:grid-cols-5 divide-x divide-y lg:divide-y-0 divide-surface-100">
-            <KpiConf label="Patrimonio finanziario" prima={prima.patrimonio} dopo={dopo.patrimonio} />
-            <KpiConf label="Liquidità" prima={prima.liquidita} dopo={dopo.liquidita} />
-            <KpiConf
-              label="Azionario / patrimonio" formato={n => fmtPct(n)}
-              prima={prima.patrimonio > 0 ? (prima.azionario / prima.patrimonio) * 100 : 0}
-              dopo={dopo.patrimonio > 0 ? (dopo.azionario / dopo.patrimonio) * 100 : 0}
-            />
-            <KpiConf label="Plusvalenza latente" prima={prima.latente} dopo={dopo.latente} />
-            <KpiConf label="Copertura dati" formato={n => fmtPct(n, 0)} prima={prima.coperturaAzionario} dopo={dopo.coperturaAzionario} />
-          </div>
-
-          {/* Fiscalità */}
-          <div className="card !p-0 overflow-hidden">
-            <p className="text-xs font-semibold text-gray-800 px-4 pt-3 pb-2">Operazioni e fiscalità</p>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
-                <thead>
-                  <tr>
-                    <th className="table-th">Operazione</th>
-                    <th className="table-th text-right">Quote</th>
-                    <th className="table-th text-right">PMC</th>
-                    <th className="table-th text-right">Valore</th>
-                    <th className="table-th text-right">Plus realizzata</th>
-                    <th className="table-th text-right">Imposta</th>
-                    <th className="table-th text-right">Netto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...vendite, ...acquisti].map(d => (
-                    <tr key={d.op.id}>
-                      <td className="table-td !py-1.5 text-xs">
-                        <span className={d.op.tipo === 'vendi' ? 'text-rose-700' : 'text-emerald-700'}>{d.op.tipo === 'vendi' ? 'Vendita' : 'Acquisto'}</span>{' '}
-                        <span className="text-gray-800">{d.strumento.nome}</span>
-                      </td>
-                      <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">{fmtQta(d.qta)}</td>
-                      <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums text-gray-500">{d.op.tipo === 'vendi' ? fmtPrezzo(d.pmc) : '–'}</td>
-                      <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">{fmtEuro(d.lordo)}</td>
-                      <td className={`table-td !py-1.5 text-right text-xs font-mono tabular-nums ${d.plus >= 0 ? 'text-gray-800' : 'text-rose-600'}`}>
-                        {d.op.tipo === 'vendi' ? fmtEuro(d.plus) : '–'}
-                      </td>
-                      <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">{d.op.tipo === 'vendi' ? fmtEuro(d.imposta) : '–'}</td>
-                      <td className={`table-td !py-1.5 text-right text-xs font-mono tabular-nums font-medium ${d.netto < 0 ? 'text-rose-600' : ''}`}>{fmtEuro(d.netto)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-surface-100 border-t border-surface-100">
-              {[
-                ['Plusvalenza realizzata', fmtEuro(totali.plusRealizzata)],
-                ['Imposta teorica', fmtEuro(totali.imposta)],
-                ['Costi di transazione', fmtEuro(totali.costi)],
-                ['Capitale netto da vendite', fmtEuro(totali.nettoReinvestibile)],
-              ].map(([l, v]) => (
-                <div key={l} className="bg-white px-4 py-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-gray-400">{l}</p>
-                  <p className="num-display text-base font-bold tabular-nums text-gray-900">{v}</p>
-                </div>
-              ))}
-            </div>
-            <p className="text-[11px] text-gray-400 px-4 py-2">
-              Plusvalenza latente residua sui titoli dopo le operazioni: {fmtEuro(dopo.latente)} (prima {fmtEuro(prima.latente)}). Le perdite non sono compensate.
-            </p>
-          </div>
-
-          {/* Asset class prima/dopo */}
-          <div className="card !p-4">
-            <p className="text-xs font-semibold text-gray-800 mb-2">Allocazione per asset class</p>
-            <div className="grid grid-cols-2 gap-4">
-              {([['Prima', prima], ['Dopo', dopo]] as const).map(([titolo, st]) => (
-                <div key={titolo}>
-                  <p className="text-[11px] text-gray-400 text-center">{titolo}</p>
-                  <AllocazioneDonut fette={fette(st)} centro={fmtEuro(st.patrimonio)} altezza={130} />
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 mt-1">
-                    {fette(st).map(f => (
-                      <span key={f.nome} className="flex items-center gap-1 text-[10px] text-gray-500">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: f.colore }} />
-                        {f.nome} <span className="font-mono tabular-nums text-gray-700">{st.patrimonio > 0 ? fmtPct((f.valore / st.patrimonio) * 100, 0) : '–'}</span>
-                      </span>
-                    ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Strumenti e società */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="card !p-4">
-              <p className="text-xs font-semibold text-gray-800 mb-2">Peso per strumento (% patrimonio)</p>
-              <TabellaConfronto righe={righeStrumenti} basePrima={prima.patrimonio} baseDopo={dopo.patrimonio} maxRighe={12} intestazione="Strumento" />
-            </div>
-            <div className="card !p-4">
-              <p className="text-xs font-semibold text-gray-800 mb-2">Esposizione alle società (% patrimonio)</p>
-              <TabellaConfronto righe={righeSoc} basePrima={prima.patrimonio} baseDopo={dopo.patrimonio} intestazione="Società" />
-              <p className="text-[11px] text-gray-400 mt-2">Solo società dettagliate nei dati inseriti; gli ETF inversi sottraggono esposizione.</p>
-            </div>
-          </div>
-
-          {/* Settori / paesi */}
-          <div className="card !p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-800">Esposizione per {vistaEsp === 'settori' ? 'settore' : 'paese'} (% azionario)</p>
-              <div className="inline-flex rounded-lg border border-surface-200 p-0.5 text-[11px]">
-                {(['settori', 'paesi'] as const).map(v => (
-                  <button
-                    key={v} onClick={() => setVistaEsp(v)}
-                    className={`px-2.5 py-1 rounded-md capitalize ${vistaEsp === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}
-                  >{v}</button>
                 ))}
               </div>
-            </div>
-            <TabellaConfronto
-              righe={righeEsp} basePrima={prima.azionario} baseDopo={dopo.azionario} maxRighe={12}
-              intestazione={vistaEsp === 'settori' ? 'Settore' : 'Paese'}
-            />
-          </div>
-        </>
-      )}
+
+              {/* Schede */}
+              <div className="card !p-0 overflow-hidden">
+                <div className="flex border-b border-surface-100 text-[13px]">
+                  {([['riepilogo', 'Riepilogo'], ['fiscale', 'Fiscalità'], ['esposizioni', 'Esposizioni']] as const).map(([k, l]) => (
+                    <button
+                      key={k} onClick={() => setTabRis(k)}
+                      className={`px-4 py-2.5 border-b-2 -mb-px transition-colors ${tabRis === k ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                    >{l}</button>
+                  ))}
+                </div>
+
+                <div className="p-3">
+                  {tabRis === 'riepilogo' && (
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                      <div className="md:col-span-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          {([['Prima', prima], ['Dopo', dopo]] as const).map(([titolo, st]) => (
+                            <div key={titolo}>
+                              <p className="text-[11px] text-gray-400 text-center uppercase tracking-wide">{titolo}</p>
+                              <AllocazioneDonut fette={fette(st)} centro={fmtEuro(st.patrimonio)} altezza={110} />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-1.5 space-y-0.5">
+                          {legenda.map(f => (
+                            <div key={f.nome} className="flex items-center gap-1.5 text-[11px]">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: f.colore }} />
+                              <span className="text-gray-500 flex-1">{f.nome}</span>
+                              <span className="font-mono tabular-nums text-gray-400">{fmtPct(f.p, 0)}</span>
+                              <span className="text-gray-300">→</span>
+                              <span className="font-mono tabular-nums text-gray-800 w-9 text-right">{fmtPct(f.d, 0)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="md:col-span-3">
+                        <p className="text-[11px] text-gray-400 mb-1">Peso per strumento (% patrimonio)</p>
+                        <TabellaConfronto righe={righeStrumenti} basePrima={prima.patrimonio} baseDopo={dopo.patrimonio} maxRighe={8} intestazione="Strumento" />
+                      </div>
+                    </div>
+                  )}
+
+                  {tabRis === 'fiscale' && (
+                    <div className="space-y-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[460px]">
+                          <thead>
+                            <tr>
+                              <th className="table-th">Operazione</th>
+                              <th className="table-th text-right">Valore</th>
+                              <th className="table-th text-right">Plus</th>
+                              <th className="table-th text-right">Imposta</th>
+                              <th className="table-th text-right">Netto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...vendite, ...acquisti].map(d => (
+                              <tr key={d.op.id}>
+                                <td className="table-td !py-1.5 text-[13px]">
+                                  <span className={d.op.tipo === 'vendi' ? 'text-rose-700' : 'text-emerald-700'}>{d.op.tipo === 'vendi' ? 'V' : 'A'}</span>{' '}
+                                  <span className="text-gray-800">{d.strumento.nome}</span>
+                                  <span className="block text-[11px] text-gray-400 font-mono">
+                                    {fmtQta(d.qta)} q.{d.op.tipo === 'vendi' && <> · PMC {fmtPrezzo(d.pmc)}</>}
+                                  </span>
+                                </td>
+                                <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">{fmtEuro(d.lordo)}</td>
+                                <td className={`table-td !py-1.5 text-right text-[13px] font-mono tabular-nums ${d.plus < 0 ? 'text-rose-600' : ''}`}>
+                                  {d.op.tipo === 'vendi' ? fmtEuro(d.plus) : '–'}
+                                </td>
+                                <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">{d.op.tipo === 'vendi' ? fmtEuro(d.imposta) : '–'}</td>
+                                <td className={`table-td !py-1.5 text-right text-[13px] font-mono tabular-nums font-medium ${d.netto < 0 ? 'text-rose-600' : ''}`}>{fmtEuro(d.netto)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-surface-100 rounded-lg overflow-hidden">
+                        {[
+                          ['Plus realizzata', fmtEuro(totali.plusRealizzata)],
+                          ['Imposta teorica', fmtEuro(totali.imposta)],
+                          ['Costi', fmtEuro(totali.costi)],
+                          ['Latente residua', fmtEuro(dopo.latente)],
+                        ].map(([l, v]) => (
+                          <div key={l} className="bg-white px-3 py-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">{l}</p>
+                            <p className="num-display text-sm font-bold tabular-nums text-gray-900">{v}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-gray-400">Latente prima delle operazioni: {fmtEuro(prima.latente)}. Le perdite non sono compensate.</p>
+                    </div>
+                  )}
+
+                  {tabRis === 'esposizioni' && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="inline-flex rounded-lg border border-surface-200 p-0.5 text-[11px]">
+                          {([['societa', 'Società'], ['settori', 'Settori'], ['paesi', 'Paesi']] as const).map(([k, l]) => (
+                            <button
+                              key={k} onClick={() => setVistaEsp(k)}
+                              className={`px-2.5 py-1 rounded-md ${vistaEsp === k ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}
+                            >{l}</button>
+                          ))}
+                        </div>
+                        <span className="text-[11px] text-gray-400 text-right">
+                          {vistaEsp === 'societa' ? '% patrimonio' : '% azionario'} · copertura dati {fmtPct(prima.coperturaAzionario, 0)} → {fmtPct(dopo.coperturaAzionario, 0)}
+                        </span>
+                      </div>
+                      <TabellaConfronto
+                        righe={righeEsp}
+                        basePrima={vistaEsp === 'societa' ? prima.patrimonio : prima.azionario}
+                        baseDopo={vistaEsp === 'societa' ? dopo.patrimonio : dopo.azionario}
+                        maxRighe={8}
+                        intestazione={vistaEsp === 'societa' ? 'Società' : vistaEsp === 'settori' ? 'Settore' : 'Paese'}
+                      />
+                      {vistaEsp === 'societa' && <p className="text-[11px] text-gray-400">Solo società dettagliate nei dati inseriti; gli ETF inversi sottraggono esposizione.</p>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

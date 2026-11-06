@@ -41,13 +41,13 @@ function BarreVoci({
 }: {
   voci: EsposizioneVoce[]; baseAzionario: number; totaleDettagliato: number
 }) {
-  if (voci.length === 0) return <p className="text-xs text-gray-400">Nessun dato inserito.</p>
+  if (voci.length === 0) return <p className="text-[13px] text-gray-400">Nessun dato inserito.</p>
   const max = Math.max(...voci.map(v => v.euro), 1)
   const nonClass = Math.max(baseAzionario - totaleDettagliato, 0)
   return (
     <div className="space-y-1">
       {voci.slice(0, 12).map(v => (
-        <div key={v.nome} className="flex items-center gap-2 text-xs">
+        <div key={v.nome} className="flex items-center gap-2 text-[13px]">
           <span className="w-32 sm:w-40 truncate text-gray-700" title={v.nome}>{v.nome}</span>
           <div className="flex-1 h-2 rounded-full bg-surface-100 overflow-hidden">
             <div className="h-full rounded-full bg-brand-500" style={{ width: `${(v.euro / max) * 100}%` }} />
@@ -59,7 +59,7 @@ function BarreVoci({
         </div>
       ))}
       {voci.length > 12 && <p className="text-[11px] text-gray-400">+ altre {voci.length - 12} voci</p>}
-      <div className="flex items-center gap-2 text-xs pt-1 border-t border-surface-100">
+      <div className="flex items-center gap-2 text-[13px] pt-1 border-t border-surface-100">
         <span className="w-32 sm:w-40 text-gray-400">Non classificato</span>
         <div className="flex-1" />
         <span className="w-12 text-right font-mono tabular-nums text-gray-400">
@@ -75,6 +75,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
   const supabase = createClient()
   const [vista, setVista] = useState<'situazione' | 'simulatore'>('situazione')
   const [vistaEsp, setVistaEsp] = useState<'settori' | 'paesi'>('settori')
+  const [socEspanse, setSocEspanse] = useState(false)
   const [composizioni, setComposizioni] = useState<ComposizioneEtf[]>([])
   const [loading, setLoading] = useState(true)
   const [errore, setErrore] = useState('')
@@ -159,8 +160,6 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
   )
 
   const copertAzionario = valAzionario > 0 ? (lt.valoreConDati / valAzionario) * 100 : 0
-  const top10 = lt.societa.slice(0, 10)
-  const multiEtf = lt.societa.filter(s => s.nEtf > 1)
   const compById = useMemo(() => new Map(composizioni.map(c => [c.portafoglio_id, c])), [composizioni])
 
   async function scrivi(id: string, payload: Record<string, unknown>) {
@@ -228,7 +227,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-base font-semibold text-gray-900">Analisi portafoglio</h2>
         <AnalisiPortafoglioInfoBox />
-        <div className="ml-auto inline-flex rounded-lg border border-surface-200 bg-white p-0.5 text-xs">
+        <div className="ml-auto inline-flex rounded-lg border border-surface-200 bg-white p-0.5 text-[13px]">
           {([['situazione', 'Situazione attuale'], ['simulatore', 'Simulatore']] as const).map(([k, l]) => (
             <button
               key={k} onClick={() => setVista(k)}
@@ -238,9 +237,9 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
         </div>
       </div>
 
-      {errore && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">{errore}</div>}
+      {errore && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-[13px] text-red-700">{errore}</div>}
       {!prezziLive && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-800">
           Prezzi live non disponibili: i valori sono calcolati al prezzo di carico.
         </div>
       )}
@@ -275,188 +274,189 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
               },
             ].map(k => (
               <div key={k.l} className="px-4 py-3">
-                <p className="text-[10px] uppercase tracking-wide text-gray-400">{k.l}</p>
+                <p className="text-[11px] uppercase tracking-wide text-gray-400">{k.l}</p>
                 <p className={`num-display text-lg font-bold tabular-nums ${k.t || 'text-gray-900'}`}>{k.v}</p>
                 {k.s && <p className="text-[11px] text-gray-400 font-mono tabular-nums">{k.s}</p>}
               </div>
             ))}
           </div>
 
-          {/* Torta + strumenti */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div className="card !p-4">
-              <p className="text-xs font-semibold text-gray-800 mb-1">Allocazione per asset class</p>
-              <AllocazioneDonut fette={fetteClasse} centro={fmtEuro(patrimonio)} sub="patrimonio" altezza={170} />
-              <div className="mt-2 space-y-1">
-                {fetteClasse.map(f => (
-                  <div key={f.nome} className="flex items-center gap-2 text-xs">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: f.colore }} />
-                    <span className="text-gray-600 flex-1">{f.nome}</span>
-                    <span className="font-mono tabular-nums text-gray-900">{fmtEuro(f.valore)}</span>
-                    <span className="font-mono tabular-nums text-gray-400 w-12 text-right">{patrimonio > 0 ? fmtPct((f.valore / patrimonio) * 100) : '–'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="card !p-0 overflow-hidden xl:col-span-2">
-              <p className="text-xs font-semibold text-gray-800 px-4 pt-3 pb-1.5">Allocazione per strumento</p>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px]">
-                  <thead>
-                    <tr>
-                      <th className="table-th">Strumento</th>
-                      <th className="table-th text-right">Qtà · PMC</th>
-                      <th className="table-th text-right">Valore</th>
-                      <th className="table-th text-right">+/–</th>
-                      <th className="table-th text-right">% patr. · azion.</th>
-                      <th className="table-th text-center">Dati</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {righe.map(r => {
-                      const az = r.classe === 'azionario'
-                      const comp = r.asset.id ? compById.get(r.asset.id) : undefined
-                      const ha = !!comp && (comp.top_holdings.length + comp.settori.length + comp.paesi.length > 0)
-                      return (
-                        <tr key={r.asset.id ?? r.asset.asset}>
-                          <td className="table-td !py-1.5">
-                            <p className="text-xs font-medium text-gray-900">{r.asset.nome || r.asset.asset}</p>
-                            <p className="text-[10px] text-gray-400 font-mono">{r.asset.ticker || '–'} · {r.asset.isin || '–'}</p>
-                          </td>
-                          <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">
-                            {fmtQta(r.qta)}
-                            <span className="block text-[10px] text-gray-400">@ {fmtPrezzo(r.pmc)}</span>
-                          </td>
-                          <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums font-medium">
-                            {fmtEuro(r.valore)}
-                            <span className="block text-[10px] text-gray-400 font-normal">inv. {fmtEuro(r.investito)}</span>
-                          </td>
-                          <td className={`table-td !py-1.5 text-right text-xs font-mono tabular-nums ${r.plus >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                            {fmtEuro(r.plus)}{r.plusPct !== null && <span className="block text-[10px]">{fmtPctSegno(r.plusPct)}</span>}
-                          </td>
-                          <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">
-                            {patrimonio > 0 ? fmtPct((r.valore / patrimonio) * 100) : '–'}
-                            <span className="block text-[10px] text-gray-400">{az && valAzionario > 0 ? fmtPct((r.valore / valAzionario) * 100) : '–'}</span>
-                          </td>
-                          <td className="table-td !py-1.5 text-center">
-                            {az ? (
-                              <button
-                                onClick={() => setEditId(r.asset.id ?? null)}
-                                className={`text-[10px] px-2 py-1 rounded-full border transition-colors whitespace-nowrap ${
-                                  ha ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                     : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
-                              >
-                                {ha ? fmtData(comp?.aggiornato_at ?? null) : 'Inserisci'}
-                              </button>
-                            ) : <span className="text-[10px] text-gray-300">n/d</span>}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Società + settori/paesi */}
-          <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-            <div className="card !p-0 overflow-hidden xl:col-span-3">
-              <div className="px-4 pt-3 pb-1.5">
-                <p className="text-xs font-semibold text-gray-800">Esposizione effettiva alle società (top 10)</p>
-                <p className="text-[11px] text-gray-400">
-                  Dettagliato {fmtEuro(lt.euroSocietaDettagliate)}
-                  {valAzionario > 0 && <> ({fmtPct((lt.euroSocietaDettagliate / valAzionario) * 100)} dell&apos;azionario)</>}; il resto è non dettagliato.
-                </p>
-              </div>
-              {top10.length === 0 ? (
-                <p className="text-xs text-gray-400 px-4 pb-4">Inserisci la composizione di almeno un ETF azionario per vedere l&apos;esposizione.</p>
-              ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+            {/* ===== Colonna principale: strumenti + società ===== */}
+            <div className="xl:col-span-2 space-y-4 min-w-0">
+              <div className="card !p-0 overflow-hidden">
+                <p className="text-[13px] font-semibold text-gray-800 px-4 pt-3 pb-1.5">Allocazione per strumento</p>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[520px]">
+                  <table className="w-full min-w-[600px]">
                     <thead>
                       <tr>
-                        <th className="table-th">Società</th>
-                        <th className="table-th text-right">Esposizione</th>
-                        <th className="table-th text-right">% patr.</th>
-                        <th className="table-th text-right">% azion.</th>
-                        <th className="table-th w-32">Per ETF</th>
+                        <th className="table-th">Strumento</th>
+                        <th className="table-th text-right">Qtà · PMC</th>
+                        <th className="table-th text-right">Valore</th>
+                        <th className="table-th text-right">+/–</th>
+                        <th className="table-th text-right">% patr. · azion.</th>
+                        <th className="table-th text-center">Dati</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {top10.map((s, i) => (
-                        <tr key={s.chiave}>
-                          <td className="table-td !py-1.5 text-xs font-medium text-gray-900">
-                            <span className="text-gray-400 mr-1.5">{i + 1}</span>{s.nome}
-                            {s.nEtf > 1 && (
-                              <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-accent2-50 text-accent2-700 border border-accent2-100">
-                                {s.nEtf} ETF
-                              </span>
-                            )}
-                          </td>
-                          <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums font-medium">{fmtEuro(s.euro)}</td>
-                          <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">{patrimonio > 0 ? fmtPct((s.euro / patrimonio) * 100, 2) : '–'}</td>
-                          <td className="table-td !py-1.5 text-right text-xs font-mono tabular-nums">{valAzionario > 0 ? fmtPct((s.euro / valAzionario) * 100, 2) : '–'}</td>
-                          <td className="table-td !py-1.5">
-                            <div className="flex h-2 rounded-full overflow-hidden bg-surface-100">
-                              {s.contributi.map(c => (
-                                <div
-                                  key={c.etfId}
-                                  style={{ width: `${(c.euro / s.euro) * 100}%`, backgroundColor: coloreEtf.get(c.etfId) ?? '#9ca3af' }}
-                                  title={`${c.etfNome}: ${fmtEuro(c.euro)}`}
+                      {righe.map(r => {
+                        const az = r.classe === 'azionario'
+                        const comp = r.asset.id ? compById.get(r.asset.id) : undefined
+                        const ha = !!comp && (comp.top_holdings.length + comp.settori.length + comp.paesi.length > 0)
+                        const colore = r.asset.id ? coloreEtf.get(r.asset.id) : undefined
+                        return (
+                          <tr key={r.asset.id ?? r.asset.asset}>
+                            <td className="table-td !py-1.5">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-3 h-3 rounded-sm shrink-0"
+                                  style={{ backgroundColor: colore ?? 'transparent', border: colore ? 'none' : '1px dashed #c3c9b0' }}
+                                  title={colore ? 'Colore usato nei grafici per ETF' : 'Non scomposto'}
                                 />
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                <div className="min-w-0">
+                                  <p className="text-[13px] font-medium text-gray-900 truncate">{r.asset.nome || r.asset.asset}</p>
+                                  <p className="text-[11px] text-gray-400 font-mono">{r.asset.ticker || '–'} · {r.asset.isin || '–'}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">
+                              {fmtQta(r.qta)}
+                              <span className="block text-[11px] text-gray-400">@ {fmtPrezzo(r.pmc)}</span>
+                            </td>
+                            <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums font-medium">
+                              {fmtEuro(r.valore)}
+                              <span className="block text-[11px] text-gray-400 font-normal">inv. {fmtEuro(r.investito)}</span>
+                            </td>
+                            <td className={`table-td !py-1.5 text-right text-[13px] font-mono tabular-nums ${r.plus >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                              {fmtEuro(r.plus)}{r.plusPct !== null && <span className="block text-[11px]">{fmtPctSegno(r.plusPct)}</span>}
+                            </td>
+                            <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">
+                              {patrimonio > 0 ? fmtPct((r.valore / patrimonio) * 100) : '–'}
+                              <span className="block text-[11px] text-gray-400">{az && valAzionario > 0 ? fmtPct((r.valore / valAzionario) * 100) : '–'}</span>
+                            </td>
+                            <td className="table-td !py-1.5 text-center">
+                              {az ? (
+                                <button
+                                  onClick={() => setEditId(r.asset.id ?? null)}
+                                  className={`text-[11px] px-2 py-1 rounded-full border transition-colors whitespace-nowrap ${
+                                    ha ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                       : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                                >
+                                  {ha ? fmtData(comp?.aggiornato_at ?? null) : 'Inserisci'}
+                                </button>
+                              ) : <span className="text-[11px] text-gray-300">n/d</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
-              )}
-              {etfAzionari.length > 0 && (
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-4 py-2 border-t border-surface-100">
-                  {etfAzionari.map(e => (
-                    <span key={e.id} className="flex items-center gap-1 text-[10px] text-gray-500">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: coloreEtf.get(e.id) }} />
-                      {e.nome}
-                    </span>
-                  ))}
+              </div>
+
+              <div className="card !p-0 overflow-hidden">
+                <div className="px-4 pt-3 pb-1.5">
+                  <p className="text-[13px] font-semibold text-gray-800">Esposizione effettiva alle società</p>
+                  <p className="text-[11px] text-gray-400">
+                    Dettagliato {fmtEuro(lt.euroSocietaDettagliate)}
+                    {valAzionario > 0 && <> ({fmtPct((lt.euroSocietaDettagliate / valAzionario) * 100)} dell&apos;azionario)</>}; il resto è non dettagliato.
+                    {' '}I colori nella barra corrispondono agli ETF della tabella sopra.
+                  </p>
                 </div>
-              )}
-              {multiEtf.length > 0 && (
-                <div className="px-4 py-2.5 border-t border-surface-100">
-                  <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Presenti in più ETF</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {multiEtf.map(s => (
-                      <span key={s.chiave} className="text-[11px] px-2 py-0.5 rounded-full bg-surface-50 border border-surface-200 text-gray-700">
-                        {s.nome} <span className="font-mono tabular-nums text-gray-400">{fmtEuro(s.euro)}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+                {lt.societa.length === 0 ? (
+                  <p className="text-[13px] text-gray-400 px-4 pb-4">Inserisci la composizione di almeno un ETF azionario per vedere l&apos;esposizione.</p>
+                ) : (
+                  <>
+                    <div className={`overflow-x-auto ${socEspanse ? 'max-h-[26rem] overflow-y-auto' : ''}`}>
+                      <table className="w-full min-w-[520px]">
+                        <thead className={socEspanse ? 'sticky top-0 bg-white z-10' : ''}>
+                          <tr>
+                            <th className="table-th">Società</th>
+                            <th className="table-th text-right">Esposizione</th>
+                            <th className="table-th text-right">% patr.</th>
+                            <th className="table-th text-right">% azion.</th>
+                            <th className="table-th w-32">Per ETF</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(socEspanse ? lt.societa : lt.societa.slice(0, 10)).map((s, i) => (
+                            <tr key={s.chiave}>
+                              <td className="table-td !py-1.5 text-[13px] font-medium text-gray-900">
+                                <span className="text-gray-400 mr-1.5 text-[11px] tabular-nums inline-block w-5">{i + 1}</span>{s.nome}
+                                {s.nEtf > 1 && (
+                                  <span className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded-full bg-accent2-50 text-accent2-700 border border-accent2-100">
+                                    {s.nEtf} ETF
+                                  </span>
+                                )}
+                              </td>
+                              <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums font-medium">{fmtEuro(s.euro)}</td>
+                              <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">{patrimonio > 0 ? fmtPct((s.euro / patrimonio) * 100, 2) : '–'}</td>
+                              <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">{valAzionario > 0 ? fmtPct((s.euro / valAzionario) * 100, 2) : '–'}</td>
+                              <td className="table-td !py-1.5">
+                                <div className="flex h-2.5 rounded-full overflow-hidden bg-surface-100">
+                                  {s.contributi.map(c => (
+                                    <div
+                                      key={c.etfId}
+                                      style={{ width: `${(c.euro / s.euro) * 100}%`, backgroundColor: coloreEtf.get(c.etfId) ?? '#9ca3af' }}
+                                      title={`${c.etfNome}: ${fmtEuro(c.euro)}`}
+                                    />
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {lt.societa.length > 10 && (
+                      <button
+                        onClick={() => setSocEspanse(v => !v)}
+                        className="w-full text-[13px] text-brand-700 hover:bg-surface-50 border-t border-surface-100 py-2 transition-colors"
+                      >
+                        {socEspanse ? 'Mostra solo le prime 10' : `Mostra altre ${lt.societa.length - 10} società`}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="card !p-4 xl:col-span-2">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-semibold text-gray-800">Esposizione per {vistaEsp === 'settori' ? 'settore' : 'paese'}</p>
-                <div className="inline-flex rounded-lg border border-surface-200 p-0.5 text-[11px]">
-                  {(['settori', 'paesi'] as const).map(v => (
-                    <button
-                      key={v} onClick={() => setVistaEsp(v)}
-                      className={`px-2.5 py-1 rounded-md capitalize ${vistaEsp === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}
-                    >{v}</button>
+            {/* ===== Colonna laterale: torta + settori/paesi ===== */}
+            <div className="space-y-4 min-w-0">
+              <div className="card !p-4">
+                <p className="text-[13px] font-semibold text-gray-800 mb-1">Allocazione per asset class</p>
+                <AllocazioneDonut fette={fetteClasse} centro={fmtEuro(patrimonio)} sub="patrimonio" altezza={160} />
+                <div className="mt-2 space-y-1">
+                  {fetteClasse.map(f => (
+                    <div key={f.nome} className="flex items-center gap-2 text-[13px]">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: f.colore }} />
+                      <span className="text-gray-600 flex-1">{f.nome}</span>
+                      <span className="font-mono tabular-nums text-gray-900">{fmtEuro(f.valore)}</span>
+                      <span className="font-mono tabular-nums text-gray-400 w-12 text-right">{patrimonio > 0 ? fmtPct((f.valore / patrimonio) * 100) : '–'}</span>
+                    </div>
                   ))}
                 </div>
               </div>
-              <p className="text-[11px] text-gray-400 mb-2">% sulla componente azionaria complessiva</p>
-              <BarreVoci
-                voci={vistaEsp === 'settori' ? lt.settori : lt.paesi}
-                baseAzionario={valAzionario}
-                totaleDettagliato={vistaEsp === 'settori' ? lt.euroSettoriDettagliati : lt.euroPaesiDettagliati}
-              />
+
+              <div className="card !p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[13px] font-semibold text-gray-800">Esposizione per {vistaEsp === 'settori' ? 'settore' : 'paese'}</p>
+                  <div className="inline-flex rounded-lg border border-surface-200 p-0.5 text-[13px]">
+                    {(['settori', 'paesi'] as const).map(v => (
+                      <button
+                        key={v} onClick={() => setVistaEsp(v)}
+                        className={`px-2.5 py-1 rounded-md capitalize ${vistaEsp === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}
+                      >{v}</button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400 mb-2">% sulla componente azionaria complessiva</p>
+                <BarreVoci
+                  voci={vistaEsp === 'settori' ? lt.settori : lt.paesi}
+                  baseAzionario={valAzionario}
+                  totaleDettagliato={vistaEsp === 'settori' ? lt.euroSettoriDettagliati : lt.euroPaesiDettagliati}
+                />
+              </div>
             </div>
           </div>
         </>

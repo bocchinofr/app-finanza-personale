@@ -32,7 +32,7 @@ export default function AllocazioneDonut({
       </ResponsiveContainer>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <span className="num-display text-base font-bold tabular-nums text-gray-900">{centro}</span>
-        {sub && <span className="text-[10px] text-gray-400">{sub}</span>}
+        {sub && <span className="text-[11px] text-gray-400">{sub}</span>}
       </div>
     </div>
   )

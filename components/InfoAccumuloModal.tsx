@@ -3,10 +3,10 @@ import { useState } from 'react'
 
 interface Props {
   ddMax: number
-  frazioneAPmc?: number
+  frazioneAPmc?: number // non più usato (mantenuto per compatibilità)
 }
 
-export default function InfoAccumuloModal({ ddMax, frazioneAPmc = 0.4 }: Props) {
+export default function InfoAccumuloModal({ ddMax }: Props) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -20,76 +20,37 @@ export default function InfoAccumuloModal({ ddMax, frazioneAPmc = 0.4 }: Props) 
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
-          onClick={() => setOpen(false)}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setOpen(false)}>
           <div
-            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-5"
+            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[85vh] overflow-y-auto p-5"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-900">Come si calcola l&apos;investimento consigliato</h3>
+              <h3 className="text-sm font-semibold text-gray-900">Quanto investire sui ribassi</h3>
               <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">✕</button>
             </div>
 
-            <div className="space-y-4 text-xs text-gray-600 leading-relaxed">
-              <p>
-                Questo calcolo si attiva solo se il tuo profilo è impostato su <strong>&ldquo;Contrarian (accumula sui crolli)&rdquo;</strong>.
-                Serve a suggerire quanto investire dalla riserva svincolata quando un asset scatta un alert, in due passaggi.
-              </p>
+            <ol className="space-y-3 text-xs text-gray-600 leading-relaxed list-decimal pl-4">
+              <li>
+                <strong className="text-gray-800">Budget.</strong> Liquidità e asset svincolati. Per ogni classe (azioni / obbligazioni)
+                si usa al massimo quanto manca al tuo peso target, diviso in parti uguali tra gli ETF scattati.
+              </li>
+              <li>
+                <strong className="text-gray-800">Quota sbloccata.</strong> Più l&apos;ETF scende dal massimo, più budget si sblocca:
+                ribasso ÷ DD max ({Math.round(ddMax * 100)}%). A DD max si usa tutto il budget dell&apos;ETF.
+              </li>
+              <li>
+                <strong className="text-gray-800">Limite PMC.</strong> Se l&apos;acquisto alzerebbe il PMC oltre il massimo che hai scelto,
+                l&apos;importo viene ridotto. Sotto il PMC non c&apos;è limite: l&apos;acquisto lo abbassa.
+              </li>
+            </ol>
 
-              <div>
-                <p className="font-semibold text-gray-800 mb-1">1. Quanta riserva spetta a ciascun asset</p>
-                <p>
-                  La riserva totale (asset e liquidità svincolati) viene divisa tra tutti gli asset che hanno almeno una
-                  soglia di alert attiva <strong>e la casella &ldquo;Accum.&rdquo; spuntata</strong> in Anagrafica (togliendola l&apos;asset resta in
-                  &ldquo;solo notifica&rdquo;: ricevi l&apos;avviso ma nessun importo né quota di budget). Non in parti uguali: chi ha impostato una <strong>soglia più bassa</strong> (es. -5%
-                  invece di -20%) segnala di voler accumulare prima, e riceve una fetta più grande. Il peso di ogni asset è
-                  proporzionale a <code className="bg-gray-100 px-1 rounded">1 / soglia%</code>.
-                </p>
-              </div>
-
-              <div>
-                <p className="font-semibold text-gray-800 mb-1">2. Quanta parte di quel budget sbloccare adesso</p>
-                <p>Il budget dell&apos;asset non viene mai investito tutto in un colpo. Si sblocca gradualmente in due fasi:</p>
-                <ul className="list-disc pl-4 mt-1 space-y-1">
-                  <li>
-                    <strong>Dal massimo (52 settimane) al PMC</strong> (prezzo medio di carico): mano a mano che il prezzo
-                    scende verso il tuo prezzo medio, si sblocca in modo lineare fino al <strong>{Math.round(frazioneAPmc * 100)}%</strong> del budget.
-                  </li>
-                  <li>
-                    <strong>Sotto il PMC</strong>: da lì in poi l&apos;asset è &ldquo;in perdita&rdquo; sul tuo costo medio, e la
-                    quota si sblocca più rapidamente (curva accelerata, non lineare) man mano che scende ancora — fino al 100%
-                    del budget quando il ribasso sotto il PMC raggiunge il <strong>DD max</strong> del tuo profilo (oggi {Math.round(ddMax * 100)}%).
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold text-gray-800 mb-1">Se scattano più soglie sullo stesso asset</p>
-                <p>
-                  Le soglie (dal massimo e nel mese) servono solo a <strong>far partire la notifica</strong>: l&apos;importo non dipende
-                  da quale scatta. Se scattano insieme, ricevi <strong>una sola riga per asset</strong> con tutte le soglie elencate e
-                  <strong> un unico importo</strong>, che <strong>non va sommato</strong>. Nel calcolo del budget conta la soglia
-                  più bassa tra quelle attive dell&apos;asset.
-                </p>
-              </div>
-
-              <div className="bg-surface-50 rounded-lg p-3">
-                <p className="font-semibold text-gray-800 mb-1">Esempio</p>
-                <p>
-                  Asset con budget €10.000, PMC a metà strada tra prezzo attuale e massimo. Se il prezzo tocca il PMC, sono
-                  sbloccati circa €{Math.round(frazioneAPmc * 10000).toLocaleString('it-IT')}. Se poi scende ancora fino al
-                  DD max sotto il PMC, si sbloccano i restanti €{Math.round((1 - frazioneAPmc) * 10000).toLocaleString('it-IT')} —
-                  ma non in modo lineare: gli ultimi punti percentuali di ribasso &ldquo;valgono&rdquo; più dei primi.
-                </p>
-              </div>
-
-              <p className="text-[11px] text-gray-400">
-                È un <strong>suggerimento</strong>, non un ordine automatico: l&apos;investimento resta sempre una tua scelta manuale.
-              </p>
-            </div>
+            <p className="text-xs text-gray-600 mt-3">
+              ETF con la stessa soglia possono avere importi diversi perché cambiano ribasso, PMC e classe: la riga sotto ogni importo mostra il motivo.
+            </p>
+            <p className="text-[11px] text-gray-400 mt-3">
+              Con più soglie sullo stesso asset l&apos;importo è uno solo (non si somma). È un suggerimento: decidi sempre tu.
+            </p>
           </div>
         </div>
       )}

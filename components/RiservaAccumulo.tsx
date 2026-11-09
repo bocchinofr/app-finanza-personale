@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { AssetPortafoglio, AlertSoglia, Liquidita, ContoFlag, statoAttuale, PROFILO_DINAMICO_LABEL } from '@/types'
-import { calcolaBudgetPerAsset, calcolaImportoConsigliato } from '@/lib/accumuloFormula'
+import { calcolaConsigli, type AssetScattato, type TargetAllocazione } from '@/lib/accumuloFormula'
 import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 
 type QuoteInfo = { price: number; high52: number | null; changeFromHigh: number | null; changeFromMonth: number | null }
@@ -14,6 +14,11 @@ interface Props {
   prezziAttuali: Record<string, QuoteInfo>
   behaviorLabel: string | null
   ddMax: number
+  targetAzioni?: number | null
+  targetObbligazioni?: number | null
+  targetLiquidita?: number | null
+  pmcMaxAumento?: number | null // %, es. 2 = max +2% sul PMC
+  onSaved?: () => void
 }
 
 function fmtEuro(n: number) {
@@ -33,12 +38,19 @@ function valoreAttualeAsset(a: AssetPortafoglio, prezzi: Record<string, QuoteInf
 // e si mostrano i riepiloghi/suggerimenti calcolati.
 export default function RiservaAccumulo({
   portafoglio, liquidita, soglie, prezziAttuali, behaviorLabel, ddMax,
+  targetAzioni, targetObbligazioni, targetLiquidita, pmcMaxAumento, onSaved,
 }: Props) {
   const supabase = createClient()
   const [contoFlags, setContoFlags] = useState<ContoFlag[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(true)
   const [savingConto, setSavingConto] = useState<string | null>(null)
+  const [tAz, setTAz] = useState<string>(targetAzioni != null ? String(targetAzioni) : '')
+  const [tOb, setTOb] = useState<string>(targetObbligazioni != null ? String(targetObbligazioni) : '')
+  const [tLq, setTLq] = useState<string>(targetLiquidita != null ? String(targetLiquidita) : '')
+  const [limPmc, setLimPmc] = useState<string>(pmcMaxAumento != null ? String(pmcMaxAumento) : '')
+  const [savingImp, setSavingImp] = useState(false)
+  const [msgImp, setMsgImp] = useState<string | null>(null)
 
   const profiloDinamico = behaviorLabel === PROFILO_DINAMICO_LABEL
 
@@ -114,52 +126,62 @@ export default function RiservaAccumulo({
     })
     .filter(x => x.asset && x.drawdown != null)
 
-  // Budget per asset: la riserva è divisa tra tutti gli asset con almeno una
-  // soglia attiva, pesando per l'aggressività della soglia più bassa impostata
-  // (soglia più bassa = si vuole iniziare ad accumulare prima = fetta maggiore).
-  const budgetPerAsset = useMemo(() => {
-    const sogliePerAsset = new Map<string, number[]>()
-    for (const s of soglie) {
-      if (!s.attivo || s.accumulo === false) continue
-      const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
-      arr.push(s.soglia_pct)
-      sogliePerAsset.set(s.portafoglio_id, arr)
-    }
-    return calcolaBudgetPerAsset(riservaTotale, sogliePerAsset)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [soglie, riservaTotale])
+  // Impostazioni: peso target per classe + limite PMC
+  const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(',', '.')))
+  const sommaTarget = (num(tAz) ?? 0) + (num(tOb) ?? 0) + (num(tLq) ?? 0)
+  const targetCompleto = num(tAz) != null && num(tOb) != null && num(tLq) != null
+  const target: TargetAllocazione | null = targetCompleto
+    ? { azioni: num(tAz) as number, obbligazioni: num(tOb) as number, liquidita: num(tLq) as number }
+    : null
+  const limitePmc = num(limPmc) != null ? (num(limPmc) as number) / 100 : null
 
-  // Importo consigliato: rampa lineare dal massimo al PMC, poi accelerazione
-  // convessa sotto il PMC (stessa formula usata nelle notifiche e nelle email).
-  // Una sola riga per asset: se scattano più soglie (dal massimo + nel mese)
-  // l'importo è unico, dipende solo da prezzo, massimo 52 sett., PMC e budget.
+  async function salvaImpostazioni() {
+    if (targetCompleto && Math.abs(sommaTarget - 100) > 0.01) {
+      setMsgImp('I pesi target devono sommare 100%')
+      return
+    }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    setSavingImp(true)
+    setMsgImp(null)
+    const { error } = await supabase.from('profili').update({
+      target_azioni_pct: num(tAz),
+      target_obbligazioni_pct: num(tOb),
+      target_liquidita_pct: num(tLq),
+      pmc_max_aumento_pct: num(limPmc),
+    }).eq('user_id', user.id)
+    setSavingImp(false)
+    setMsgImp(error ? 'Errore nel salvataggio' : '✓ Salvato')
+    if (!error) onSaved?.()
+  }
+
+  const liquiditaTotale = Object.values(ultimiSaldiPerConto).reduce((s, v) => s + v.saldo, 0)
+
+  // Consigli: una sola riga per asset scattato con "Accum." attivo (3 passi, vedi accumuloFormula.ts)
   const TIPO_LABEL: Record<string, string> = { storico: 'dal massimo', mensile: 'nel mese', acquisto: 'da acquisto' }
-  const suggerimenti = (() => {
-    const perAsset = new Map<string, typeof breachesConDrawdown>()
-    for (const b of breachesConDrawdown) {
-      const arr = perAsset.get(b.soglia.portafoglio_id) ?? []
-      arr.push(b)
-      perAsset.set(b.soglia.portafoglio_id, arr)
-    }
-    const out: { id: string; asset: AssetPortafoglio; importo: number; trigger: { tipo: string; drawdown: number }[] }[] = []
-    for (const [assetId, items] of perAsset.entries()) {
-      const { asset, quote } = items[0]
-      const budgetAsset = budgetPerAsset.get(assetId) ?? 0
-      if (!asset || !quote?.high52 || budgetAsset <= 0) continue
-      const importo = calcolaImportoConsigliato({
-        prezzoAttuale: quote.price,
-        prezzoMassimo: quote.high52,
-        pmc: statoAttuale(asset).prezzoCarico,
-        budgetAsset,
-        ddMaxSottoPmc: ddMax,
-      })
-      out.push({
-        id: assetId, asset, importo,
-        trigger: items.map(i => ({ tipo: i.soglia.tipo, drawdown: i.drawdown as number })),
-      })
-    }
-    return out
-  })()
+  const idAccumulo = new Set(soglie.filter(s => s.attivo && s.accumulo !== false).map(s => s.portafoglio_id))
+  const perAsset = new Map<string, typeof breachesConDrawdown>()
+  for (const b of breachesConDrawdown) {
+    if (!idAccumulo.has(b.soglia.portafoglio_id)) continue
+    perAsset.set(b.soglia.portafoglio_id, [...(perAsset.get(b.soglia.portafoglio_id) ?? []), b])
+  }
+  const scattati: AssetScattato[] = []
+  for (const [id, items] of perAsset.entries()) {
+    const { asset, quote } = items[0]
+    if (!asset || !quote) continue
+    const st = statoAttuale(asset)
+    const ribasso = quote.changeFromHigh != null ? Math.max(0, -quote.changeFromHigh) / 100
+      : quote.high52 ? Math.max(0, (quote.high52 - quote.price) / quote.high52) : 0
+    scattati.push({ id, classe: asset.classe_rischio, prezzo: quote.price, pmc: st.prezzoCarico, quantita: st.quantita, ribassoDalMax: ribasso })
+  }
+  const consigli = calcolaConsigli({
+    riserva: riservaTotale, valoreAzionario, valoreObbligazionario, liquiditaTotale,
+    target, ddMax, limitePmc, scattati,
+  })
+  const suggerimenti = [...perAsset.entries()].map(([id, items]) => ({
+    id, asset: items[0].asset as AssetPortafoglio, consiglio: consigli.get(id),
+    trigger: items.map(i => ({ tipo: i.soglia.tipo, drawdown: i.drawdown as number })),
+  })).filter(x => x.consiglio)
 
   const conti = [...new Set(liquidita.map(l => l.conto))]
 
@@ -206,23 +228,67 @@ export default function RiservaAccumulo({
       {profiloDinamico && suggerimenti.length > 0 && (
         <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 p-3">
           <div className="flex items-center gap-1.5 mb-2">
-            <p className="text-xs font-semibold text-brand-800">Investimento suggerito sulle soglie attive</p>
+            <p className="text-xs font-semibold text-brand-800">Quanto investire ora</p>
             <InfoAccumuloModal ddMax={ddMax} />
           </div>
-          <ul className="space-y-1">
-            {suggerimenti.map(({ id, asset, importo, trigger }) => (
+          <ul className="space-y-2">
+            {suggerimenti.map(({ id, asset, consiglio, trigger }) => consiglio && (
               <li key={id} className="text-xs text-brand-800">
-                <strong>{asset.nome || asset.descrizione || asset.ticker}</strong>
-                {' — '}{trigger.map(t => `${t.drawdown.toFixed(1)}% ${TIPO_LABEL[t.tipo] ?? t.tipo}`).join(' · ')}: investire circa <strong>{fmtEuro(importo)}</strong>
-                {trigger.length > 1 && <span className="text-brand-700/70"> (importo unico)</span>}
+                <div className="flex items-baseline justify-between gap-2">
+                  <span>
+                    <strong>{asset.nome || asset.descrizione || asset.ticker}</strong>
+                    <span className="text-brand-700/70"> · {trigger.map(t => `${t.drawdown.toFixed(1)}% ${TIPO_LABEL[t.tipo] ?? t.tipo}`).join(' · ')}</span>
+                  </span>
+                  <strong className="text-sm whitespace-nowrap">{fmtEuro(consiglio.importo)}</strong>
+                </div>
+                <p className="text-[11px] text-brand-700/80 mt-0.5">
+                  Budget {fmtEuro(consiglio.budgetClasse)} × {Math.round(consiglio.quota * 100)}% sbloccato dal ribasso
+                  {consiglio.limitatoDaPmc
+                    ? ` → ridotto per non alzare il PMC oltre +${limitePmc != null ? (limitePmc * 100).toFixed(1) : ''}%`
+                    : ''}
+                  {consiglio.nuovoPmc != null && ` · PMC ${consiglio.pmcAttuale.toFixed(2)} → ${consiglio.nuovoPmc.toFixed(2)}`}
+                </p>
               </li>
             ))}
           </ul>
-          <p className="text-[10px] text-brand-700/70 mt-2">
-            Budget diviso tra gli asset con soglia attiva e accumulo abilitato, in base all&apos;aggressività della soglia; l&apos;importo cresce mano a mano che il prezzo scende verso il PMC e accelera sotto il PMC.
-          </p>
+          {!target && (
+            <p className="text-[11px] text-amber-700 mt-2">
+              Imposta i pesi target qui sotto: senza, il budget non tiene conto di quanto ogni classe è sotto target.
+            </p>
+          )}
         </div>
       )}
+
+      <div className="mb-3 rounded-lg border border-gray-200 p-3">
+        <p className="text-xs font-semibold text-gray-700 mb-2">Le tue regole</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { label: 'Azioni target %', v: tAz, set: setTAz },
+            { label: 'Obbligaz. target %', v: tOb, set: setTOb },
+            { label: 'Liquidità target %', v: tLq, set: setTLq },
+            { label: 'Max aumento PMC %', v: limPmc, set: setLimPmc },
+          ].map(f => (
+            <label key={f.label} className="text-[11px] text-gray-500">
+              {f.label}
+              <input
+                type="number" inputMode="decimal" min={0} step="0.5" value={f.v}
+                onChange={e => f.set(e.target.value)}
+                className="mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-900"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 mt-2">
+          <button
+            onClick={salvaImpostazioni} disabled={savingImp}
+            className="px-3 py-1 rounded-md bg-brand-600 text-white text-xs font-medium disabled:opacity-50"
+          >
+            {savingImp ? 'Salvo…' : 'Salva'}
+          </button>
+          {targetCompleto && <span className={`text-[11px] ${Math.abs(sommaTarget - 100) > 0.01 ? 'text-red-600' : 'text-gray-400'}`}>Somma {sommaTarget.toFixed(0)}%</span>}
+          {msgImp && <span className="text-[11px] text-gray-500">{msgImp}</span>}
+        </div>
+      </div>
 
       {expanded && conti.length > 0 && (
         <div className="mt-3">

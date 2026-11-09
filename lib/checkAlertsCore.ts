@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { fetchQuote } from '@/lib/fetchQuote'
 import { sendAlertEmail, AlertEmailRiga } from '@/lib/sendEmail'
-import { calcolaBudgetPerAsset, calcolaImportoConsigliato } from '@/lib/accumuloFormula'
+import { calcolaConsigli, type TargetAllocazione, type AssetScattato } from '@/lib/accumuloFormula'
 
 const PROFILO_DINAMICO_LABEL = 'Contrarian (accumula sui crolli)'
 
@@ -40,6 +40,10 @@ interface ProfiloRow {
   behavior_label: string | null
   dd_max: number | null
   nome_visualizzato: string | null
+  target_azioni_pct: number | null
+  target_obbligazioni_pct: number | null
+  target_liquidita_pct: number | null
+  pmc_max_aumento_pct: number | null
 }
 
 export interface CheckAlertsResult {
@@ -97,7 +101,7 @@ export async function checkAlertsForUser(
   // --- Profilo "accumula sui crolli" + riserva svincolata (stessa logica di RiservaAccumulo.tsx) ---
   const { data: profiloData } = await admin
     .from('profili')
-    .select('behavior_label, dd_max, nome_visualizzato')
+    .select('behavior_label, dd_max, nome_visualizzato, target_azioni_pct, target_obbligazioni_pct, target_liquidita_pct, pmc_max_aumento_pct')
     .eq('user_id', userId)
     .single()
   const profilo = profiloData as ProfiloRow | null
@@ -127,6 +131,7 @@ export async function checkAlertsForUser(
   let riservaTotale = 0
   let valoreAzionario = 0
   let valoreObbligazionario = 0
+  let liquiditaTotale = 0
   if (profiloDinamico) {
     const { data: liquiditaData } = await admin.from('liquidita').select('mese, conto, saldo').eq('user_id', userId)
     const { data: contoFlagsData } = await admin.from('conto_flags').select('conto, svincolata').eq('user_id', userId)
@@ -147,6 +152,7 @@ export async function checkAlertsForUser(
       .filter(([conto]) => isContoSvincolato(conto))
       .reduce((s, [, v]) => s + v.saldo, 0)
     riservaTotale = riservaAsset + riservaLiquidita
+    liquiditaTotale = Object.values(ultimiSaldiPerConto).reduce((s, v) => s + v.saldo, 0)
 
     valoreAzionario = interoPortafoglio.filter(a => a.classe_rischio === 'azionario').reduce((s, a) => s + valoreAttualeAsset(a), 0)
     valoreObbligazionario = interoPortafoglio.filter(a => a.classe_rischio === 'obbligazionario').reduce((s, a) => s + valoreAttualeAsset(a), 0)
@@ -186,20 +192,36 @@ export async function checkAlertsForUser(
     return { nuoveNotifiche: 0, emailInviata: false }
   }
 
-  // Budget per asset: la riserva totale è divisa tra tutti gli asset con
-  // almeno una soglia attiva, pesando per l'aggressività della soglia più
-  // bassa impostata (soglia più bassa = vuole iniziare ad accumulare prima).
-  let budgetPerAsset = new Map<string, number>()
+  // Consigli di accumulo (3 passi: budget → quota rispetto al peso target → limite PMC).
+  // Si calcolano su tutti gli asset attualmente scattati con "Accum." attivo,
+  // così gli importi sono coerenti con quelli mostrati in app.
+  const target: TargetAllocazione | null =
+    profilo?.target_azioni_pct != null && profilo?.target_obbligazioni_pct != null && profilo?.target_liquidita_pct != null
+      ? { azioni: profilo.target_azioni_pct, obbligazioni: profilo.target_obbligazioni_pct, liquidita: profilo.target_liquidita_pct }
+      : null
+  const limitePmc = profilo?.pmc_max_aumento_pct != null ? profilo.pmc_max_aumento_pct / 100 : null
+  const idAccumulo = new Set(soglie.filter(x => x.accumulo !== false).map(x => x.portafoglio_id))
+  const scattati: AssetScattato[] = []
   if (profiloDinamico && riservaTotale > 0) {
-    const sogliePerAsset = new Map<string, number[]>()
-    for (const s of soglie) {
-      if (s.accumulo === false) continue // asset "solo notifica": nessuna quota di budget
-      const arr = sogliePerAsset.get(s.portafoglio_id) ?? []
-      arr.push(s.soglia_pct)
-      sogliePerAsset.set(s.portafoglio_id, arr)
+    const idInBreach = new Set<string>()
+    for (const sg of soglie) if (finalState.get(sg.id)?.inBreach) idInBreach.add(sg.portafoglio_id)
+    for (const id of idInBreach) {
+      if (!idAccumulo.has(id)) continue
+      const full = interoPortafoglio.find(x => x.id === id)
+      const qt = full?.ticker ? quotes[full.ticker] : undefined
+      if (!full || !qt) continue
+      const ribasso = qt.changeFromHigh != null ? Math.max(0, -qt.changeFromHigh) / 100
+        : qt.high52 ? Math.max(0, (qt.high52 - qt.price) / qt.high52) : 0
+      scattati.push({
+        id, classe: full.classe_rischio, prezzo: qt.price, pmc: pmcAsset(full),
+        quantita: full.quantita_attuale ?? full.quantita, ribassoDalMax: ribasso,
+      })
     }
-    budgetPerAsset = calcolaBudgetPerAsset(riservaTotale, sogliePerAsset)
   }
+  const consigli = calcolaConsigli({
+    riserva: riservaTotale, valoreAzionario, valoreObbligazionario, liquiditaTotale,
+    target, ddMax, limitePmc, scattati,
+  })
 
   // Conteggio attivazioni storiche per asset+tipo (per il testo "attivazione #N").
   // Una notifica può contenere più soglie dello stesso asset: si conta quindi
@@ -242,16 +264,9 @@ export async function checkAlertsForUser(
 
     let importoConsigliato: number | undefined
     let nuovoPesoAzionario: number | undefined
-    const quote = asset.ticker ? quotes[asset.ticker] : undefined
-    const budgetAsset = budgetPerAsset.get(portafoglioId) ?? 0
-    if (profiloDinamico && budgetAsset > 0 && quote?.high52) {
-      importoConsigliato = calcolaImportoConsigliato({
-        prezzoAttuale: quote.price,
-        prezzoMassimo: quote.high52,
-        pmc: pmcAsset(asset),
-        budgetAsset,
-        ddMaxSottoPmc: ddMax,
-      })
+    const consiglio = consigli.get(portafoglioId)
+    if (profiloDinamico && consiglio) {
+      importoConsigliato = consiglio.importo
       if (asset.classe_rischio === 'azionario' || asset.classe_rischio === 'obbligazionario') {
         const nuovoAzionario = valoreAzionario + (asset.classe_rischio === 'azionario' ? importoConsigliato : 0)
         const nuovoTotale = totaleClassificato + importoConsigliato

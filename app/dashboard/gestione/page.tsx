@@ -1547,6 +1547,11 @@ export default function DashboardPage() {
                   prezziAttuali={prezziAttuali}
                   behaviorLabel={profilo?.behavior_label ?? null}
                   ddMax={profilo?.dd_max ?? 0.30}
+                  targetAzioni={profilo?.target_azioni_pct ?? null}
+                  targetObbligazioni={profilo?.target_obbligazioni_pct ?? null}
+                  targetLiquidita={profilo?.target_liquidita_pct ?? null}
+                  pmcMaxAumento={profilo?.pmc_max_aumento_pct ?? null}
+                  onSaved={loadData}
                 />
               )}
 

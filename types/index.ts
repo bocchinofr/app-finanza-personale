@@ -106,6 +106,11 @@ export interface Profilo {
   // Drawdown massimo considerato nella formula di scaling per il capitale
   // suggerito in accumulo (default 0.30 = 30%)
   dd_max?: number
+  // Peso target per classe (%, somma 100) e limite di aumento del PMC per acquisto (%)
+  target_azioni_pct?: number | null
+  target_obbligazioni_pct?: number | null
+  target_liquidita_pct?: number | null
+  pmc_max_aumento_pct?: number | null
 }
 
 // Flag di svincolo per conto di liquidità: decoupled dalla riga mensile

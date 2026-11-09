@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MediaStorica, MESI, statoAttuale } from '@/types'
 import AnalisiPortafoglio from '@/components/portfolio/AnalisiPortafoglio'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
-import SimulatoreAccumulo from '@/components/SimulatoreAccumulo'
 import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
@@ -278,13 +277,13 @@ export default function DashboardPage() {
   const [globalSogliaMese, setGlobalSogliaMese] = useState(10)
   const [draftSoglie, setDraftSoglie] = useState<Record<string, DraftSoglia>>({})
   const [savingSoglie, setSavingSoglie] = useState(false)
+  const [simPrefill, setSimPrefill] = useState<{ nonce: number; strumentoId: string; importo: number } | null>(null)
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [bannerChiusuraDismissed, setBannerChiusuraDismissed] = useState(false)
 
   // Sezioni apribili/richiudibili del tab Portafoglio (toggle indipendenti)
   const [openSection, setOpenSection] = useState({
     riserva: false,
-    simulatore: false,
     storico: false,
     anagrafica: false,
   })
@@ -1311,6 +1310,8 @@ export default function DashboardPage() {
           portafoglio={portafoglio}
           prezziAttuali={prezziAttuali}
           liquidita={ultimaLiquidita?.total ?? 0}
+          prefill={simPrefill}
+          onPrefillConsumed={() => setSimPrefill(null)}
         />
       )}
 
@@ -1402,12 +1403,11 @@ export default function DashboardPage() {
                 const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
                 const sectionBtns: { key: keyof typeof openSection; label: string; sub: string; icon: string; badge?: boolean }[] = [
                   { key: 'riserva', label: 'Riserva accumulo', sub: 'Capitale svincolato', icon: '🛡️' },
-                  { key: 'simulatore', label: 'Simulatore accumulo', sub: 'Scenari sui ribassi', icon: '🧮' },
                   { key: 'storico', label: 'Storico prezzi', sub: 'e chiusura mese', icon: '📈', badge: chiusuraMancante },
                   { key: 'anagrafica', label: 'Anagrafica', sub: 'Asset e prezzi', icon: '📋' },
                 ]
                 return (
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 mb-6">
                     {sectionBtns.map(b => (
                       <button
                         key={b.key}
@@ -1552,16 +1552,7 @@ export default function DashboardPage() {
                   targetLiquidita={profilo?.target_liquidita_pct ?? null}
                   pmcMaxAumento={profilo?.pmc_max_aumento_pct ?? null}
                   onSaved={loadData}
-                />
-              )}
-
-              {openSection.simulatore && (
-                <SimulatoreAccumulo
-                  portafoglio={portafoglio}
-                  liquidita={liquidita}
-                  soglie={soglie}
-                  prezziAttuali={prezziAttuali}
-                  ddMax={profilo?.dd_max ?? 0.30}
+                  onSimula={(assetId, importo) => { setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
                 />
               )}
 

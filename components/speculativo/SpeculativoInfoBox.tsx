@@ -10,7 +10,7 @@ export default function SpeculativoInfoBox() {
     <>
       <button
         onClick={() => setOpen(true)}
-        aria-label="Come funziona il pannello Speculativo"
+        aria-label="Come funziona il pannello Short complementari"
         className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-300 text-gray-500 text-xs font-semibold hover:bg-gray-100 hover:text-gray-700 transition-colors"
       >
         i
@@ -34,9 +34,9 @@ export default function SpeculativoInfoBox() {
               <div>
                 <p className="font-semibold text-gray-800 mb-1">A cosa serve</p>
                 <p>
-                  Ti aiuta a decidere quanto capitale usare per una posizione short di breve periodo (settimane o
-                  mesi), finanziata solo con capitale libero, senza toccare i long di lungo termine. Mostra cosa
-                  succede al patrimonio se la posizione va in stop o in target.
+                  È solo una <strong>simulazione</strong>: non modifica il portafoglio. Ti aiuta a decidere quanto capitale
+                  libero usare per uno short di breve periodo che affianca i tuoi long. Mostra cosa succede al
+                  patrimonio se la posizione va in stop o in target.
                 </p>
               </div>
 

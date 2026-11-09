@@ -19,6 +19,7 @@ interface Props {
   targetLiquidita?: number | null
   pmcMaxAumento?: number | null // %, es. 2 = max +2% sul PMC
   onSaved?: () => void
+  onSimula?: (assetId: string, importo: number) => void
 }
 
 function fmtEuro(n: number) {
@@ -38,7 +39,7 @@ function valoreAttualeAsset(a: AssetPortafoglio, prezzi: Record<string, QuoteInf
 // e si mostrano i riepiloghi/suggerimenti calcolati.
 export default function RiservaAccumulo({
   portafoglio, liquidita, soglie, prezziAttuali, behaviorLabel, ddMax,
-  targetAzioni, targetObbligazioni, targetLiquidita, pmcMaxAumento, onSaved,
+  targetAzioni, targetObbligazioni, targetLiquidita, pmcMaxAumento, onSaved, onSimula,
 }: Props) {
   const supabase = createClient()
   const [contoFlags, setContoFlags] = useState<ContoFlag[]>([])
@@ -248,6 +249,14 @@ export default function RiservaAccumulo({
                     : ''}
                   {consiglio.nuovoPmc != null && ` · PMC ${consiglio.pmcAttuale.toFixed(2)} → ${consiglio.nuovoPmc.toFixed(2)}`}
                 </p>
+                {onSimula && consiglio.importo > 0 && (
+                  <button
+                    onClick={() => onSimula(id, consiglio.importo)}
+                    className="mt-1 text-[11px] font-medium text-brand-700 hover:underline"
+                  >
+                    Simula questo acquisto →
+                  </button>
+                )}
               </li>
             ))}
           </ul>

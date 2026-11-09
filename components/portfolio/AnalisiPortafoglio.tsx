@@ -20,6 +20,8 @@ interface Props {
   portafoglio: AssetPortafoglio[]
   prezziAttuali: Record<string, { price: number }>
   liquidita: number
+  prefill?: { nonce: number; strumentoId: string; importo: number } | null
+  onPrefillConsumed?: () => void
 }
 
 const COLORI_ETF = ['#3f6b4f', '#4a6fa1', '#c28b3c', '#8a6aa8', '#b5543f', '#5c8752', '#7a8794']
@@ -71,7 +73,7 @@ function BarreVoci({
   )
 }
 
-export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidita }: Props) {
+export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidita, prefill, onPrefillConsumed }: Props) {
   const supabase = createClient()
   const [vista, setVista] = useState<'situazione' | 'simulatore'>('situazione')
   const [vistaEsp, setVistaEsp] = useState<'settori' | 'paesi'>('settori')
@@ -117,6 +119,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
   }, [supabase])
 
   useEffect(() => { carica() }, [carica])
+  useEffect(() => { if (prefill) setVista('simulatore') }, [prefill])
 
   const righe: RigaAsset[] = useMemo(() => portafoglio.map(a => {
     const { quantita, prezzoCarico } = statoAttuale(a)
@@ -252,6 +255,8 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
           onNuovo={() => setNuovoAperto(true)}
           onEditComposizione={id => setEditId(id)}
           onElimina={eliminaStrumento}
+          prefill={prefill}
+          onPrefillConsumed={onPrefillConsumed}
         />
       ) : (
         <>

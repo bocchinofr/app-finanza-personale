@@ -18,6 +18,9 @@ interface Props {
   onNuovo: () => void
   onEditComposizione: (id: string) => void
   onElimina: (id: string) => void
+  /** Acquisto precompilato (es. dal consiglio di accumulo). nonce cambia a ogni richiesta. */
+  prefill?: { nonce: number; strumentoId: string; importo: number } | null
+  onPrefillConsumed?: () => void
 }
 
 const MODI_VENDITA: [ModoOperazione, string][] = [
@@ -101,7 +104,7 @@ function unisci(
 }
 
 export default function SimulatoreRiallocazione({
-  strumentiReali, composizioni, liquidita, onNuovo, onEditComposizione, onElimina,
+  strumentiReali, composizioni, liquidita, onNuovo, onEditComposizione, onElimina, prefill, onPrefillConsumed,
 }: Props) {
   const [ops, setOps] = useState<Operazione[]>([])
   const [liqExtra, setLiqExtra] = useState(0)
@@ -158,6 +161,20 @@ export default function SimulatoreRiallocazione({
     [strumenti, liquidita, ops, composizioni, liqExtra]
   )
   const dettPerId = new Map(sim.dettagli.map(d => [d.op.id, d]))
+
+  // Acquisto precompilato dal consiglio di accumulo
+  const ultimoNonce = useRef<number | null>(null)
+  useEffect(() => {
+    if (!prefill || ultimoNonce.current === prefill.nonce) return
+    ultimoNonce.current = prefill.nonce
+    if (!strumentiReali.some(s => s.id === prefill.strumentoId)) return
+    contatore.current += 1
+    setOps(prev => [...prev, {
+      id: `op${contatore.current}`, tipo: 'acquista', strumentoId: prefill.strumentoId,
+      modo: 'importo', valore: Math.round(prefill.importo), aliquota: 26, costi: 0,
+    }])
+    onPrefillConsumed?.()
+  }, [prefill, strumentiReali, onPrefillConsumed])
 
   function aggiungi(tipo: 'vendi' | 'acquista') {
     const base = tipo === 'vendi' ? strumentiReali.find(s => s.qta > 0 && s.classe === 'azionario') ?? strumentiReali.find(s => s.qta > 0) : strumenti[0]
@@ -406,6 +423,9 @@ export default function SimulatoreRiallocazione({
                                   <span className="text-gray-800">{d.strumento.nome}</span>
                                   <span className="block text-[11px] text-gray-400 font-mono">
                                     {fmtQta(d.qta)} q.{d.op.tipo === 'vendi' && <> · PMC {fmtPrezzo(d.pmc)}</>}
+                                    {d.op.tipo === 'acquista' && d.strumento.qta > 0 && d.qta > 0 && (
+                                      <> · PMC {fmtPrezzo(d.strumento.pmc)} → {fmtPrezzo((d.strumento.qta * d.strumento.pmc + d.lordo) / (d.strumento.qta + d.qta))}</>
+                                    )}
                                   </span>
                                 </td>
                                 <td className="table-td !py-1.5 text-right text-[13px] font-mono tabular-nums">{fmtEuro(d.lordo)}</td>

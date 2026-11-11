@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
+import { RISK_QUESTIONS } from '@/lib/riskQuestionnaire'
 
 interface AdminStat {
   user_id: string
@@ -18,6 +19,12 @@ interface AdminStat {
   has_pension_fund: boolean | null
   pension_fund_tfr: boolean | null
   pension_fund_type: string | null
+}
+
+interface AdminDetail {
+  risk_answers: Record<string, number> | null
+  behavior_label: string | null
+  financial_goals_note: string | null
 }
 
 const EMPLOYMENT_LABELS: Record<string, string> = {
@@ -61,6 +68,22 @@ export default function AdminPage() {
   const [error, setError] = useState('')
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [selectedUser, setSelectedUser] = useState<AdminStat | null>(null)
+  const [detail, setDetail] = useState<AdminDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  useEffect(() => {
+    if (!selectedUser) { setDetail(null); return }
+    let cancelled = false
+    setDetailLoading(true)
+    supabase.rpc('get_admin_user_detail', { p_user_id: selectedUser.user_id })
+      .then(({ data }) => {
+        if (cancelled) return
+        const row = Array.isArray(data) ? data[0] : data
+        setDetail(row ?? null)
+        setDetailLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [selectedUser?.user_id])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -212,7 +235,7 @@ export default function AdminPage() {
 
       {/* ===== PANNELLO LATERALE PROFILO ===== */}
       {selectedUser && (
-        <div className="w-80 shrink-0">
+        <div className="w-96 shrink-0">
           <div className="card sticky top-6">
             {/* Header pannello */}
             <div className="flex items-start justify-between mb-4">
@@ -262,6 +285,9 @@ export default function AdminPage() {
               ) : (
                 <p className="text-xs text-gray-400">Non specificati</p>
               )}
+              {detail?.financial_goals_note && (
+                <p className="text-xs text-gray-600 mt-2 italic">“{detail.financial_goals_note}”</p>
+              )}
             </div>
 
             {/* Sezione: Profilo rischio */}
@@ -278,6 +304,24 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <p className="text-xs text-gray-400">Non compilato</p>
+              )}
+              {detailLoading && <p className="text-xs text-gray-300 mt-2">Caricamento risposte…</p>}
+              {detail?.risk_answers && (
+                <div className="mt-3 space-y-2.5">
+                  {detail.behavior_label && (
+                    <DetailRow label="Comportamento nei crolli" value={detail.behavior_label} />
+                  )}
+                  {RISK_QUESTIONS.map(q => {
+                    const v = detail.risk_answers?.[q.id]
+                    const opt = q.options.find(o => o.value === v)
+                    return (
+                      <div key={q.id} className="rounded-lg bg-surface-50 px-2.5 py-2">
+                        <p className="text-[11px] text-gray-400 leading-snug">{q.label}</p>
+                        <p className="text-xs text-gray-800 font-medium mt-0.5">{opt?.label ?? '–'}</p>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
 

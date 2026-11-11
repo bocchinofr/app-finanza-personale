@@ -2,79 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 
-// Domande del questionario, ciascuna assegnata a una dimensione del profilo:
-// - 'risk'          -> tolleranza al rischio / oscillazioni (score complessivo)
-// - 'behavior'      -> reazione comportamentale ai crolli di mercato
-// - 'diversification' -> preferenza di concentrazione vs diversificazione
-// - 'allocation'    -> mix preferito azionario / obbligazionario
-type RiskDimension = 'risk' | 'behavior' | 'diversification' | 'allocation'
-
-const RISK_QUESTIONS: { id: string; label: string; dimension: RiskDimension; options: { value: number; label: string }[] }[] = [
-  {
-    id: 'horizon',
-    label: 'Qual è il tuo orizzonte temporale per gli investimenti?',
-    dimension: 'risk',
-    options: [
-      { value: 20, label: 'Breve termine (< 3 anni)' },
-      { value: 50, label: 'Medio termine (3-10 anni)' },
-      { value: 80, label: 'Lungo termine (> 10 anni)' },
-    ]
-  },
-  {
-    id: 'lossTolerance',
-    label: 'Quanta oscillazione temporanea del portafoglio sei disposto a tollerare per rendimenti più alti?',
-    dimension: 'risk',
-    options: [
-      { value: 10, label: 'Nessuna: preferisco stabilità anche con rendimenti bassi' },
-      { value: 40, label: 'Moderata: accetto oscillazioni del 10-15%' },
-      { value: 70, label: 'Alta: accetto oscillazioni del 20-30%' },
-      { value: 95, label: 'Molto alta: accetto oscillazioni anche superiori al 30%' },
-    ]
-  },
-  {
-    id: 'reaction',
-    label: 'Come reagiresti a un crollo del 20% del mercato?',
-    dimension: 'behavior',
-    options: [
-      { value: 5, label: 'Venderei subito per fermare le perdite' },
-      { value: 40, label: 'Aspetterei senza fare nulla' },
-      { value: 70, label: 'Continuerei i versamenti programmati come da piano' },
-      { value: 95, label: 'Approfitterei per investire di più (accumulo sui crolli)' },
-    ]
-  },
-  {
-    id: 'diversification',
-    label: 'Preferisci un portafoglio molto diversificato o concentrato su poche scelte convinte?',
-    dimension: 'diversification',
-    options: [
-      { value: 15, label: 'Concentrato su poche posizioni ad alta convinzione' },
-      { value: 55, label: 'Bilanciato: poche posizioni principali + satelliti' },
-      { value: 95, label: 'Molto diversificato: tanti asset, settori e aree geografiche' },
-    ]
-  },
-  {
-    id: 'allocation',
-    label: 'Se potessi scegliere liberamente il mix, quale preferiresti?',
-    dimension: 'allocation',
-    options: [
-      { value: 10, label: 'Prevalentemente obbligazionario / liquidità' },
-      { value: 35, label: 'Prudente: più obbligazioni che azioni' },
-      { value: 60, label: 'Bilanciato: metà azioni, metà obbligazioni' },
-      { value: 80, label: 'Dinamico: più azioni che obbligazioni' },
-      { value: 100, label: 'Prevalentemente azionario' },
-    ]
-  },
-  {
-    id: 'knowledge',
-    label: 'Come valuti la tua conoscenza finanziaria?',
-    dimension: 'risk',
-    options: [
-      { value: 20, label: 'Base (solo conto corrente e risparmio)' },
-      { value: 50, label: 'Intermedia (fondi, obbligazioni, azioni)' },
-      { value: 90, label: 'Avanzata (asset allocation, derivati, mercati)' },
-    ]
-  },
-]
+import { RISK_QUESTIONS, type RiskDimension } from '@/lib/riskQuestionnaire'
 
 function getRiskLabel(score: number): string {
   if (score <= 30) return 'Conservativo'
@@ -130,6 +58,7 @@ export default function ProfiloPage() {
   const [birthDate, setBirthDate] = useState('')
   const [employmentStatus, setEmploymentStatus] = useState('')
   const [financialGoals, setFinancialGoals] = useState<string[]>([])
+  const [goalsNote, setGoalsNote] = useState('')
   
   // Fondo pensione
   const [hasPensionFund, setHasPensionFund] = useState<boolean>(false)
@@ -157,6 +86,7 @@ export default function ProfiloPage() {
         setBirthDate(data.birth_date ?? '')
         setEmploymentStatus(data.employment_status ?? '')
         setFinancialGoals(data.financial_goals ?? [])
+        setGoalsNote(data.financial_goals_note ?? '')
         setHasPensionFund(data.has_pension_fund ?? false)
         setPensionFundTfr(data.pension_fund_tfr ?? false)
         setPensionFundType(data.pension_fund_type ?? '')
@@ -238,6 +168,7 @@ export default function ProfiloPage() {
           birth_date: birthDate || null,
           employment_status: employmentStatus || null,
           financial_goals: financialGoals,
+          financial_goals_note: goalsNote.trim() || null,
           has_pension_fund: hasPensionFund,
           pension_fund_tfr: hasPensionFund ? pensionFundTfr : false,
           pension_fund_type: hasPensionFund ? pensionFundType : null,
@@ -269,9 +200,11 @@ export default function ProfiloPage() {
 
       <form onSubmit={handleSave}>
         {/* Sezioni ad espansione, affiancate in griglia per non sprecare larghezza */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-start">
+          {/* Colonna sinistra: dati personali, obiettivi, pensione */}
+          <div className="space-y-4">
           {/* --- Dati personali --- */}
-          <div className="card p-0 overflow-hidden self-start">
+          <div className="card p-0 overflow-hidden">
             <button
               type="button"
               onClick={() => toggleSection('personali')}
@@ -319,90 +252,8 @@ export default function ProfiloPage() {
             )}
           </div>
 
-          {/* --- Profilo di rischio (span pieno: contiene più campi) --- */}
-          <div className="card p-0 overflow-hidden lg:col-span-2 self-start">
-            <button
-              type="button"
-              onClick={() => toggleSection('rischio')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
-            >
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <span className="text-base">📈</span> Profilo di rischio
-              </h2>
-              <span className={`text-gray-400 text-xs transition-transform ${openSections.has('rischio') ? 'rotate-180' : ''}`}>▾</span>
-            </button>
-            {openSections.has('rischio') && (
-              <div className="px-5 pb-5 space-y-4 max-h-[70vh] overflow-y-auto">
-            <p className="text-xs text-gray-400">Rispondi alle domande per calcolare il tuo profilo.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {RISK_QUESTIONS.map((q) => (
-              <div key={q.id} className="space-y-1">
-                <label className="text-xs font-medium text-gray-600">{q.label}</label>
-                <select 
-                  className="input text-sm" 
-                  value={riskAnswers[q.id] ?? ''} 
-                  onChange={(e) => handleRiskChange(q.id, Number(e.target.value))}
-                >
-                  <option value="">Seleziona...</option>
-                  {q.options.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-            </div>
-
-            {Object.keys(riskAnswers).length === RISK_QUESTIONS.length && (() => {
-              const result = calculateRiskProfile()
-              const equityPct = result.equityPct ?? 0
-              const bondPct = 100 - equityPct
-              return (
-                <div className="mt-2 space-y-3">
-                  <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-center">
-                    <p className="text-xs text-brand-700">Il tuo profilo complessivo:</p>
-                    <p className="text-lg font-bold text-brand-900">{result.label}</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="rounded-lg border border-surface-200 p-2.5">
-                      <p className="text-[11px] text-gray-400 mb-0.5">Comportamento nei crolli</p>
-                      <p className="text-sm font-semibold text-gray-900">{result.behaviorLabel}</p>
-                    </div>
-                    <div className="rounded-lg border border-surface-200 p-2.5">
-                      <p className="text-[11px] text-gray-400 mb-0.5">Diversificazione preferita</p>
-                      <p className="text-sm font-semibold text-gray-900">{result.diversificationLabel}</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-surface-200 p-2.5">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-[11px] text-gray-400">Mix preferito ({result.allocationLabel})</p>
-                      <p className="text-[11px] text-gray-400">{equityPct}% az. / {bondPct}% obbl.</p>
-                    </div>
-                    <div className="h-2.5 w-full rounded-full bg-surface-100 overflow-hidden flex">
-                      <div className="h-full bg-brand-600" style={{ width: `${equityPct}%` }} />
-                      <div className="h-full bg-blue-200" style={{ width: `${bondPct}%` }} />
-                    </div>
-                    <div className="flex justify-between mt-1 text-[10px] text-gray-400">
-                      <span>Azionario</span>
-                      <span>Obbligazionario</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })()}
-            {riskLabel && Object.keys(riskAnswers).length === 0 && (
-              <div className="mt-2 p-3 bg-surface-50 rounded-lg text-center">
-                <p className="text-xs text-gray-500">Profilo salvato: <strong>{riskLabel}</strong></p>
-                <p className="text-xs text-gray-400">Modifica le risposte per ricalcolarlo.</p>
-              </div>
-            )}
-              </div>
-            )}
-          </div>
-
           {/* --- Obiettivi finanziari --- */}
-          <div className="card p-0 overflow-hidden self-start">
+          <div className="card p-0 overflow-hidden">
             <button
               type="button"
               onClick={() => toggleSection('obiettivi')}
@@ -432,12 +283,23 @@ export default function ProfiloPage() {
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-1.5">Seleziona uno o più obiettivi principali.</p>
+              <div className="mt-4">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Altro obiettivo (facoltativo)</label>
+                <input
+                  value={goalsNote}
+                  onChange={e => setGoalsNote(e.target.value.slice(0, 120))}
+                  maxLength={120}
+                  className="input"
+                  placeholder="Es. Aprire un'attività, sabbatico nel 2030…"
+                />
+                <p className="text-[11px] text-gray-400 mt-1 text-right">{goalsNote.length}/120</p>
+              </div>
               </div>
             )}
           </div>
 
           {/* --- Fondo pensione --- */}
-          <div className="card p-0 overflow-hidden self-start">
+          <div className="card p-0 overflow-hidden">
             <button
               type="button"
               onClick={() => toggleSection('pensione')}
@@ -529,6 +391,92 @@ export default function ProfiloPage() {
               )}
               </div>
             )}
+          </div>
+          </div>
+
+          {/* Colonna destra: profilo di rischio */}
+          <div>
+          {/* --- Profilo di rischio (span pieno: contiene più campi) --- */}
+          <div className="card p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleSection('rischio')}
+              className="w-full flex items-center justify-between px-5 py-4 text-left"
+            >
+              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <span className="text-base">📈</span> Profilo di rischio
+              </h2>
+              <span className={`text-gray-400 text-xs transition-transform ${openSections.has('rischio') ? 'rotate-180' : ''}`}>▾</span>
+            </button>
+            {openSections.has('rischio') && (
+              <div className="px-5 pb-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <p className="text-xs text-gray-400">Rispondi alle domande per calcolare il tuo profilo.</p>
+            <div className="grid grid-cols-1 gap-3">
+            {RISK_QUESTIONS.map((q) => (
+              <div key={q.id} className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">{q.label}</label>
+                <select 
+                  className="input text-sm" 
+                  value={riskAnswers[q.id] ?? ''} 
+                  onChange={(e) => handleRiskChange(q.id, Number(e.target.value))}
+                >
+                  <option value="">Seleziona...</option>
+                  {q.options.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            </div>
+
+            {Object.keys(riskAnswers).length === RISK_QUESTIONS.length && (() => {
+              const result = calculateRiskProfile()
+              const equityPct = result.equityPct ?? 0
+              const bondPct = 100 - equityPct
+              return (
+                <div className="mt-2 space-y-3">
+                  <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-center">
+                    <p className="text-xs text-brand-700">Il tuo profilo complessivo:</p>
+                    <p className="text-lg font-bold text-brand-900">{result.label}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="rounded-lg border border-surface-200 p-2.5">
+                      <p className="text-[11px] text-gray-400 mb-0.5">Comportamento nei crolli</p>
+                      <p className="text-sm font-semibold text-gray-900">{result.behaviorLabel}</p>
+                    </div>
+                    <div className="rounded-lg border border-surface-200 p-2.5">
+                      <p className="text-[11px] text-gray-400 mb-0.5">Diversificazione preferita</p>
+                      <p className="text-sm font-semibold text-gray-900">{result.diversificationLabel}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-surface-200 p-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[11px] text-gray-400">Mix preferito ({result.allocationLabel})</p>
+                      <p className="text-[11px] text-gray-400">{equityPct}% az. / {bondPct}% obbl.</p>
+                    </div>
+                    <div className="h-2.5 w-full rounded-full bg-surface-100 overflow-hidden flex">
+                      <div className="h-full bg-brand-600" style={{ width: `${equityPct}%` }} />
+                      <div className="h-full bg-blue-200" style={{ width: `${bondPct}%` }} />
+                    </div>
+                    <div className="flex justify-between mt-1 text-[10px] text-gray-400">
+                      <span>Azionario</span>
+                      <span>Obbligazionario</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+            {riskLabel && Object.keys(riskAnswers).length === 0 && (
+              <div className="mt-2 p-3 bg-surface-50 rounded-lg text-center">
+                <p className="text-xs text-gray-500">Profilo salvato: <strong>{riskLabel}</strong></p>
+                <p className="text-xs text-gray-400">Modifica le risposte per ricalcolarlo.</p>
+              </div>
+            )}
+              </div>
+            )}
+          </div>
           </div>
         </div>
 

@@ -4,6 +4,8 @@
 // Regola di fondo: nessun dato viene inventato o completato. Quello che non è
 // dettagliato resta "non dettagliato" e la copertura è sempre esplicita.
 
+import { normalizzaSettore, normalizzaPaese } from '@/lib/normalizzaNomi'
+
 export interface VocePeso {
   nome: string
   peso: number // percentuale 0-100 all'interno dell'ETF
@@ -120,79 +122,13 @@ export function normalizzaSocieta(nome: string): string {
   return parole.join(' ') || nome.toLowerCase().trim()
 }
 
-const SINONIMI_SETTORI: Record<string, string> = {
-  'technology': 'Information Technology',
-  'information technology': 'Information Technology',
-  'tecnologia': 'Information Technology',
-  'tecnologia dell informazione': 'Information Technology',
-  'financials': 'Financials',
-  'financial services': 'Financials',
-  'finanza': 'Financials',
-  'finanziari': 'Financials',
-  'health care': 'Health Care',
-  'healthcare': 'Health Care',
-  'salute': 'Health Care',
-  'sanita': 'Health Care',
-  'consumer discretionary': 'Consumer Discretionary',
-  'consumer cyclical': 'Consumer Discretionary',
-  'beni di consumo ciclici': 'Consumer Discretionary',
-  'consumer staples': 'Consumer Staples',
-  'consumer defensive': 'Consumer Staples',
-  'beni di consumo difensivi': 'Consumer Staples',
-  'communication services': 'Communication Services',
-  'telecommunication': 'Communication Services',
-  'telecommunications': 'Communication Services',
-  'comunicazioni': 'Communication Services',
-  'materials': 'Materials',
-  'basic materials': 'Materials',
-  'materiali': 'Materials',
-  'industrials': 'Industrials',
-  'industriali': 'Industrials',
-  'energy': 'Energy',
-  'energia': 'Energy',
-  'utilities': 'Utilities',
-  'servizi di pubblica utilita': 'Utilities',
-  'real estate': 'Real Estate',
-  'immobiliare': 'Real Estate',
-}
-
-const SINONIMI_PAESI: Record<string, string> = {
-  'usa': 'United States',
-  'us': 'United States',
-  'united states': 'United States',
-  'united states of america': 'United States',
-  'stati uniti': 'United States',
-  'uk': 'United Kingdom',
-  'united kingdom': 'United Kingdom',
-  'regno unito': 'United Kingdom',
-  'giappone': 'Japan',
-  'japan': 'Japan',
-  'francia': 'France',
-  'germania': 'Germany',
-  'svizzera': 'Switzerland',
-  'canada': 'Canada',
-  'australia': 'Australia',
-  'cina': 'China',
-  'italia': 'Italy',
-  'paesi bassi': 'Netherlands',
-  'olanda': 'Netherlands',
-  'taiwan': 'Taiwan',
-  'india': 'India',
-  'corea del sud': 'South Korea',
-}
-
-function senzaAccenti(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-}
-
+// Settori e paesi: nomi unificati in italiano (vedi lib/normalizzaNomi.ts).
 export function chiaveSettore(nome: string): string {
-  const k = senzaAccenti(nome.toLowerCase()).replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim()
-  return SINONIMI_SETTORI[k] ?? nome.trim()
+  return normalizzaSettore(nome).nome
 }
 
 export function chiavePaese(nome: string): string {
-  const k = senzaAccenti(nome.toLowerCase()).replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim()
-  return SINONIMI_PAESI[k] ?? nome.trim()
+  return normalizzaPaese(nome).nome
 }
 
 // ---------- Aggregazione look-through ----------
@@ -235,6 +171,7 @@ export interface RisultatoLookthrough {
   euroSocietaDettagliate: number
   euroSettoriDettagliati: number
   euroPaesiDettagliati: number
+  nonRiconosciuti: { settori: string[]; paesi: string[] } // nomi che non si è riusciti a unificare
 }
 
 function sommaPesi(v: VocePeso[]): number {
@@ -255,6 +192,8 @@ export function calcolaLookthrough(
   let euroSocietaDettagliate = 0
   let euroSettoriDettagliati = 0
   let euroPaesiDettagliati = 0
+  const nrSettori = new Set<string>()
+  const nrPaesi = new Set<string>()
 
   const aggiungi = (
     mappa: Map<string, EsposizioneVoce>, chiave: string, nome: string, e: PosizioneEtf, euro: number,
@@ -287,13 +226,17 @@ export function calcolaLookthrough(
     }
     for (const s of c.settori) {
       const euro = (e.valore * s.peso) / 100
-      const nome = chiaveSettore(s.nome)
+      const ns = normalizzaSettore(s.nome)
+      if (!ns.riconosciuto) nrSettori.add(ns.nome)
+      const nome = ns.nome
       aggiungi(settori, nome, nome, e, euro)
       euroSettoriDettagliati += euro
     }
     for (const p of c.paesi) {
       const euro = (e.valore * p.peso) / 100
-      const nome = chiavePaese(p.nome)
+      const np = normalizzaPaese(p.nome)
+      if (!np.riconosciuto) nrPaesi.add(np.nome)
+      const nome = np.nome
       aggiungi(paesi, nome, nome, e, euro)
       euroPaesiDettagliati += euro
     }
@@ -318,5 +261,6 @@ export function calcolaLookthrough(
     euroSocietaDettagliate,
     euroSettoriDettagliati,
     euroPaesiDettagliati,
+    nonRiconosciuti: { settori: [...nrSettori], paesi: [...nrPaesi] },
   }
 }

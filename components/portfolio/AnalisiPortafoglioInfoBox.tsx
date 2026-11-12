@@ -47,7 +47,7 @@ export default function AnalisiPortafoglioInfoBox() {
                   portafoglio; i prezzi arrivano da Yahoo Finance. La composizione di ogni ETF (prime 10
                   partecipazioni, settori, paesi) la incolli tu con il pulsante <strong>Dati</strong> accanto allo
                   strumento, copiandola da justETF o dal sito dell&apos;emittente. Il formato è libero: nome e peso
-                  sulla stessa riga o su righe consecutive, con virgola o punto decimale.
+                  sulla stessa riga o su righe consecutive, con virgola o punto decimale. Settori e paesi vengono unificati in automatico in italiano (es. IT, Technology e Information Technology diventano Tecnologia dell&apos;informazione; US, USA e United States diventano Stati Uniti). Se un nome non viene riconosciuto lo vedi segnalato.
                 </p>
               </div>
 

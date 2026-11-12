@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ComposizioneEtf, VocePeso, parseIncolla } from '@/lib/portfolioLookthrough'
+import { normalizzaSettore, normalizzaPaese } from '@/lib/normalizzaNomi'
 
 interface Props {
   etfNome: string
@@ -16,11 +17,25 @@ const aTesto = (v: VocePeso[] | undefined) =>
   (v ?? []).map(x => `${x.nome}\t${String(x.peso).replace('.', ',')}%`).join('\n')
 
 function Blocco({
-  titolo, aiuto, valore, onChange, attesaMax,
+  titolo, aiuto, valore, onChange, attesaMax, tipo,
 }: {
   titolo: string; aiuto: string; valore: string; onChange: (v: string) => void; attesaMax: number
+  tipo?: 'settori' | 'paesi'
 }) {
   const p = useMemo(() => parseIncolla(valore), [valore])
+  // Anteprima unificazione nomi: solo righe cambiate e righe non riconosciute.
+  const nomi = useMemo(() => {
+    if (!tipo) return { cambiati: [] as [string, string][], ignoti: [] as string[] }
+    const norm = tipo === 'settori' ? normalizzaSettore : normalizzaPaese
+    const cambiati: [string, string][] = []
+    const ignoti: string[] = []
+    for (const v of p.voci) {
+      const r = norm(v.nome)
+      if (!r.riconosciuto) ignoti.push(r.nome)
+      else if (r.nome !== v.nome.trim()) cambiati.push([v.nome.trim(), r.nome])
+    }
+    return { cambiati, ignoti }
+  }, [p.voci, tipo])
   const troppoAlta = p.somma > 100.5
   const eccesso = p.voci.length > attesaMax
   return (
@@ -50,6 +65,21 @@ function Blocco({
         {troppoAlta && <span className="text-red-600 font-medium">Somma oltre 100%: controlla i pesi</span>}
         {eccesso && !troppoAlta && <span className="text-gray-400">Più voci del previsto: va bene, vengono salvate tutte</span>}
       </div>
+      {nomi.cambiati.length > 0 && (
+        <p className="mt-1 text-[11px] text-gray-500 leading-relaxed">
+          <span className="text-gray-400">Nomi unificati: </span>
+          {nomi.cambiati.map(([da, a], i) => (
+            <span key={da + i} className="whitespace-nowrap">
+              {i > 0 && ' · '}{da} <span className="text-gray-300">→</span> <strong className="font-medium text-gray-700">{a}</strong>
+            </span>
+          ))}
+        </p>
+      )}
+      {nomi.ignoti.length > 0 && (
+        <p className="mt-1 text-[11px] text-amber-700 leading-relaxed">
+          Nome non riconosciuto, resta com&apos;è e potrebbe creare una voce doppia: {nomi.ignoti.join(', ')}
+        </p>
+      )}
     </div>
   )
 }
@@ -85,8 +115,8 @@ export default function ComposizioneEditor({ etfNome, iniziale, saving, onClose,
 
         <div className="space-y-4">
           <Blocco titolo="Prime partecipazioni" aiuto="di solito le prime 10" valore={holdings} onChange={setHoldings} attesaMax={10} />
-          <Blocco titolo="Settori" aiuto="tutte le righe disponibili" valore={settori} onChange={setSettori} attesaMax={12} />
-          <Blocco titolo="Paesi" aiuto="almeno i primi 5-8" valore={paesi} onChange={setPaesi} attesaMax={15} />
+          <Blocco titolo="Settori" aiuto="tutte le righe disponibili" valore={settori} onChange={setSettori} attesaMax={12} tipo="settori" />
+          <Blocco titolo="Paesi" aiuto="almeno i primi 5-8" valore={paesi} onChange={setPaesi} attesaMax={15} tipo="paesi" />
         </div>
 
         <div className="flex items-center justify-end gap-2 mt-5">

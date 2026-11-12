@@ -456,6 +456,14 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                   </div>
                 </div>
                 <p className="text-[11px] text-gray-400 mb-2">% sulla componente azionaria complessiva</p>
+                {(() => {
+                  const nr = vistaEsp === 'settori' ? lt.nonRiconosciuti.settori : lt.nonRiconosciuti.paesi
+                  return nr.length > 0 ? (
+                    <p className="text-[11px] text-amber-700 mb-2">
+                      Nomi non unificati (possibili voci doppie): {nr.join(', ')}. Correggili da <strong>Dati</strong>.
+                    </p>
+                  ) : null
+                })()}
                 <BarreVoci
                   voci={vistaEsp === 'settori' ? lt.settori : lt.paesi}
                   baseAzionario={valAzionario}

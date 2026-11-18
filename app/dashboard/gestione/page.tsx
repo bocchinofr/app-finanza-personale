@@ -289,6 +289,33 @@ export default function DashboardPage() {
     anagrafica: false,
     alert: false,
   })
+  // Pallino sul bottone "Dettaglio alert" finché l'ultimo alert con dettaglio non è stato aperto
+  const [ultimoAlertTs, setUltimoAlertTs] = useState<string | null>(null)
+  const [alertVisto, setAlertVisto] = useState<string | null>(null)
+  useEffect(() => {
+    try { setAlertVisto(localStorage.getItem('alertDettaglioVisto')) } catch { /* storage non disponibile */ }
+    let attivo = true
+    async function carica() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('notifiche').select('created_at')
+        .eq('user_id', user.id).not('dettaglio', 'is', null)
+        .order('created_at', { ascending: false }).limit(1)
+      if (attivo) setUltimoAlertTs((data as { created_at: string }[] | null)?.[0]?.created_at ?? null)
+    }
+    carica()
+    window.addEventListener('notifiche:refresh', carica)
+    return () => { attivo = false; window.removeEventListener('notifiche:refresh', carica) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (openSection.alert && ultimoAlertTs) {
+      try { localStorage.setItem('alertDettaglioVisto', ultimoAlertTs) } catch { /* ignora */ }
+      setAlertVisto(ultimoAlertTs)
+    }
+  }, [openSection.alert, ultimoAlertTs])
+  const alertNuovo = !!ultimoAlertTs && ultimoAlertTs !== alertVisto
+
   // Link dalla mail/campanello: ?tab=portafoglio&sezione=alert
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
@@ -1414,13 +1441,13 @@ export default function DashboardPage() {
                 const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
                 const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
                 const sectionBtns: { key: keyof typeof openSection; label: string; sub: string; icon: string; badge?: boolean }[] = [
-                  { key: 'alert', label: 'Dettaglio alert', sub: 'PMC, allocazione, budget', icon: '🔔' },
+                  { key: 'alert', label: 'Dettaglio alert', sub: 'PMC, allocazione, budget', icon: '🔔', badge: alertNuovo },
                   { key: 'riserva', label: 'Riserva accumulo', sub: 'Capitale svincolato', icon: '🛡️' },
                   { key: 'storico', label: 'Storico prezzi', sub: 'e chiusura mese', icon: '📈', badge: chiusuraMancante },
                   { key: 'anagrafica', label: 'Anagrafica', sub: 'Asset e prezzi', icon: '📋' },
                 ]
                 return (
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6 lg:sticky lg:top-0 lg:z-20 lg:py-2 lg:-mx-2 lg:px-2 lg:bg-surface-50/90 lg:backdrop-blur">
                     {sectionBtns.map(b => (
                       <button
                         key={b.key}
@@ -1687,6 +1714,8 @@ export default function DashboardPage() {
                         const valCarico = prezzoCarico * qtaAttuale
                         const valAtt = prezzoAtt ? prezzoAtt * qtaAttuale : null
                         const pm = valAtt ? valAtt - valCarico : null
+                        const breachAsset = soglie.filter(x => x.in_breach && x.portafoglio_id === a.id)
+                        const inBreach = breachAsset.length > 0
                         const pmPct = pm && valCarico > 0 ? (pm / valCarico * 100).toFixed(1) : null
                         const highDev = quote?.changeFromHigh ?? null
                         const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
@@ -1696,8 +1725,8 @@ export default function DashboardPage() {
                         const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
                         const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
                         return (
-                          <tr key={i} className="hover:bg-surface-50 transition-colors">
-                            <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span></td>
+                          <tr key={i} className={`transition-colors ${inBreach ? 'bg-red-50/70 shadow-[inset_3px_0_0_0_#dc2626]' : 'hover:bg-surface-50'}`}>
+                            <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span>{inBreach && <span title={breachAsset.map(x => `${x.tipo === 'mensile' ? 'nel mese' : 'dal massimo'} (soglia ${x.soglia_pct}%)`).join(', ')} className="ml-1.5 text-[10px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full">soglia</span>}</td>
                             <td className="table-td">
                               <p
                                 className={`text-xs font-medium text-gray-700 cursor-pointer hover:text-brand-600 ${expandedAssetRow === i ? 'whitespace-normal break-words' : 'truncate max-w-36'}`}

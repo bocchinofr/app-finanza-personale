@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MediaStorica, MESI, statoAttuale } from '@/types'
 import AnalisiPortafoglio from '@/components/portfolio/AnalisiPortafoglio'
 import RiservaAccumulo from '@/components/RiservaAccumulo'
+import AlertDettaglioSezione from '@/components/AlertDettaglioSezione'
 import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
@@ -286,7 +287,14 @@ export default function DashboardPage() {
     riserva: false,
     storico: false,
     anagrafica: false,
+    alert: false,
   })
+  // Link dalla mail/campanello: ?tab=portafoglio&sezione=alert
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('tab') === 'portafoglio') setTab('portafoglio')
+    if (q.get('sezione') === 'alert') setOpenSection(prev => ({ ...prev, alert: true }))
+  }, [])
   function toggleSection(key: keyof typeof openSection) {
     setOpenSection(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -1402,12 +1410,13 @@ export default function DashboardPage() {
                 const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
                 const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
                 const sectionBtns: { key: keyof typeof openSection; label: string; sub: string; icon: string; badge?: boolean }[] = [
+                  { key: 'alert', label: 'Dettaglio alert', sub: 'PMC, allocazione, budget', icon: '🔔' },
                   { key: 'riserva', label: 'Riserva accumulo', sub: 'Capitale svincolato', icon: '🛡️' },
                   { key: 'storico', label: 'Storico prezzi', sub: 'e chiusura mese', icon: '📈', badge: chiusuraMancante },
                   { key: 'anagrafica', label: 'Anagrafica', sub: 'Asset e prezzi', icon: '📋' },
                 ]
                 return (
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
                     {sectionBtns.map(b => (
                       <button
                         key={b.key}
@@ -1537,6 +1546,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+
+              {openSection.alert && <AlertDettaglioSezione />}
 
               {/* Sezione aperta (riserva o simulatore) */}
               {openSection.riserva && (

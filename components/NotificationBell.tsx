@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase'
 import { Notifica } from '@/types'
+import Link from 'next/link'
 
 export default function NotificationBell() {
   const supabase = createClient()
@@ -84,6 +85,11 @@ export default function NotificationBell() {
               {notifiche.map(n => (
                 <li key={n.id} className="px-4 py-3">
                   <p className="text-xs text-gray-700">{n.messaggio}</p>
+                  {n.dettaglio && (
+                    <Link href="/dashboard/gestione?tab=portafoglio&sezione=alert" onClick={() => setOpen(false)} className="inline-block mt-1.5 text-[11px] font-medium text-emerald-700 hover:underline">
+                      Vedi dettaglio in Portafoglio →
+                    </Link>
+                  )}
                   <p className="text-[10px] text-gray-400 mt-1">{fmtTime(n.created_at)}</p>
                 </li>
               ))}
@@ -96,6 +102,8 @@ export default function NotificationBell() {
       </div>
     </>
   )
+
+
 
   return (
     <div className="relative">

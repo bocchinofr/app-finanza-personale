@@ -92,6 +92,7 @@ export interface Notifica {
   messaggio: string
   letta: boolean
   created_at: string
+  dettaglio?: import('@/lib/alertDettaglio').DettaglioAlert | null
 }
 
 export interface Profilo {

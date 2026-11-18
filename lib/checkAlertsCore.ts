@@ -2,6 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { fetchQuote } from '@/lib/fetchQuote'
 import { sendAlertEmail, AlertEmailRiga } from '@/lib/sendEmail'
 import { calcolaConsigli, type TargetAllocazione, type AssetScattato } from '@/lib/accumuloFormula'
+import { calcolaDettaglioAlert, type AssetAlertInput, type DettaglioAlert } from '@/lib/alertDettaglio'
+import type { ComposizioneEtf } from '@/lib/portfolioLookthrough'
 
 const PROFILO_DINAMICO_LABEL = 'Contrarian (accumula sui crolli)'
 
@@ -132,6 +134,7 @@ export async function checkAlertsForUser(
   let valoreAzionario = 0
   let valoreObbligazionario = 0
   let liquiditaTotale = 0
+  let riservaLiquiditaSvinc = 0
   if (profiloDinamico) {
     const { data: liquiditaData } = await admin.from('liquidita').select('mese, conto, saldo').eq('user_id', userId)
     const { data: contoFlagsData } = await admin.from('conto_flags').select('conto, svincolata').eq('user_id', userId)
@@ -152,6 +155,7 @@ export async function checkAlertsForUser(
       .filter(([conto]) => isContoSvincolato(conto))
       .reduce((s, [, v]) => s + v.saldo, 0)
     riservaTotale = riservaAsset + riservaLiquidita
+    riservaLiquiditaSvinc = riservaLiquidita
     liquiditaTotale = Object.values(ultimiSaldiPerConto).reduce((s, v) => s + v.saldo, 0)
 
     valoreAzionario = interoPortafoglio.filter(a => a.classe_rischio === 'azionario').reduce((s, a) => s + valoreAttualeAsset(a), 0)
@@ -223,6 +227,36 @@ export async function checkAlertsForUser(
     target, ddMax, limitePmc, scattati,
   })
 
+  // Dettaglio alert (PMC prima→dopo, margine PnL, allocazione, holding, budget residuo).
+  // Stessa fonte per mail e app: viene salvato in notifiche.dettaglio.
+  const assetNuoveBreach = new Map<string, AssetRow>()
+  for (const { asset } of nuoveBreach) assetNuoveBreach.set(asset.id, asset)
+  let composizioni: ComposizioneEtf[] = []
+  if (profiloDinamico && consigli.size > 0) {
+    const { data: compData } = await admin.from('etf_composizione').select('*').eq('user_id', userId)
+    composizioni = (compData as ComposizioneEtf[]) ?? []
+  }
+  const assetDettaglio: AssetAlertInput[] = [...assetNuoveBreach.values()].map(a => {
+    const qt = a.ticker ? quotes[a.ticker] : undefined
+    return {
+      id: a.id, nome: (a.nome || a.descrizione || a.ticker) as string, classe: a.classe_rischio,
+      prezzo: qt?.price ?? pmcAsset(a), pmc: pmcAsset(a), quantita: a.quantita_attuale ?? a.quantita,
+      importo: profiloDinamico ? consigli.get(a.id)?.importo : undefined,
+    }
+  })
+  const dettaglio: DettaglioAlert = calcolaDettaglioAlert({
+    asset: assetDettaglio,
+    posizioni: interoPortafoglio.map(a => ({
+      id: a.id, nome: (a.nome || a.descrizione || a.ticker || '') as string, ticker: a.ticker ?? '',
+      classe: a.classe_rischio, valore: valoreAttualeAsset(a), svincolato: !!a.svincolato,
+    })),
+    liquiditaTotale,
+    riservaLiquidita: riservaLiquiditaSvinc,
+    riserva: profiloDinamico ? riservaTotale : null,
+    target,
+    composizioni,
+  })
+
   // Conteggio attivazioni storiche per asset+tipo (per il testo "attivazione #N").
   // Una notifica può contenere più soglie dello stesso asset: si conta quindi
   // anche dal testo ("dal massimo (soglia" / "nel mese (soglia"), oltre che dal campo tipo.
@@ -249,7 +283,7 @@ export async function checkAlertsForUser(
     nuoveBreachPerAsset.set(s.portafoglio_id, entry)
   }
 
-  const nuoveNotifiche: { user_id: string; portafoglio_id: string; tipo: string; messaggio: string }[] = []
+  const nuoveNotifiche: { user_id: string; portafoglio_id: string; tipo: string; messaggio: string; dettaglio: DettaglioAlert }[] = []
   const righeEmail: AlertEmailRiga[] = []
 
   for (const [portafoglioId, { asset, breaches }] of nuoveBreachPerAsset.entries()) {
@@ -285,8 +319,8 @@ export async function checkAlertsForUser(
     }
 
     // tipo = prima soglia scattata (valore valido per il vincolo della colonna)
-    nuoveNotifiche.push({ user_id: userId, portafoglio_id: portafoglioId, tipo: breaches[0].s.tipo, messaggio: riga })
-    righeEmail.push({ nomeAsset, trigger, importoConsigliato, nuovoPesoAzionario })
+    nuoveNotifiche.push({ user_id: userId, portafoglio_id: portafoglioId, tipo: breaches[0].s.tipo, messaggio: riga, dettaglio })
+    righeEmail.push({ nomeAsset, trigger, importoConsigliato, nuovoPesoAzionario, dettaglio: dettaglio.asset.find(d => d.id === portafoglioId) })
   }
 
   await admin.from('notifiche').insert(nuoveNotifiche)
@@ -305,6 +339,8 @@ export async function checkAlertsForUser(
         await sendAlertEmail(email, righeEmail, {
           nomeUtente: profilo?.nome_visualizzato ?? null,
           riservaDisponibile: profiloDinamico && riservaTotale > 0 ? fmtEuro(riservaTotale) : null,
+          dettaglio,
+          appUrl: process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? null,
         })
         emailInviata = true
       } catch (err) {

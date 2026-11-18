@@ -293,10 +293,14 @@ export default function DashboardPage() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     if (q.get('tab') === 'portafoglio') setTab('portafoglio')
-    if (q.get('sezione') === 'alert') setOpenSection(prev => ({ ...prev, alert: true }))
+    if (q.get('sezione') === 'alert') setOpenSection({ riserva: false, storico: false, anagrafica: false, alert: true })
   }, [])
+  // Accordion: aprendo una sezione si chiudono le altre; ricliccando si richiude
   function toggleSection(key: keyof typeof openSection) {
-    setOpenSection(prev => ({ ...prev, [key]: !prev[key] }))
+    setOpenSection(prev => {
+      const eraAperta = prev[key]
+      return { riserva: false, storico: false, anagrafica: false, alert: false, [key]: !eraAperta }
+    })
   }
 
   // Valore attuale di ogni asset (fallback al valore di carico se manca la quotazione live)
@@ -1442,111 +1446,8 @@ export default function DashboardPage() {
                 )
               })()}
 
-              {/* KPI - subito dopo i pulsanti */}
-              {(() => {
-                const hasPrezzi = Object.keys(prezziAttuali).length > 0
-                const pctPlusMinus = valoreCaricoTotale > 0 ? (plusminus / valoreCaricoTotale) * 100 : 0
-                const cards = [
-                  {
-                    label: 'Valore di carico', val: fmtK(valoreCaricoTotale), color: 'text-gray-900', icon: '◆', iconBg: 'bg-blue-100 text-blue-700',
-                    badge: `${portafoglio.length} asset`, badgeBg: 'bg-blue-50 text-blue-700',
-                  },
-                  {
-                    label: 'Valore attuale', val: hasPrezzi ? fmtK(valoreAttualeTotale) : '–', color: hasPrezzi ? 'text-gray-900' : 'text-gray-300', icon: '↑', iconBg: 'bg-brand-100 text-brand-700',
-                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% vs carico` : 'In attesa di quotazioni', badgeBg: 'bg-surface-100 text-gray-600',
-                  },
-                  {
-                    label: 'Plus/Minus latente', val: hasPrezzi ? fmtK(plusminus) : '–', color: !hasPrezzi ? 'text-gray-300' : plusminus >= 0 ? 'text-green-700' : 'text-red-600',
-                    icon: '●', iconBg: !hasPrezzi ? 'bg-gray-100 text-gray-400' : plusminus >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
-                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% sul capitale` : 'Nessuna quotazione', badgeBg: !hasPrezzi ? 'bg-surface-100 text-gray-600' : plusminus >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600',
-                  },
-                  {
-                    label: 'Asset', val: portafoglio.length.toString(), color: 'text-gray-900', icon: '≡', iconBg: 'bg-gray-100 text-gray-600',
-                    badge: `${assetClasses.length || 1} asset class`, badgeBg: 'bg-surface-100 text-gray-600',
-                  },
-                ]
-                return (
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                    {cards.map(c => (
-                      <div key={c.label} className="card p-4 transition-transform hover:scale-[1.01]">
-                        <div className="flex items-start justify-between mb-2">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
-                          <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
-                        </div>
-                        <p className={`num-display text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
-                        <div className="mt-2.5">
-                          <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
-
-              {/* Grafici allocazione portafoglio — i 3 sulla stessa riga */}
-              {assetValori.length > 0 && (
-                <div className="card p-4 mb-6">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Per classe di rischio</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie
-                            data={allocazioneClasse}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={50}
-                            outerRadius={80}
-                            paddingAngle={2}
-                          >
-                            {allocazioneClasse.map((d, i) => (
-                              <Cell key={i} fill={d.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(v: number) => fmtK(v)} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
-                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
-                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
-                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
-                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
-                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                          <Bar dataKey="peso" radius={[0, 4, 4, 0]}>
-                            {pesoAsset.map((d, i) => (
-                              <Cell key={i} fill={CLASSE_COLOR[d.classe]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Per categoria</p>
-                      {!usaValoreMonetario && (
-                        <p className="text-[10px] text-gray-400 mb-1">Conteggio per numero di asset</p>
-                      )}
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="45%"
-                            outerRadius={65} innerRadius={32}
-                            label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
-                            {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                          </Pie>
-                          <Tooltip formatter={(v: number) => usaValoreMonetario ? fmtK(v) : `${v} asset`} />
-                          <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              )}
-
+              {/* Pannello della sezione aperta: subito sopra i KPI */}
+              <div className="mb-6 empty:hidden panel-in" key={Object.entries(openSection).find(([, v]) => v)?.[0] ?? 'none'}>
               {openSection.alert && <AlertDettaglioSezione />}
 
               {/* Sezione aperta (riserva o simulatore) */}
@@ -1898,6 +1799,113 @@ export default function DashboardPage() {
                 <div className="h-4" />
               </div>
               </>}
+              </div>
+
+              {/* KPI - subito dopo i pulsanti */}
+              {(() => {
+                const hasPrezzi = Object.keys(prezziAttuali).length > 0
+                const pctPlusMinus = valoreCaricoTotale > 0 ? (plusminus / valoreCaricoTotale) * 100 : 0
+                const cards = [
+                  {
+                    label: 'Valore di carico', val: fmtK(valoreCaricoTotale), color: 'text-gray-900', icon: '◆', iconBg: 'bg-blue-100 text-blue-700',
+                    badge: `${portafoglio.length} asset`, badgeBg: 'bg-blue-50 text-blue-700',
+                  },
+                  {
+                    label: 'Valore attuale', val: hasPrezzi ? fmtK(valoreAttualeTotale) : '–', color: hasPrezzi ? 'text-gray-900' : 'text-gray-300', icon: '↑', iconBg: 'bg-brand-100 text-brand-700',
+                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% vs carico` : 'In attesa di quotazioni', badgeBg: 'bg-surface-100 text-gray-600',
+                  },
+                  {
+                    label: 'Plus/Minus latente', val: hasPrezzi ? fmtK(plusminus) : '–', color: !hasPrezzi ? 'text-gray-300' : plusminus >= 0 ? 'text-green-700' : 'text-red-600',
+                    icon: '●', iconBg: !hasPrezzi ? 'bg-gray-100 text-gray-400' : plusminus >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
+                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% sul capitale` : 'Nessuna quotazione', badgeBg: !hasPrezzi ? 'bg-surface-100 text-gray-600' : plusminus >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600',
+                  },
+                  {
+                    label: 'Asset', val: portafoglio.length.toString(), color: 'text-gray-900', icon: '≡', iconBg: 'bg-gray-100 text-gray-600',
+                    badge: `${assetClasses.length || 1} asset class`, badgeBg: 'bg-surface-100 text-gray-600',
+                  },
+                ]
+                return (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                    {cards.map(c => (
+                      <div key={c.label} className="card p-4 transition-transform hover:scale-[1.01]">
+                        <div className="flex items-start justify-between mb-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
+                          <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
+                        </div>
+                        <p className={`num-display text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                        <div className="mt-2.5">
+                          <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+
+              {/* Grafici allocazione portafoglio — i 3 sulla stessa riga */}
+              {assetValori.length > 0 && (
+                <div className="card p-4 mb-6">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per classe di rischio</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie
+                            data={allocazioneClasse}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={2}
+                          >
+                            {allocazioneClasse.map((d, i) => (
+                              <Cell key={i} fill={d.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => fmtK(v)} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
+                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
+                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
+                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
+                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                          <Bar dataKey="peso" radius={[0, 4, 4, 0]}>
+                            {pesoAsset.map((d, i) => (
+                              <Cell key={i} fill={CLASSE_COLOR[d.classe]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per categoria</p>
+                      {!usaValoreMonetario && (
+                        <p className="text-[10px] text-gray-400 mb-1">Conteggio per numero di asset</p>
+                      )}
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="45%"
+                            outerRadius={65} innerRadius={32}
+                            label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
+                            {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => usaValoreMonetario ? fmtK(v) : `${v} asset`} />
+                          <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </>
           )}
         </>

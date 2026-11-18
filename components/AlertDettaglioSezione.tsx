@@ -33,15 +33,18 @@ export default function AlertDettaglioSezione() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (righe === null) return <div className="card mt-4 text-xs text-gray-400">Caricamento…</div>
+  if (righe === null) return <div className="card text-xs text-gray-400">Caricamento…</div>
   if (righe.length === 0) {
-    return <div className="card mt-4 text-xs text-gray-500">Nessun alert con dettaglio: comparirà al prossimo scatto di una soglia.</div>
+    return <div className="card text-xs text-gray-500">Nessun alert da mostrare. Il dettaglio compare quando scatta una soglia con accumulo attivo.</div>
   }
   const n = righe[Math.min(idx, righe.length - 1)]
   return (
-    <div className="mt-4 space-y-3" id="alert-dettaglio">
+    <div className="space-y-4" id="alert-dettaglio">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dettaglio alert</p>
+        <div>
+          <p className="text-sm font-semibold text-gray-800">Dettaglio alert</p>
+          <p className="text-[11px] text-gray-400">Calcolato al momento dello scatto, gli stessi numeri della mail.</p>
+        </div>
         <select
           value={idx} onChange={e => setIdx(Number(e.target.value))}
           className="text-xs border border-surface-200 rounded-lg px-2 py-1 bg-white text-gray-700"

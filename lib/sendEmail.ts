@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer'
-import type { DettaglioAlert, DettaglioAsset } from '@/lib/alertDettaglio'
+import { avvisoImportoTesto, type DettaglioAlert, type DettaglioAsset } from '@/lib/alertDettaglio'
 
 let transporter: nodemailer.Transporter | null = null
 
@@ -44,6 +44,18 @@ const cella = 'padding: 3px 6px; font-size: 12px; border-bottom: 1px solid #eee;
 
 function margineTxt(m: number) {
   return m >= 0 ? `-${m.toFixed(1)}% dal prezzo attuale` : `già sotto PMC (${m.toFixed(1)}%)`
+}
+
+function avvisoImportoHtml(d?: DettaglioAsset): string {
+  if (!d?.avviso || d.importo == null) return ''
+  const t = avvisoImportoTesto(d.avviso)
+  const bordo = t.forte ? '#b3261e' : '#c98a1b'
+  const sfondo = t.forte ? '#fdecea' : '#fff7e6'
+  const testo = t.forte ? '#7a1712' : '#7a5a10'
+  return `<div style="margin-top:8px; padding:10px 12px; background:${sfondo}; border:2px solid ${bordo}; border-radius:6px; color:${testo};">
+    <div style="font-size:14px; font-weight:700; margin-bottom:4px;">⚠️ ${t.titolo}</div>
+    ${t.righe.map(r => `<div style="font-size:12px; line-height:1.45; margin-top:3px;">• ${r}</div>`).join('')}
+  </div>`
 }
 
 function dettaglioAssetHtml(d: DettaglioAsset): string {
@@ -129,6 +141,7 @@ export async function sendAlertEmail(
           ${r.nuovoPesoAzionario != null ? `— nuovo peso azionario stimato: <strong>${r.nuovoPesoAzionario.toFixed(1)}%</strong>` : ''}
         </div>`
     }
+    if (r.importoConsigliato != null) riga += avvisoImportoHtml(r.dettaglio)
     if (r.dettaglio) riga += dettaglioAssetHtml(r.dettaglio)
     riga += `</li>`
     return riga

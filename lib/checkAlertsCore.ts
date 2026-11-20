@@ -3,7 +3,7 @@ import { fetchQuote } from '@/lib/fetchQuote'
 import { sendAlertEmail, AlertEmailRiga } from '@/lib/sendEmail'
 import type { TargetAllocazione } from '@/lib/accumuloFormula'
 import { calcolaPianoAsset, ripartisciRiserva, PIANO_CONFIG_DEFAULT, type PianoConfig, type Distribuzione } from '@/lib/pianoAccumulo'
-import { calcolaDettaglioAlert, type AssetAlertInput, type DettaglioAlert } from '@/lib/alertDettaglio'
+import { calcolaDettaglioAlert, type AssetAlertInput, type DettaglioAlert, type AvvisoImporto } from '@/lib/alertDettaglio'
 import type { ComposizioneEtf } from '@/lib/portfolioLookthrough'
 
 const PROFILO_DINAMICO_LABEL = 'Contrarian (accumula sui crolli)'
@@ -19,6 +19,7 @@ interface AssetRow {
   prezzo_carico_attuale: number | null
   quantita: number
   quantita_attuale: number | null
+  ultimo_aggiornamento_at: string | null
 }
 interface SogliaRow {
   id: string
@@ -36,6 +37,10 @@ interface TrancheRow {
   soglia_pct: number
   peso_pct: number
   in_breach: boolean
+  attivazioni?: number | null
+  massimo_ultimo_avviso?: number | null
+  prezzo_ultimo_avviso?: number | null
+  ultima_notifica_at?: string | null
 }
 interface AccumuloAssetRow {
   portafoglio_id: string
@@ -50,6 +55,7 @@ interface BreachItem {
   trancheId?: string
 }
 interface LiquiditaRow {
+  anno?: number | null
   mese: string
   conto: string
   saldo: number
@@ -116,7 +122,7 @@ export async function checkAlertsForUser(
 
   // Piano di accumulo: asset inclusi e relative tranche (una per soglia di ribasso dal massimo)
   const { data: accAssetData } = await admin.from('accumulo_asset').select('portafoglio_id, quota_pct, distribuzione').eq('user_id', userId).eq('attivo', true)
-  const { data: accTrancheData } = await admin.from('accumulo_tranche').select('id, portafoglio_id, soglia_pct, peso_pct, in_breach').eq('user_id', userId)
+  const { data: accTrancheData } = await admin.from('accumulo_tranche').select('*').eq('user_id', userId)
   const assetPiano = (accAssetData as AccumuloAssetRow[]) ?? []
   const idPiano = new Set(assetPiano.map(a => a.portafoglio_id))
   const tranche = ((accTrancheData as TrancheRow[]) ?? []).filter(t => idPiano.has(t.portafoglio_id))
@@ -126,7 +132,7 @@ export async function checkAlertsForUser(
   const portafoglioIds = [...new Set([...soglie.map(s => s.portafoglio_id), ...tranche.map(t => t.portafoglio_id)])]
   const { data: assetsData } = await admin
     .from('portafoglio')
-    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale')
+    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale, ultimo_aggiornamento_at')
     .in('id', portafoglioIds)
   const assets = (assetsData as AssetRow[]) ?? []
   const tickers = [...new Set(assets.map(a => a.ticker).filter(Boolean) as string[])]
@@ -151,7 +157,7 @@ export async function checkAlertsForUser(
   // riserva totale e pesi azionario/obbligazionario in modo coerente con la UI.
   const { data: interoPortafoglioData } = await admin
     .from('portafoglio')
-    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale')
+    .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale, ultimo_aggiornamento_at')
     .eq('user_id', userId)
   const interoPortafoglio = (interoPortafoglioData as AssetRow[]) ?? []
   const tickersInteri = [...new Set(interoPortafoglio.map(a => a.ticker).filter(Boolean) as string[])]
@@ -172,20 +178,25 @@ export async function checkAlertsForUser(
   let valoreObbligazionario = 0
   let liquiditaTotale = 0
   let riservaLiquiditaSvinc = 0
+  let liquiditaAl: string | null = null // ultimo saldo di liquidità usato, es. "nov 2026"
   if (profiloDinamico) {
-    const { data: liquiditaData } = await admin.from('liquidita').select('mese, conto, saldo').eq('user_id', userId)
+    const { data: liquiditaData } = await admin.from('liquidita').select('anno, mese, conto, saldo').eq('user_id', userId)
     const { data: contoFlagsData } = await admin.from('conto_flags').select('conto, svincolata').eq('user_id', userId)
     const liquidita = (liquiditaData as LiquiditaRow[]) ?? []
     const contoFlags = (contoFlagsData as ContoFlagRow[]) ?? []
     const isContoSvincolato = (conto: string) => contoFlags.find(c => c.conto === conto)?.svincolata ?? false
 
-    const ultimiSaldiPerConto: Record<string, { mese: string; saldo: number }> = {}
+    // L'ultimo saldo si sceglie per (anno, mese): con più anni in tabella il solo mese darebbe il saldo sbagliato
+    const chiaveMese = (anno: number | null | undefined, mese: string) => (anno ?? 0) * 12 + ORDINE_MESE.indexOf(mese)
+    const ultimiSaldiPerConto: Record<string, { mese: string; anno: number | null; saldo: number }> = {}
     liquidita.forEach(l => {
       const attuale = ultimiSaldiPerConto[l.conto]
-      if (!attuale || ORDINE_MESE.indexOf(l.mese) >= ORDINE_MESE.indexOf(attuale.mese)) {
-        ultimiSaldiPerConto[l.conto] = { mese: l.mese, saldo: l.saldo }
+      if (!attuale || chiaveMese(l.anno, l.mese) >= chiaveMese(attuale.anno, attuale.mese)) {
+        ultimiSaldiPerConto[l.conto] = { mese: l.mese, anno: l.anno ?? null, saldo: l.saldo }
       }
     })
+    const ultimoSaldo = Object.values(ultimiSaldiPerConto).sort((a, b) => chiaveMese(b.anno, b.mese) - chiaveMese(a.anno, a.mese))[0]
+    liquiditaAl = ultimoSaldo ? `${ultimoSaldo.mese}${ultimoSaldo.anno ? ` ${ultimoSaldo.anno}` : ''}` : null
 
     const riservaAsset = interoPortafoglio.filter(a => a.svincolato).reduce((s, a) => s + valoreAttualeAsset(a), 0)
     const riservaLiquidita = Object.entries(ultimiSaldiPerConto)
@@ -203,7 +214,9 @@ export async function checkAlertsForUser(
   // --- Determina stato finale (in_breach) di ogni soglia dopo il check odierno ---
   const updates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
   const nuoveBreach: BreachItem[] = []
-  const trancheUpdates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
+  const trancheUpdates: { id: string; in_breach: boolean; ultima_notifica_at?: string; riarmo?: { attivazioni: number; massimo_ultimo_avviso: number; prezzo_ultimo_avviso: number } }[] = []
+  // Info di riarmo per ogni tranche appena scattata (attivazione #N, ultimo avviso, nuovo massimo?)
+  const infoTranche = new Map<string, { n: number; giaScattata: boolean; ultimoAvviso: string | null; nessunNuovoMassimo: boolean | null; sogliaPct: number }>()
   const finalState = new Map<string, { inBreach: boolean; drawdown: number | null }>()
 
   for (const s of soglie) {
@@ -240,7 +253,19 @@ export async function checkAlertsForUser(
     const ribasso = ribassoDa(quote)
     const breach = ribasso * 100 >= Number(t.soglia_pct) - 1e-9
     if (breach && !t.in_breach) {
-      trancheUpdates.push({ id: t.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
+      // Massimo implicito attuale: serve a capire se dall'ultimo avviso c'è stato un nuovo massimo
+      const massimoOra = ribasso > 0 && ribasso < 1 ? quote.price / (1 - ribasso) : quote.price
+      const prec = t.massimo_ultimo_avviso != null ? Number(t.massimo_ultimo_avviso) : null
+      const n = (t.attivazioni ?? 0) + 1
+      const giaScattata = prec != null || (t.attivazioni ?? 0) > 0
+      infoTranche.set(t.id, {
+        n, giaScattata, ultimoAvviso: t.ultima_notifica_at ?? null, sogliaPct: Number(t.soglia_pct),
+        nessunNuovoMassimo: prec != null ? massimoOra <= prec * 1.005 : null,
+      })
+      trancheUpdates.push({
+        id: t.id, in_breach: true, ultima_notifica_at: new Date().toISOString(),
+        riarmo: { attivazioni: n, massimo_ultimo_avviso: massimoOra, prezzo_ultimo_avviso: quote.price },
+      })
       nuoveBreach.push({
         s: { portafoglio_id: t.portafoglio_id, tipo: 'storico', soglia_pct: Number(t.soglia_pct) },
         asset, drawdown: -ribasso * 100, trancheId: t.id,
@@ -251,9 +276,12 @@ export async function checkAlertsForUser(
   }
   const salvaStatiTranche = async () => {
     for (const u of trancheUpdates) {
+      // 1) stato edge-triggered (indispensabile per non rinotificare)
       await admin.from('accumulo_tranche')
         .update(u.ultima_notifica_at ? { in_breach: u.in_breach, ultima_notifica_at: u.ultima_notifica_at } : { in_breach: u.in_breach })
         .eq('id', u.id)
+      // 2) memoria dell'avviso: contatore e massimo di riferimento
+      if (u.riarmo) await admin.from('accumulo_tranche').update(u.riarmo).eq('id', u.id)
     }
   }
 
@@ -332,6 +360,24 @@ export async function checkAlertsForUser(
     composizioni,
   })
 
+  // Avvisi accanto all'importo: tranche riarmata + freschezza dei dati (quantità/PMC e liquidità)
+  const ultimoAggiornamentoGlobale = interoPortafoglio
+    .map(a => a.ultimo_aggiornamento_at).filter((x): x is string => !!x).sort().pop() ?? null
+  for (const d of dettaglio.asset) {
+    if (d.importo == null) continue
+    const asset = assetNuoveBreach.get(d.id)
+    const avviso: AvvisoImporto = {
+      datiAggiornatiAl: asset?.ultimo_aggiornamento_at ?? ultimoAggiornamentoGlobale,
+      liquiditaAl,
+      riarmo: nuoveBreach
+        .filter(b => b.trancheId && b.s.portafoglio_id === d.id)
+        .map(b => infoTranche.get(b.trancheId as string))
+        .filter((i): i is NonNullable<typeof i> => !!i && i.giaScattata)
+        .map(i => ({ sogliaPct: i.sogliaPct, n: i.n, ultimoAvviso: i.ultimoAvviso, nessunNuovoMassimo: i.nessunNuovoMassimo })),
+    }
+    d.avviso = avviso
+  }
+
   // Conteggio attivazioni storiche per asset+tipo (per il testo "attivazione #N").
   // Una notifica può contenere più soglie dello stesso asset: si conta quindi
   // anche dal testo ("dal massimo (soglia" / "nel mese (soglia"), oltre che dal campo tipo.
@@ -373,11 +419,12 @@ export async function checkAlertsForUser(
         visti.add(k)
         return true
       })
-      .map(({ s, drawdown }) => ({
+      .map(({ s, drawdown, trancheId }) => ({
         tipoLabel: TIPO_LABEL[s.tipo] ?? s.tipo,
         sogliaPct: s.soglia_pct,
         drawdown,
-        numAttivazione: conteggio(portafoglioId, s.tipo),
+        // per le tranche il contatore è della singola tranche (quante volte è scattata dopo un riarmo)
+        numAttivazione: trancheId ? (infoTranche.get(trancheId)?.n ?? 1) : conteggio(portafoglioId, s.tipo),
       }))
     const numTranche = breaches.filter(b => b.trancheId).length
 
@@ -417,6 +464,8 @@ export async function checkAlertsForUser(
     }
 
     if (notaPiano) riga += ` · ${notaPiano}`
+    const avvisoAsset = dettaglio.asset.find(d => d.id === portafoglioId)?.avviso
+    if (avvisoAsset && avvisoAsset.riarmo.length > 0) riga += ' · ⚠ tranche già scattata in precedenza: verifica di non aver già investito a questo livello'
 
     // tipo = prima soglia scattata (valore valido per il vincolo della colonna)
     nuoveNotifiche.push({ user_id: userId, portafoglio_id: portafoglioId, tipo: breaches[0].s.tipo, messaggio: riga, dettaglio })

@@ -1,5 +1,5 @@
 'use client'
-import type { DettaglioAlert, DettaglioAsset, Alloc } from '@/lib/alertDettaglio'
+import { avvisoImportoTesto, type DettaglioAlert, type DettaglioAsset, type Alloc } from '@/lib/alertDettaglio'
 
 const nf = (n: number, d = 1) => n.toLocaleString('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d })
 const eur = (n: number) => `€${Math.round(n).toLocaleString('it-IT')}`
@@ -66,6 +66,20 @@ function Riga({ label, prima, dopo }: { label: string; prima: React.ReactNode; d
   )
 }
 
+/* Avviso in evidenza accanto all'importo: tranche già scattata e freschezza dei dati */
+function BoxAvviso({ d }: { d: DettaglioAsset }) {
+  if (!d.avviso || d.importo == null) return null
+  const t = avvisoImportoTesto(d.avviso)
+  return (
+    <div role="alert" className={`mb-3 rounded-lg border-2 p-3 ${t.forte ? 'border-red-300 bg-red-50 text-red-800' : 'border-amber-300 bg-amber-50 text-amber-800'}`}>
+      <p className="text-sm font-bold flex items-center gap-1.5"><span aria-hidden>⚠️</span>{t.titolo}</p>
+      <ul className="mt-1.5 space-y-1 text-xs leading-snug list-disc pl-4">
+        {t.righe.map((r, i) => <li key={i}>{r}</li>)}
+      </ul>
+    </div>
+  )
+}
+
 function BloccoAsset({ d }: { d: DettaglioAsset }) {
   return (
     <div className="py-3 first:pt-0 last:pb-0 border-t first:border-t-0 border-surface-200">
@@ -75,6 +89,7 @@ function BloccoAsset({ d }: { d: DettaglioAsset }) {
           {d.accumulo ? `Accumulo ${eur(d.importo ?? 0)}` : 'Nessun accumulo'}
         </span>
       </div>
+      <BoxAvviso d={d} />
       {d.accumulo ? (
         <>
           <div className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-x-2 text-[10px] text-gray-400 pb-0.5">

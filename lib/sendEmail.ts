@@ -28,6 +28,8 @@ export interface AlertEmailRiga {
   trigger: AlertEmailTrigger[]
   importoConsigliato?: number
   nuovoPesoAzionario?: number
+  /** contesto del piano di accumulo (es. alert mensile: dove sei rispetto al massimo e alle tranche) */
+  nota?: string
   dettaglio?: DettaglioAsset
 }
 
@@ -116,12 +118,15 @@ export async function sendAlertEmail(
     let riga = `
       <li style="margin-bottom: 14px; padding: 12px 14px; background: #f7f6f0; border-left: 3px solid #c65d3b; border-radius: 4px;">
         <div style="font-weight: 600; color: #2d2a26; margin-bottom: 4px;">${r.nomeAsset}</div>${triggerHtml}`
+    if (r.nota) {
+      riga += `
+        <div style="font-size: 12px; color: #6b6759; margin-top: 4px;">📍 ${r.nota}</div>`
+    }
     if (r.importoConsigliato != null) {
       riga += `
         <div style="font-size: 13px; color: #4a5d43; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d8d5c8;">
           💰 Investimento consigliato dalla riserva: <strong>${fmtEuro(r.importoConsigliato)}</strong>
           ${r.nuovoPesoAzionario != null ? `— nuovo peso azionario stimato: <strong>${r.nuovoPesoAzionario.toFixed(1)}%</strong>` : ''}
-          ${r.trigger.length > 1 ? '<br><span style="font-size: 11px; color: #888;">Importo unico per l\'asset: non si somma tra le soglie scattate.</span>' : ''}
         </div>`
     }
     if (r.dettaglio) riga += dettaglioAssetHtml(r.dettaglio)

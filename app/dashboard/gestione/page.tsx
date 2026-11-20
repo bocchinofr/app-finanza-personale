@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MediaStorica, MESI, statoAttuale } from '@/types'
 import AnalisiPortafoglio from '@/components/portfolio/AnalisiPortafoglio'
-import RiservaAccumulo from '@/components/RiservaAccumulo'
+import PianoAccumulo from '@/components/PianoAccumulo'
 import AlertDettaglioSezione from '@/components/AlertDettaglioSezione'
 import InfoAccumuloModal from '@/components/InfoAccumuloModal'
 import { useAnno } from '@/lib/AnnoContext'
@@ -283,6 +283,8 @@ export default function DashboardPage() {
   const [bannerChiusuraDismissed, setBannerChiusuraDismissed] = useState(false)
 
   // Sezioni apribili/richiudibili del tab Portafoglio (toggle indipendenti)
+  // Asset inclusi nel Piano di accumulo: per loro la soglia "dal massimo" è gestita dalle tranche del piano
+  const [idPiano, setIdPiano] = useState<Set<string>>(new Set())
   const [openSection, setOpenSection] = useState({
     riserva: false,
     storico: false,
@@ -391,13 +393,14 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const [movRes, liqRes, portRes, sogRes, profRes, medieRes] = await Promise.all([
+    const [movRes, liqRes, portRes, sogRes, profRes, medieRes, pianoRes] = await Promise.all([
       supabase.from('movimenti').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('liquidita').select('*').eq('user_id', user.id).eq('anno', anno),
       supabase.from('portafoglio').select('*').eq('user_id', user.id),
       supabase.from('alert_soglie').select('*').eq('user_id', user.id),
       supabase.from('profili').select('*').eq('user_id', user.id).single(),
       supabase.from('medie_storiche').select('*').eq('user_id', user.id).eq('anno', anno - 1),
+      supabase.from('accumulo_asset').select('portafoglio_id').eq('user_id', user.id).eq('attivo', true),
     ])
 
     setMovimenti((movRes.data as Movimento[]) ?? [])
@@ -405,6 +408,7 @@ export default function DashboardPage() {
     setPortafoglio((portRes.data as AssetPortafoglio[]) ?? [])
     setSoglie((sogRes.data as AlertSoglia[]) ?? [])
     setProfilo((profRes.data as Profilo) ?? null)
+    setIdPiano(new Set(((pianoRes.data as { portafoglio_id: string }[]) ?? []).map(r => r.portafoglio_id)))
     setStoricoAnnoPrec(
       Object.fromEntries(((medieRes.data as MediaStorica[]) ?? []).map(r => [r.categoria, { media: r.media, totale: r.totale }]))
     )
@@ -1442,7 +1446,7 @@ export default function DashboardPage() {
                 const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
                 const sectionBtns: { key: keyof typeof openSection; label: string; sub: string; icon: string; badge?: boolean }[] = [
                   { key: 'alert', label: 'Dettaglio alert', sub: 'PMC, allocazione, budget', icon: '🔔', badge: alertNuovo },
-                  { key: 'riserva', label: 'Riserva accumulo', sub: 'Capitale svincolato', icon: '🛡️' },
+                  { key: 'riserva', label: 'Piano di accumulo', sub: 'Riserva, soglie, importi', icon: '🛡️' },
                   { key: 'storico', label: 'Storico prezzi', sub: 'e chiusura mese', icon: '📈', badge: chiusuraMancante },
                   { key: 'anagrafica', label: 'Anagrafica', sub: 'Asset e prezzi', icon: '📋' },
                 ]
@@ -1479,17 +1483,14 @@ export default function DashboardPage() {
 
               {/* Sezione aperta (riserva o simulatore) */}
               {openSection.riserva && (
-                <RiservaAccumulo
+                <PianoAccumulo
                   portafoglio={portafoglio}
                   liquidita={liquidita}
-                  soglie={soglie}
                   prezziAttuali={prezziAttuali}
                   behaviorLabel={profilo?.behavior_label ?? null}
-                  ddMax={profilo?.dd_max ?? 0.30}
-                  targetAzioni={profilo?.target_azioni_pct ?? null}
-                  targetObbligazioni={profilo?.target_obbligazioni_pct ?? null}
-                  targetLiquidita={profilo?.target_liquidita_pct ?? null}
                   pmcMaxAumento={profilo?.pmc_max_aumento_pct ?? null}
+                  bonusSottoPmc={profilo?.accumulo_bonus_pmc ?? null}
+                  moltMax={profilo?.accumulo_molt_max ?? null}
                   onSaved={loadData}
                   onSimula={(assetId, importo) => { setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
                 />
@@ -1670,7 +1671,7 @@ export default function DashboardPage() {
                 {showSoglieForm && (
                   <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
                     <p className="text-[10px] text-gray-400 w-full">
-                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Spuntando &ldquo;Accum.&rdquo; l&apos;asset partecipa anche alla riserva di accumulo (budget e importo suggerito); senza spunta riceve solo la notifica.
+                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Sono solo notifiche: gli importi da investire sui ribassi si configurano nel Piano di accumulo (bottone sopra i KPI). Per gli asset nel piano la soglia dal massimo è sostituita dalle sue tranche (colonna Max % = Piano); resta la soglia mensile, che è solo un avviso.
                     </p>
                     <div>
                       <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
@@ -1703,7 +1704,6 @@ export default function DashboardPage() {
                         <th className="table-th w-24 text-center">Svincolato</th>
                         <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
                         <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
-                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Accumulo: se spuntato l'asset riceve una quota di riserva e l'importo suggerito; se no, solo notifica">Accum.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1782,7 +1782,9 @@ export default function DashboardPage() {
                               </span>
                             </td>
                             <td className="table-td text-center px-1 bg-amber-50/40">
-                              {showSoglieForm && a.id ? (
+                              {a.id && idPiano.has(a.id) ? (
+                                <span className="inline-block px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-100 text-[10px] font-medium whitespace-nowrap" title="La soglia dal massimo è gestita dalle tranche del Piano di accumulo">Piano</span>
+                              ) : showSoglieForm && a.id ? (
                                 <div className="flex items-center justify-center gap-1">
                                   <input type="number" min={0} step={0.5}
                                     value={dSoglia?.massimo ?? globalSogliaMax}
@@ -1806,16 +1808,6 @@ export default function DashboardPage() {
                               ) : (
                                 <span className="text-xs tabular-nums text-gray-500">
                                   {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
-                                </span>
-                              )}
-                            </td>
-                            <td className="table-td text-center px-1 bg-amber-50/40">
-                              {showSoglieForm && a.id ? (
-                                <input type="checkbox" title="Accumulo attivo (altrimenti solo notifica)" checked={dSoglia?.accumulo ?? true}
-                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), accumulo: e.target.checked } }))} />
-                              ) : (
-                                <span className="text-xs text-gray-500">
-                                  {(sMaxSaved?.attivo || sMeseSaved?.attivo) && (sMaxSaved?.accumulo ?? sMeseSaved?.accumulo) !== false ? '✓' : <span className="text-gray-300">–</span>}
                                 </span>
                               )}
                             </td>

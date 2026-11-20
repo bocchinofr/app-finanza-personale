@@ -1,7 +1,8 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { fetchQuote } from '@/lib/fetchQuote'
 import { sendAlertEmail, AlertEmailRiga } from '@/lib/sendEmail'
-import { calcolaConsigli, type TargetAllocazione, type AssetScattato } from '@/lib/accumuloFormula'
+import type { TargetAllocazione } from '@/lib/accumuloFormula'
+import { calcolaPianoAsset, ripartisciRiserva, PIANO_CONFIG_DEFAULT, type PianoConfig, type Distribuzione } from '@/lib/pianoAccumulo'
 import { calcolaDettaglioAlert, type AssetAlertInput, type DettaglioAlert } from '@/lib/alertDettaglio'
 import type { ComposizioneEtf } from '@/lib/portfolioLookthrough'
 
@@ -29,6 +30,25 @@ interface SogliaRow {
   accumulo?: boolean | null
   in_breach: boolean
 }
+interface TrancheRow {
+  id: string
+  portafoglio_id: string
+  soglia_pct: number
+  peso_pct: number
+  in_breach: boolean
+}
+interface AccumuloAssetRow {
+  portafoglio_id: string
+  quota_pct: number | null
+  distribuzione: Distribuzione
+}
+/** Una soglia scattata: può venire da alert_soglie o da una tranche del piano di accumulo */
+interface BreachItem {
+  s: { portafoglio_id: string; tipo: string; soglia_pct: number }
+  asset: AssetRow
+  drawdown: number
+  trancheId?: string
+}
 interface LiquiditaRow {
   mese: string
   conto: string
@@ -46,6 +66,8 @@ interface ProfiloRow {
   target_obbligazioni_pct: number | null
   target_liquidita_pct: number | null
   pmc_max_aumento_pct: number | null
+  accumulo_bonus_pmc: number | null
+  accumulo_molt_max: number | null
 }
 
 export interface CheckAlertsResult {
@@ -59,6 +81,14 @@ const TIPO_LABEL: Record<string, string> = { storico: 'dal massimo', mensile: 'n
 // PMC corrente: si aggiorna con gli acquisti (stessa logica di statoAttuale in types)
 function pmcAsset(a: { prezzo_carico_attuale: number | null; prezzo_acquisto: number }): number {
   return a.prezzo_carico_attuale ?? a.prezzo_acquisto
+}
+
+// Ribasso dal massimo (frazione positiva): stessa logica usata in app (PianoAccumulo.tsx)
+function ribassoDa(q: { price: number; high52: number | null; changeFromHigh: number | null } | undefined | null): number {
+  if (!q) return 0
+  if (q.changeFromHigh != null) return Math.max(0, -q.changeFromHigh) / 100
+  if (q.high52) return Math.max(0, (q.high52 - q.price) / q.high52)
+  return 0
 }
 
 function fmtEuro(n: number) {
@@ -83,9 +113,17 @@ export async function checkAlertsForUser(
     .eq('user_id', userId)
     .eq('attivo', true)
   const soglie = (soglieData as SogliaRow[]) ?? []
-  if (soglie.length === 0) return { nuoveNotifiche: 0, emailInviata: false }
 
-  const portafoglioIds = [...new Set(soglie.map(s => s.portafoglio_id))]
+  // Piano di accumulo: asset inclusi e relative tranche (una per soglia di ribasso dal massimo)
+  const { data: accAssetData } = await admin.from('accumulo_asset').select('portafoglio_id, quota_pct, distribuzione').eq('user_id', userId).eq('attivo', true)
+  const { data: accTrancheData } = await admin.from('accumulo_tranche').select('id, portafoglio_id, soglia_pct, peso_pct, in_breach').eq('user_id', userId)
+  const assetPiano = (accAssetData as AccumuloAssetRow[]) ?? []
+  const idPiano = new Set(assetPiano.map(a => a.portafoglio_id))
+  const tranche = ((accTrancheData as TrancheRow[]) ?? []).filter(t => idPiano.has(t.portafoglio_id))
+
+  if (soglie.length === 0 && tranche.length === 0) return { nuoveNotifiche: 0, emailInviata: false }
+
+  const portafoglioIds = [...new Set([...soglie.map(s => s.portafoglio_id), ...tranche.map(t => t.portafoglio_id)])]
   const { data: assetsData } = await admin
     .from('portafoglio')
     .select('id, ticker, nome, descrizione, classe_rischio, svincolato, prezzo_acquisto, prezzo_carico_attuale, quantita, quantita_attuale')
@@ -103,12 +141,11 @@ export async function checkAlertsForUser(
   // --- Profilo "accumula sui crolli" + riserva svincolata (stessa logica di RiservaAccumulo.tsx) ---
   const { data: profiloData } = await admin
     .from('profili')
-    .select('behavior_label, dd_max, nome_visualizzato, target_azioni_pct, target_obbligazioni_pct, target_liquidita_pct, pmc_max_aumento_pct')
+    .select('behavior_label, dd_max, nome_visualizzato, target_azioni_pct, target_obbligazioni_pct, target_liquidita_pct, pmc_max_aumento_pct, accumulo_bonus_pmc, accumulo_molt_max')
     .eq('user_id', userId)
     .single()
   const profilo = profiloData as ProfiloRow | null
   const profiloDinamico = profilo?.behavior_label === PROFILO_DINAMICO_LABEL
-  const ddMax = profilo?.dd_max ?? 0.30
 
   // Serve l'intero portafoglio (non solo gli asset con soglia) per calcolare
   // riserva totale e pesi azionario/obbligazionario in modo coerente con la UI.
@@ -165,10 +202,16 @@ export async function checkAlertsForUser(
 
   // --- Determina stato finale (in_breach) di ogni soglia dopo il check odierno ---
   const updates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
-  const nuoveBreach: { s: SogliaRow; asset: AssetRow; drawdown: number }[] = []
+  const nuoveBreach: BreachItem[] = []
+  const trancheUpdates: { id: string; in_breach: boolean; ultima_notifica_at?: string }[] = []
   const finalState = new Map<string, { inBreach: boolean; drawdown: number | null }>()
 
   for (const s of soglie) {
+    // Per gli asset del piano la soglia "dal massimo" è sostituita dalle tranche: nessun alert doppio
+    if (s.tipo === 'storico' && idPiano.has(s.portafoglio_id)) {
+      if (s.in_breach) updates.push({ id: s.id, in_breach: false })
+      continue
+    }
     const asset = assets.find(a => a.id === s.portafoglio_id)
     if (!asset?.ticker) continue
     const quote = quotes[asset.ticker]
@@ -188,44 +231,76 @@ export async function checkAlertsForUser(
     }
   }
 
+  // Tranche del piano di accumulo: stessa logica edge-triggered, ribasso misurato dal massimo
+  for (const t of tranche) {
+    const asset = assets.find(a => a.id === t.portafoglio_id)
+    if (!asset?.ticker) continue
+    const quote = quotes[asset.ticker]
+    if (!quote) continue
+    const ribasso = ribassoDa(quote)
+    const breach = ribasso * 100 >= Number(t.soglia_pct) - 1e-9
+    if (breach && !t.in_breach) {
+      trancheUpdates.push({ id: t.id, in_breach: true, ultima_notifica_at: new Date().toISOString() })
+      nuoveBreach.push({
+        s: { portafoglio_id: t.portafoglio_id, tipo: 'storico', soglia_pct: Number(t.soglia_pct) },
+        asset, drawdown: -ribasso * 100, trancheId: t.id,
+      })
+    } else if (!breach && t.in_breach) {
+      trancheUpdates.push({ id: t.id, in_breach: false })
+    }
+  }
+  const salvaStatiTranche = async () => {
+    for (const u of trancheUpdates) {
+      await admin.from('accumulo_tranche')
+        .update(u.ultima_notifica_at ? { in_breach: u.in_breach, ultima_notifica_at: u.ultima_notifica_at } : { in_breach: u.in_breach })
+        .eq('id', u.id)
+    }
+  }
+
   if (nuoveBreach.length === 0) {
     // Nessuna nuova attivazione, ma aggiorna comunque gli stati rientrati
     for (const u of updates) {
       await admin.from('alert_soglie').update({ in_breach: u.in_breach }).eq('id', u.id)
     }
+    await salvaStatiTranche()
     return { nuoveNotifiche: 0, emailInviata: false }
   }
 
-  // Consigli di accumulo (3 passi: budget → quota rispetto al peso target → limite PMC).
-  // Si calcolano su tutti gli asset attualmente scattati con "Accum." attivo,
-  // così gli importi sono coerenti con quelli mostrati in app.
+  // Importi del Piano di accumulo (riserva → quota asset → tranche → moltiplicatore / limite PMC).
+  // Stessa formula della sezione in app (lib/pianoAccumulo.ts): l'importo indicato è quello
+  // delle tranche appena scattate per ciascun asset del piano.
   const target: TargetAllocazione | null =
     profilo?.target_azioni_pct != null && profilo?.target_obbligazioni_pct != null && profilo?.target_liquidita_pct != null
       ? { azioni: profilo.target_azioni_pct, obbligazioni: profilo.target_obbligazioni_pct, liquidita: profilo.target_liquidita_pct }
       : null
-  const limitePmc = profilo?.pmc_max_aumento_pct != null ? profilo.pmc_max_aumento_pct / 100 : null
-  const idAccumulo = new Set(soglie.filter(x => x.accumulo !== false).map(x => x.portafoglio_id))
-  const scattati: AssetScattato[] = []
+  const configPiano: PianoConfig = {
+    bonusSottoPmc: profilo?.accumulo_bonus_pmc ?? PIANO_CONFIG_DEFAULT.bonusSottoPmc,
+    moltMax: profilo?.accumulo_molt_max ?? PIANO_CONFIG_DEFAULT.moltMax,
+    limitePmc: profilo?.pmc_max_aumento_pct != null ? profilo.pmc_max_aumento_pct / 100 : null,
+  }
+  const consigli = new Map<string, { importo: number }>()
   if (profiloDinamico && riservaTotale > 0) {
-    const idInBreach = new Set<string>()
-    for (const sg of soglie) if (finalState.get(sg.id)?.inBreach) idInBreach.add(sg.portafoglio_id)
-    for (const id of idInBreach) {
-      if (!idAccumulo.has(id)) continue
+    const quote_ = ripartisciRiserva(riservaTotale, assetPiano.map(a => ({ id: a.portafoglio_id, quotaPct: a.quota_pct })))
+    const nuoveIdsPerAsset = new Map<string, Set<string>>()
+    for (const b of nuoveBreach) {
+      if (!b.trancheId) continue
+      const set = nuoveIdsPerAsset.get(b.s.portafoglio_id) ?? new Set<string>()
+      set.add(b.trancheId)
+      nuoveIdsPerAsset.set(b.s.portafoglio_id, set)
+    }
+    for (const [id, nuoveIds] of nuoveIdsPerAsset.entries()) {
       const full = interoPortafoglio.find(x => x.id === id)
       const qt = full?.ticker ? quotes[full.ticker] : undefined
       if (!full || !qt) continue
-      const ribasso = qt.changeFromHigh != null ? Math.max(0, -qt.changeFromHigh) / 100
-        : qt.high52 ? Math.max(0, (qt.high52 - qt.price) / qt.high52) : 0
-      scattati.push({
-        id, classe: full.classe_rischio, prezzo: qt.price, pmc: pmcAsset(full),
-        quantita: full.quantita_attuale ?? full.quantita, ribassoDalMax: ribasso,
+      const piano = calcolaPianoAsset({
+        quota: quote_.get(id) ?? 0,
+        tranche: tranche.filter(t => t.portafoglio_id === id).map(t => ({ id: t.id, sogliaPct: Number(t.soglia_pct), pesoPct: Number(t.peso_pct) })),
+        prezzo: qt.price, pmc: pmcAsset(full), quantita: full.quantita_attuale ?? full.quantita,
+        ribasso: ribassoDa(qt), config: configPiano, nuoveIds,
       })
+      if (piano.importoOra > 0) consigli.set(id, { importo: piano.importoOra })
     }
   }
-  const consigli = calcolaConsigli({
-    riserva: riservaTotale, valoreAzionario, valoreObbligazionario, liquiditaTotale,
-    target, ddMax, limitePmc, scattati,
-  })
 
   // Dettaglio alert (PMC prima→dopo, margine PnL, allocazione, holding, budget residuo).
   // Stessa fonte per mail e app: viene salvato in notifiche.dettaglio.
@@ -276,10 +351,10 @@ export async function checkAlertsForUser(
 
   // Una sola notifica per asset: se scattano più soglie (es. dal massimo + nel mese)
   // vengono elencate insieme, con un unico importo consigliato (non si somma).
-  const nuoveBreachPerAsset = new Map<string, { asset: AssetRow; breaches: { s: SogliaRow; drawdown: number }[] }>()
-  for (const { s, asset, drawdown } of nuoveBreach) {
+  const nuoveBreachPerAsset = new Map<string, { asset: AssetRow; breaches: { s: BreachItem['s']; drawdown: number; trancheId?: string }[] }>()
+  for (const { s, asset, drawdown, trancheId } of nuoveBreach) {
     const entry = nuoveBreachPerAsset.get(s.portafoglio_id) ?? { asset, breaches: [] }
-    entry.breaches.push({ s, drawdown })
+    entry.breaches.push({ s, drawdown, trancheId })
     nuoveBreachPerAsset.set(s.portafoglio_id, entry)
   }
 
@@ -289,12 +364,35 @@ export async function checkAlertsForUser(
   for (const [portafoglioId, { asset, breaches }] of nuoveBreachPerAsset.entries()) {
     const nomeAsset = (asset.nome || asset.descrizione || asset.ticker) as string
 
-    const trigger = breaches.map(({ s, drawdown }) => ({
-      tipoLabel: TIPO_LABEL[s.tipo] ?? s.tipo,
-      sogliaPct: s.soglia_pct,
-      drawdown,
-      numAttivazione: conteggio(portafoglioId, s.tipo),
-    }))
+    // Soglia di notifica e tranche con lo stesso livello si mostrano una volta sola
+    const visti = new Set<string>()
+    const trigger = breaches
+      .filter(({ s }) => {
+        const k = `${s.tipo}-${s.soglia_pct}`
+        if (visti.has(k)) return false
+        visti.add(k)
+        return true
+      })
+      .map(({ s, drawdown }) => ({
+        tipoLabel: TIPO_LABEL[s.tipo] ?? s.tipo,
+        sogliaPct: s.soglia_pct,
+        drawdown,
+        numAttivazione: conteggio(portafoglioId, s.tipo),
+      }))
+    const numTranche = breaches.filter(b => b.trancheId).length
+
+    // Alert mensile su un asset del piano: dice dove sei rispetto al massimo e alle tranche
+    let notaPiano: string | undefined
+    if (idPiano.has(portafoglioId) && breaches.some(b => !b.trancheId)) {
+      const rib = ribassoDa(asset.ticker ? quotes[asset.ticker] : undefined) * 100
+      const scattate = tranche
+        .filter(t => t.portafoglio_id === portafoglioId && rib >= Number(t.soglia_pct) - 1e-9)
+        .map(t => Number(t.soglia_pct))
+      const ultima = scattate.length > 0 ? Math.max(...scattate) : null
+      notaPiano = `Dal massimo sei a −${rib.toFixed(1)}%: ` + (ultima != null
+        ? `ultima tranche del piano scattata −${ultima}%${numTranche > 0 ? '' : ' (importo già indicato al suo scatto)'}`
+        : 'nessuna tranche del piano ancora scattata')
+    }
 
     let importoConsigliato: number | undefined
     let nuovoPesoAzionario: number | undefined
@@ -314,16 +412,19 @@ export async function checkAlertsForUser(
     let riga = `${nomeAsset}: ${testoTrigger}`
     if (importoConsigliato != null) {
       riga += ` → investimento consigliato €${Math.round(importoConsigliato).toLocaleString('it-IT')}`
-      if (trigger.length > 1) riga += ' (importo unico, non si somma tra le soglie)'
+      if (numTranche > 1) riga += ` (somma delle ${numTranche} tranche scattate)`
       if (nuovoPesoAzionario != null) riga += `, nuovo peso azionario ${nuovoPesoAzionario.toFixed(1)}%`
     }
 
+    if (notaPiano) riga += ` · ${notaPiano}`
+
     // tipo = prima soglia scattata (valore valido per il vincolo della colonna)
     nuoveNotifiche.push({ user_id: userId, portafoglio_id: portafoglioId, tipo: breaches[0].s.tipo, messaggio: riga, dettaglio })
-    righeEmail.push({ nomeAsset, trigger, importoConsigliato, nuovoPesoAzionario, dettaglio: dettaglio.asset.find(d => d.id === portafoglioId) })
+    righeEmail.push({ nomeAsset, trigger, importoConsigliato, nuovoPesoAzionario, nota: notaPiano, dettaglio: dettaglio.asset.find(d => d.id === portafoglioId) })
   }
 
   await admin.from('notifiche').insert(nuoveNotifiche)
+  await salvaStatiTranche()
   for (const u of updates) {
     await admin.from('alert_soglie')
       .update(u.ultima_notifica_at ? { in_breach: u.in_breach, ultima_notifica_at: u.ultima_notifica_at } : { in_breach: u.in_breach })

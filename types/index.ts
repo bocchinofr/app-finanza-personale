@@ -112,6 +112,9 @@ export interface Profilo {
   target_obbligazioni_pct?: number | null
   target_liquidita_pct?: number | null
   pmc_max_aumento_pct?: number | null
+  // Piano di accumulo: bonus d'acquisto per ogni -10% sotto PMC (0.5 = +50%) e moltiplicatore massimo
+  accumulo_bonus_pmc?: number | null
+  accumulo_molt_max?: number | null
 }
 
 // Flag di svincolo per conto di liquidità: decoupled dalla riga mensile
@@ -149,4 +152,29 @@ export function statoAttuale(a: AssetPortafoglio): { quantita: number; prezzoCar
     quantita: a.quantita_attuale ?? a.quantita,
     prezzoCarico: a.prezzo_carico_attuale ?? a.prezzo_acquisto,
   }
+}
+
+// Piano di accumulo: asset inclusi, con quota di riserva e modalità di ripartizione tra le soglie
+export interface AccumuloAsset {
+  id?: string
+  user_id?: string
+  portafoglio_id: string
+  attivo: boolean
+  quota_pct: number | null // null = quota uguale tra gli asset del piano
+  distribuzione: 'uguale' | 'crescente' | 'manuale'
+}
+
+// Una tranche = una soglia di ribasso dal massimo con il suo peso sulla quota dell'asset
+export interface AccumuloTranche {
+  id?: string
+  user_id?: string
+  portafoglio_id: string
+  soglia_pct: number // 10 = -10% dal massimo
+  peso_pct: number
+  in_breach?: boolean
+  ultima_notifica_at?: string | null
+  // Memoria degli avvisi: quante volte è scattata (dopo riarmo) e massimo di riferimento all'ultimo avviso
+  attivazioni?: number | null
+  massimo_ultimo_avviso?: number | null
+  prezzo_ultimo_avviso?: number | null
 }

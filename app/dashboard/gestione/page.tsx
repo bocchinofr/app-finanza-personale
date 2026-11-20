@@ -1493,6 +1493,8 @@ export default function DashboardPage() {
                   moltMax={profilo?.accumulo_molt_max ?? null}
                   onSaved={loadData}
                   onSimula={(assetId, importo) => { setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
+                  onAggiornaPrezzi={fetchPrezziAttuali}
+                  loadingPrezzi={loadingPrezzi}
                 />
               )}
 

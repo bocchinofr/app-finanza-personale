@@ -19,6 +19,16 @@ export interface AssetAlertInput {
 
 export interface PosizioneAlertInput { id: string; nome: string; ticker: string; classe: ClasseAsset; valore: number; svincolato?: boolean }
 
+/** Avvisi da mostrare accanto all'importo: tranche riarmata e freschezza dei dati */
+export interface AvvisoImporto {
+  /** data ISO dell'ultimo aggiornamento di quantità/PMC dell'asset (null = sconosciuta) */
+  datiAggiornatiAl: string | null
+  /** ultimo saldo di liquidità usato per la riserva, es. "ott 2026" */
+  liquiditaAl: string | null
+  /** tranche scattate ora che avevano già suonato in precedenza */
+  riarmo: { sogliaPct: number; n: number; ultimoAvviso: string | null; nessunNuovoMassimo: boolean | null }[]
+}
+
 export interface DettaglioAsset {
   id: string
   nome: string
@@ -35,6 +45,7 @@ export interface DettaglioAsset {
   nuovoMargineGiuPct?: number
   pesoPrimaPct?: number     // peso dell'ETF sul patrimonio
   pesoDopoPct?: number
+  avviso?: AvvisoImporto
 }
 
 export interface VoceHolding { nome: string; pct: number }   // % sul valore azionario
@@ -146,4 +157,24 @@ export function calcolaDettaglioAlert(args: {
       : null,
     asset: dettagliAsset,
   }
+}
+
+const fmtData = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null)
+
+/** Testo unico per app e mail: titolo, righe e se mostrarlo in evidenza (tranche già scattata). */
+export function avvisoImportoTesto(a: AvvisoImporto): { forte: boolean; titolo: string; righe: string[] } {
+  const righe: string[] = []
+  for (const r of a.riarmo) {
+    const quando = r.ultimoAvviso ? `ultimo avviso il ${fmtData(r.ultimoAvviso)}` : 'il livello era già stato superato prima della creazione del piano'
+    righe.push(`La tranche −${r.sogliaPct}% è già scattata in precedenza (attivazione #${r.n}, ${quando}): potresti aver già investito a questo livello.`)
+    if (r.nessunNuovoMassimo === true) righe.push(`Dal precedente avviso il prezzo non ha fatto un nuovo massimo: è lo stesso ciclo di ribasso.`)
+    else if (r.nessunNuovoMassimo === false) righe.push(`Dal precedente avviso c'è stato un nuovo massimo: è un nuovo ciclo di ribasso.`)
+  }
+  const dati = fmtData(a.datiAggiornatiAl)
+  righe.push(
+    `Importo calcolato su quantità e PMC ${dati ? `aggiornati al ${dati}` : '(data di aggiornamento non disponibile)'}` +
+    `${a.liquiditaAl ? ` e liquidità di ${a.liquiditaAl}` : ''}. ` +
+    `Se hai già acquistato dopo quella data l'importo può differire da quello pianificato: aggiorna prima i dati.`
+  )
+  return { forte: a.riarmo.length > 0, titolo: a.riarmo.length > 0 ? 'Attenzione: livello già scattato' : 'Controlla i dati prima di investire', righe }
 }

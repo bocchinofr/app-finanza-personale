@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { avvisoImportoTesto, type DettaglioAlert, type DettaglioAsset, type Alloc } from '@/lib/alertDettaglio'
 
 const nf = (n: number, d = 1) => n.toLocaleString('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -81,32 +82,49 @@ function BoxAvviso({ d }: { d: DettaglioAsset }) {
 }
 
 function BloccoAsset({ d }: { d: DettaglioAsset }) {
+  // aperto di default solo se c'è un avviso da leggere prima di investire
+  const [open, setOpen] = useState(!!(d.avviso && d.importo != null))
   return (
-    <div className="py-3 first:pt-0 last:pb-0 border-t first:border-t-0 border-surface-200">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <p className="text-sm font-medium text-gray-900 leading-tight">{d.nome}</p>
-        <span className={`shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full ${d.accumulo ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-100' : 'bg-surface-100 text-gray-500'}`}>
-          {d.accumulo ? `Accumulo ${eur(d.importo ?? 0)}` : 'Nessun accumulo'}
-        </span>
-      </div>
-      <BoxAvviso d={d} />
-      {d.accumulo ? (
-        <>
-          <div className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-x-2 text-[10px] text-gray-400 pb-0.5">
-            <span /><span className="text-right">Prima</span><span className="text-right">Dopo</span>
-          </div>
-          <Riga label="PMC" prima={prezzo(d.pmc)} dopo={prezzo(d.nuovoPmc ?? d.pmc)} />
-          <Riga label="PnL vs PMC" prima={pct(d.pnlPct)} dopo={pct(d.nuovoPnlPct ?? d.pnlPct)} />
-          <Riga label="Margine di ribasso" prima={<Margine v={d.margineGiuPct} />} dopo={<Margine v={d.nuovoMargineGiuPct ?? d.margineGiuPct} />} />
-          {d.pesoPrimaPct != null && <Riga label="Peso sul patrimonio" prima={`${nf(d.pesoPrimaPct)}%`} dopo={`${nf(d.pesoDopoPct ?? 0)}%`} />}
-          {d.quote != null && <p className={`${NOTA} mt-1.5`}>≈ {nf(d.quote, 2)} quote a {prezzo(d.prezzo)}</p>}
-        </>
-      ) : (
-        <>
-          <Riga label="PMC" prima={prezzo(d.pmc)} />
-          <Riga label="PnL attuale" prima={pct(d.pnlPct)} />
-          <Riga label="Margine di ribasso" prima={<Margine v={d.margineGiuPct} />} />
-        </>
+    <div className="rounded-xl ring-1 ring-surface-200 bg-white overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-black/[0.02]">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-gray-900 truncate">{d.nome}</p>
+          <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
+            PMC {prezzo(d.pmc)}{d.accumulo && d.nuovoPmc != null && <> → <span className="font-medium text-gray-700">{prezzo(d.nuovoPmc)}</span></>}
+            {' · '}PnL {pct(d.pnlPct)}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${d.accumulo ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-100' : 'bg-surface-100 text-gray-500'}`}>
+            {d.accumulo ? `Accumulo ${eur(d.importo ?? 0)}` : 'Nessun accumulo'}
+          </span>
+          {d.avviso && d.importo != null && <span className="text-[11px] font-semibold text-amber-700">⚠️ Da verificare</span>}
+        </div>
+        <span aria-hidden className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 pt-1 border-t border-surface-100">
+          <div className="pt-2"><BoxAvviso d={d} /></div>
+          {d.accumulo ? (
+            <>
+              <div className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-x-2 text-[10px] text-gray-400 pb-0.5">
+                <span /><span className="text-right">Prima</span><span className="text-right">Dopo</span>
+              </div>
+              <Riga label="PMC" prima={prezzo(d.pmc)} dopo={prezzo(d.nuovoPmc ?? d.pmc)} />
+              <Riga label="PnL vs PMC" prima={pct(d.pnlPct)} dopo={pct(d.nuovoPnlPct ?? d.pnlPct)} />
+              <Riga label="Margine di ribasso" prima={<Margine v={d.margineGiuPct} />} dopo={<Margine v={d.nuovoMargineGiuPct ?? d.margineGiuPct} />} />
+              {d.pesoPrimaPct != null && <Riga label="Peso sul patrimonio" prima={`${nf(d.pesoPrimaPct)}%`} dopo={`${nf(d.pesoDopoPct ?? 0)}%`} />}
+              {d.quote != null && <p className={`${NOTA} mt-1.5`}>≈ {nf(d.quote, 2)} quote a {prezzo(d.prezzo)}</p>}
+            </>
+          ) : (
+            <>
+              <Riga label="PMC" prima={prezzo(d.pmc)} />
+              <Riga label="PnL attuale" prima={pct(d.pnlPct)} />
+              <Riga label="Margine di ribasso" prima={<Margine v={d.margineGiuPct} />} />
+            </>
+          )}
+        </div>
       )}
     </div>
   )
@@ -115,8 +133,10 @@ function BloccoAsset({ d }: { d: DettaglioAsset }) {
 function CardAsset({ asset }: { asset: DettaglioAsset[] }) {
   return (
     <section className="card">
-      <Titolo sub="Margine di ribasso: quanto può ancora scendere il prezzo prima che il PnL diventi negativo.">Parametri asset</Titolo>
-      {asset.map(d => <BloccoAsset key={d.id} d={d} />)}
+      <Titolo sub="Tocca un asset per aprire i dettagli. Margine di ribasso: quanto può ancora scendere il prezzo prima che il PnL diventi negativo.">Parametri asset</Titolo>
+      <div className="space-y-2">
+        {asset.map(d => <BloccoAsset key={d.id} d={d} />)}
+      </div>
     </section>
   )
 }

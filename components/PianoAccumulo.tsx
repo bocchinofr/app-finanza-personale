@@ -106,10 +106,10 @@ function BarraCapitale({ piano }: { piano: PianoAsset }) {
 }
 
 /* ───────── Tabella tranche: righe cliccabili con calcolo passo-passo ───────── */
-function StatoChip({ r }: { r: RigaPiano }) {
-  if (r.ora) return <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-brand-600 text-white whitespace-nowrap">Da investire ora</span>
-  if (r.storica) return <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-surface-100 text-gray-500 whitespace-nowrap">Già sbloccata</span>
-  return <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-accent2-50 text-accent2-700 ring-1 ring-accent2-100 whitespace-nowrap">In attesa</span>
+function StatoChip({ r, breve = false }: { r: RigaPiano; breve?: boolean }) {
+  if (r.ora) return <span title="Da investire ora" className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-600 text-white whitespace-nowrap">{breve ? 'Ora' : 'Da investire ora'}</span>
+  if (r.storica) return <span title="Già sbloccata" className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-surface-100 text-gray-500 whitespace-nowrap">{breve ? 'Fatta' : 'Già sbloccata'}</span>
+  return <span title="In attesa" className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-accent2-50 text-accent2-700 ring-1 ring-accent2-100 whitespace-nowrap">{breve ? 'Attesa' : 'In attesa'}</span>
 }
 
 function Passaggio({ n, children }: { n: number; children: React.ReactNode }) {
@@ -157,11 +157,11 @@ function DettaglioCalcolo({ r, quota, config }: { r: RigaPiano; quota: number; c
 
 function TabellaTranche({ piano, config }: { piano: PianoAsset; config: PianoConfig }) {
   const [aperta, setAperta] = useState<number | null>(null)
-  const cols = 'grid-cols-[6.5rem_1fr_6.5rem_8.5rem_5rem]'
+  const cols = 'grid-cols-[4.75rem_4.5rem_1fr_3.75rem_1rem]'
   return (
     <div>
       <div className={`hidden sm:grid ${cols} gap-x-3 px-3 pb-1.5 text-[11px] uppercase tracking-wide text-gray-400`}>
-        <span>Soglia</span><span className="text-right">Prezzo</span><span className="text-right">Importo</span><span className="text-right">Stato</span><span className="text-right">Calcolo</span>
+        <span>Soglia</span><span className="text-right">Prezzo</span><span className="text-right">Importo</span><span className="text-right">Stato</span><span />
       </div>
       <div className="divide-y divide-surface-100 rounded-xl border border-surface-200 overflow-hidden">
         {piano.righe.map(r => {
@@ -175,8 +175,8 @@ function TabellaTranche({ piano, config }: { piano: PianoAsset; config: PianoCon
                   <span><span className="text-sm font-semibold text-gray-800 tabular-nums">−{nf(r.sogliaPct)}%</span><span className="block text-[11px] text-gray-400">peso {nf(r.pesoPct, 0)}%</span></span>
                   <span className="text-right text-sm tabular-nums text-gray-600">{prz(r.prezzoRif)}</span>
                   <span className={`text-right tabular-nums num-display ${r.ora ? 'text-base font-bold text-brand-700' : 'text-sm font-semibold text-gray-800'}`}>{eur(r.importo)}</span>
-                  <span className="text-right"><StatoChip r={r} /></span>
-                  <span className="text-right text-xs font-medium text-brand-700">{open ? 'Chiudi ▴' : 'Come ▾'}</span>
+                  <span className="text-right"><StatoChip r={r} breve /></span>
+                  <span aria-hidden className="text-right text-xs text-gray-400">{open ? '▴' : '▾'}</span>
                 </div>
                 {/* smartphone */}
                 <div className="sm:hidden">
@@ -198,6 +198,21 @@ function TabellaTranche({ piano, config }: { piano: PianoAsset; config: PianoCon
           )
         })}
       </div>
+    </div>
+  )
+}
+
+function Blocco({ lettera, titolo, sub, children }: { lettera: string; titolo: string; sub: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl bg-surface-50 ring-1 ring-surface-200 p-3.5">
+      <div className="flex items-start gap-2.5 mb-3">
+        <span className="shrink-0 w-6 h-6 rounded-md bg-accent2-700 text-white text-xs font-bold flex items-center justify-center">{lettera}</span>
+        <div>
+          <p className="text-sm font-semibold text-gray-900 leading-tight">{titolo}</p>
+          <p className="text-xs text-gray-500 mt-0.5 leading-snug">{sub}</p>
+        </div>
+      </div>
+      {children}
     </div>
   )
 }
@@ -489,6 +504,11 @@ export default function PianoAccumulo({
     ? (oraAgg ? `Prezzi aggiornati alle ${oraAgg.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : 'Prezzi caricati')
     : 'Prezzi non ancora caricati'
 
+  const bonusN = Math.max(0, parseFloat(bonus.replace(',', '.')) || 0)
+  const mMaxN = Math.max(1, parseFloat(mMax.replace(',', '.')) || 1)
+  const limN = limPmc.trim() === '' ? null : Math.max(0, parseFloat(limPmc.replace(',', '.')) || 0)
+  const moltEsempio = Math.min(mMaxN, 1 + (bonusN / 100) * 2)
+
   return (
     <div className="space-y-4">
       {/* ───── Intestazione + come funziona ───── */}
@@ -577,12 +597,15 @@ export default function PianoAccumulo({
             const nome = c.asset.nome || c.asset.descrizione || c.asset.ticker
             const pnl = c.st.prezzoCarico > 0 ? (c.prezzo / c.st.prezzoCarico - 1) * 100 : 0
             const quota = quote.get(id) ?? 0
+            const quotaPctEff = riservaTotale > 0 ? (quota / riservaTotale) * 100 : 0
             const open = assetAperti.includes(id)
             const ora = c.piano.importoOra > 0
+            const accesa = [...c.piano.righe].reverse().find(r => r.scattata)
             const prossima = c.piano.righe.find(r => !r.scattata)
+            const pesiTxt = c.d.distribuzione === 'uguale' ? 'uguali' : c.d.distribuzione === 'crescente' ? 'crescenti' : 'manuali'
             return (
               <div key={id} className={`rounded-xl ring-1 overflow-hidden ${ora ? 'ring-brand-200 bg-brand-50/40' : 'ring-surface-200 bg-white'}`}>
-                {/* riga riassunto (da chiuso) */}
+                {/* ── riepilogo (scheda chiusa) ── */}
                 <button onClick={() => setAssetAperti(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]))} aria-expanded={open}
                   className="w-full text-left px-3 sm:px-4 py-3 flex items-center gap-3 hover:bg-black/[0.02]">
                   <div className="min-w-0 flex-1">
@@ -590,15 +613,24 @@ export default function PianoAccumulo({
                       <p className="text-sm font-semibold text-gray-900 truncate">{nome}</p>
                       <span className="text-xs text-gray-400 shrink-0">{c.asset.ticker}</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {c.haPrezzo ? `${prz(c.prezzo)} · −${nf(c.ribasso * 100, 1)}% dal massimo` : 'prezzo non caricato'} · quota {eur(quota)}
-                    </p>
-                    <div className="flex items-center gap-1 mt-1.5" aria-label="Soglie del piano">
-                      {c.piano.righe.map(r => (
-                        <span key={r.sogliaPct} title={`−${nf(r.sogliaPct)}%`}
-                          className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded-full ${r.scattata ? 'bg-brand-600 text-white' : 'bg-surface-100 text-gray-400'}`}>−{nf(r.sogliaPct)}%</span>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      {accesa ? (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-600 text-white">🔥 Soglia accesa −{nf(accesa.sogliaPct)}%</span>
+                      ) : (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-surface-100 text-gray-500">
+                          Nessuna soglia accesa{prossima ? ` · prossima −${nf(prossima.sogliaPct)}%` : ''}
+                        </span>
+                      )}
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-100 text-gray-600">Quota {eur(quota)} ({nf(quotaPctEff, 0)}%)</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-100 text-gray-600">Pesi {pesiTxt}</span>
                     </div>
+                    <p className="text-xs text-gray-400 mt-1.5">
+                      Soglie:{' '}
+                      {c.piano.righe.map((r, i) => (
+                        <span key={r.sogliaPct} className={r.scattata ? 'font-semibold text-brand-700' : ''}>{i > 0 && ' · '}−{nf(r.sogliaPct)}%</span>
+                      ))}
+                      {c.haPrezzo && <> · prezzo −{nf(c.ribasso * 100, 1)}% dal massimo</>}
+                    </p>
                   </div>
                   <div className="text-right shrink-0">
                     {ora ? (
@@ -607,57 +639,21 @@ export default function PianoAccumulo({
                         <p className="text-lg font-bold text-brand-700 tabular-nums num-display">{eur(c.piano.importoOra)}</p>
                       </>
                     ) : (
-                      <>
-                        <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-accent2-50 text-accent2-700 ring-1 ring-accent2-100">In attesa</span>
-                        {prossima && <p className="text-[11px] text-gray-400 mt-1">prossima −{nf(prossima.sogliaPct)}%</p>}
-                      </>
+                      <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-accent2-50 text-accent2-700 ring-1 ring-accent2-100">In attesa</span>
                     )}
                   </div>
                   <span aria-hidden className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
                 </button>
 
                 {open && (
-                  <div className="border-t border-surface-200 bg-white px-3 sm:px-4 py-4 space-y-5">
-                    <div className="grid lg:grid-cols-2 gap-5">
-                      {/* configurazione */}
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          {[
-                            { l: 'Prezzo', v: c.haPrezzo ? prz(c.prezzo) : '–' },
-                            { l: 'PMC', v: prz(c.st.prezzoCarico), s: c.haPrezzo ? `${pnl >= 0 ? '+' : '−'}${nf(Math.abs(pnl), 1)}%` : undefined, rosso: pnl < 0 },
-                            { l: 'Dal massimo', v: c.haPrezzo ? `−${nf(c.ribasso * 100, 1)}%` : '–' },
-                          ].map(k => (
-                            <div key={k.l} className="rounded-lg bg-surface-50 py-2">
-                              <p className="text-[11px] text-gray-400">{k.l}</p>
-                              <p className="text-sm font-semibold text-gray-800 tabular-nums">{k.v}</p>
-                              {k.s && <p className={`text-[11px] tabular-nums ${k.rosso ? 'text-red-600' : 'text-brand-700'}`}>{k.s}</p>}
-                            </div>
-                          ))}
-                        </div>
-                        {!c.haPrezzo && <p className="text-xs text-amber-700">Prezzi non caricati: premi &quot;Aggiorna prezzi&quot; qui sopra.</p>}
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <label className="text-xs text-gray-500">
-                            Quota di riserva (%)
-                            <input type="number" inputMode="decimal" min={0} max={100} step="1" placeholder="uguale"
-                              value={c.d.quotaPct} onChange={e => aggiorna(id, d => ({ ...d, quotaPct: e.target.value }))} className="input mt-1 !py-1.5" />
-                            <span className="block text-[11px] text-gray-400 mt-0.5">= {eur(quota)}{c.d.quotaPct.trim() === '' ? ' (parti uguali)' : ''}</span>
-                          </label>
-                          <label className="text-xs text-gray-500">
-                            Pesi tra le soglie
-                            <select value={c.d.distribuzione} onChange={e => cambiaDistribuzione(id, e.target.value as Distribuzione)} className="input mt-1 !py-1.5">
-                              <option value="uguale">Uguali</option>
-                              <option value="crescente">Crescenti (più a fondo, più compri)</option>
-                              <option value="manuale">Manuali</option>
-                            </select>
-                          </label>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-gray-500 mb-1.5">Soglie di ribasso dal massimo</p>
+                  <div className="border-t border-surface-200 bg-white p-3 sm:p-4">
+                    <div className="grid lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] gap-5">
+                      {/* ── sinistra: inserimento guidato ── */}
+                      <div className="space-y-3">
+                        <Blocco lettera="A" titolo="Soglie di ribasso dal massimo" sub="A quali ribassi vuoi comprare? Ogni soglia è un acquisto.">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {c.d.soglie.map((s, i) => (
-                              <span key={s.soglia} className="inline-flex items-center gap-1 rounded-full bg-surface-50 ring-1 ring-surface-200 pl-2.5 pr-1.5 py-0.5 text-xs">
+                              <span key={s.soglia} className="inline-flex items-center gap-1 rounded-full bg-white ring-1 ring-surface-200 pl-2.5 pr-1.5 py-0.5 text-xs">
                                 <span className="font-semibold text-gray-700 tabular-nums">−{nf(s.soglia)}%</span>
                                 {c.d.distribuzione === 'manuale' && (
                                   <span className="inline-flex items-center">
@@ -679,49 +675,93 @@ export default function PianoAccumulo({
                               <button onClick={() => aggiungiSoglia(id)} className="text-xs font-medium text-brand-700 hover:underline">Aggiungi</button>
                             </span>
                           </div>
-                          {c.d.distribuzione === 'manuale' && (
-                            <p className={`text-[11px] mt-1 ${Math.abs(c.sommaPesi - 100) > 0.01 ? 'text-red-600' : 'text-gray-400'}`}>Somma pesi {nf(c.sommaPesi, 0)}% (deve fare 100%)</p>
-                          )}
-                        </div>
+                          {c.d.soglie.length === 0 && <p className="text-xs text-amber-700 mt-2">Aggiungi almeno una soglia per attivare il piano su questo asset.</p>}
+                        </Blocco>
+
+                        <Blocco lettera="B" titolo="Quota e pesi" sub="Quanta riserva assegni a questo asset e come la dividi tra le soglie.">
+                          <div className="space-y-3">
+                            <label className="block text-xs text-gray-600">
+                              <span className="font-medium text-gray-800">Quota di riserva (%)</span>
+                              <input type="number" inputMode="decimal" min={0} max={100} step="1" placeholder="parti uguali"
+                                value={c.d.quotaPct} onChange={e => aggiorna(id, d => ({ ...d, quotaPct: e.target.value }))} className="input mt-1 !py-1.5" />
+                              <span className="block text-[11px] text-gray-400 mt-0.5">= {eur(quota)}{c.d.quotaPct.trim() === '' ? ' · vuoto = riserva divisa in parti uguali tra gli asset' : ''}</span>
+                            </label>
+                            <label className="block text-xs text-gray-600">
+                              <span className="font-medium text-gray-800">Pesi tra le soglie</span>
+                              <select value={c.d.distribuzione} onChange={e => cambiaDistribuzione(id, e.target.value as Distribuzione)} className="input mt-1 !py-1.5">
+                                <option value="uguale">Uguali</option>
+                                <option value="crescente">Crescenti</option>
+                                <option value="manuale">Manuali</option>
+                              </select>
+                              <span className="block text-[11px] text-gray-400 mt-0.5">
+                                {c.d.distribuzione === 'uguale' && 'Ogni soglia riceve la stessa parte della quota.'}
+                                {c.d.distribuzione === 'crescente' && 'Più il prezzo scende, più compri: l’ultima soglia pesa di più.'}
+                                {c.d.distribuzione === 'manuale' && 'Decidi tu la % di ogni soglia (campi nelle soglie qui sopra).'}
+                              </span>
+                              {c.d.distribuzione === 'manuale' && (
+                                <span className={`block text-[11px] mt-0.5 ${Math.abs(c.sommaPesi - 100) > 0.01 ? 'text-red-600' : 'text-gray-400'}`}>Somma pesi {nf(c.sommaPesi, 0)}% (deve fare 100%)</span>
+                              )}
+                            </label>
+                          </div>
+                        </Blocco>
                       </div>
 
-                      {/* barre */}
-                      {c.piano.righe.length > 0 && (
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-xs text-gray-500">Dove sei rispetto alle soglie</p>
-                            <BarraSoglie righe={c.piano.righe} ribasso={c.ribasso} />
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 mb-1.5">Come si usa la quota</p>
-                            <BarraCapitale piano={c.piano} />
-                          </div>
+                      {/* ── destra: KPI e dettaglio ── */}
+                      <div className="space-y-4 min-w-0">
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          {[
+                            { l: 'Prezzo', v: c.haPrezzo ? prz(c.prezzo) : '–' },
+                            { l: 'PMC', v: prz(c.st.prezzoCarico), s: c.haPrezzo ? `${pnl >= 0 ? '+' : '−'}${nf(Math.abs(pnl), 1)}%` : undefined, rosso: pnl < 0 },
+                            { l: 'Dal massimo', v: c.haPrezzo ? `−${nf(c.ribasso * 100, 1)}%` : '–' },
+                          ].map(k => (
+                            <div key={k.l} className="rounded-lg bg-surface-50 ring-1 ring-surface-200 py-2">
+                              <p className="text-[11px] text-gray-400">{k.l}</p>
+                              <p className="text-sm font-semibold text-gray-800 tabular-nums">{k.v}</p>
+                              {k.s && <p className={`text-[11px] tabular-nums ${k.rosso ? 'text-red-600' : 'text-brand-700'}`}>{k.s}</p>}
+                            </div>
+                          ))}
                         </div>
-                      )}
+                        {!c.haPrezzo && <p className="text-xs text-amber-700">Prezzi non caricati: premi &quot;Aggiorna prezzi&quot; in alto.</p>}
+
+                        {c.piano.righe.length > 0 && (
+                          <>
+                            <div className="grid sm:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs text-gray-500">Dove sei rispetto alle soglie</p>
+                                <BarraSoglie righe={c.piano.righe} ribasso={c.ribasso} />
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1.5">Come si usa la quota</p>
+                                <BarraCapitale piano={c.piano} />
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-gray-600 mb-1.5">Importi consigliati <span className="font-normal text-gray-400">· tocca una riga per il calcolo</span></p>
+                              <TabellaTranche piano={c.piano} config={config} />
+                              {(() => {
+                                const av = savedTranche
+                                  .filter(t => t.portafoglio_id === id && (t.attivazioni ?? 0) > 0)
+                                  .sort((x, y) => x.soglia_pct - y.soglia_pct)
+                                if (av.length === 0) return null
+                                return (
+                                  <p className="mt-2 text-xs text-gray-500 leading-snug">
+                                    <span className="font-medium text-gray-600">Avvisi già inviati:</span>{' '}
+                                    {av.map(t => `−${nf(Number(t.soglia_pct))}%: ${t.attivazioni}× (ultimo ${fmtData(t.ultima_notifica_at) ?? '–'})`).join(' · ')}
+                                  </p>
+                                )
+                              })()}
+                              <p className="text-[11px] text-gray-400 leading-snug mt-2">Le soglie in attesa usano il prezzo che avrebbe l&apos;asset in quel punto, ipotizzando di aver comprato le tranche precedenti.</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
 
-                    {c.piano.righe.length > 0 && (
-                      <div>
-                        <p className="text-xs font-medium text-gray-600 mb-1.5">Importi consigliati lungo la discesa <span className="font-normal text-gray-400">· tocca una riga per vedere il calcolo</span></p>
-                        <TabellaTranche piano={c.piano} config={config} />
-                        {(() => {
-                          const av = savedTranche
-                            .filter(t => t.portafoglio_id === id && (t.attivazioni ?? 0) > 0)
-                            .sort((x, y) => x.soglia_pct - y.soglia_pct)
-                          if (av.length === 0) return null
-                          return (
-                            <p className="mt-2 text-xs text-gray-500 leading-snug">
-                              <span className="font-medium text-gray-600">Avvisi già inviati:</span>{' '}
-                              {av.map(t => `−${nf(Number(t.soglia_pct))}%: ${t.attivazioni}× (ultimo ${fmtData(t.ultima_notifica_at) ?? '–'})`).join(' · ')}
-                            </p>
-                          )
-                        })()}
-                        <p className="text-[11px] text-gray-400 leading-snug mt-2">Le soglie in attesa usano il prezzo che avrebbe l&apos;asset in quel punto, ipotizzando di aver comprato le tranche precedenti.</p>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-surface-100">
-                      <button onClick={() => setDrafts(p => p.filter(x => x.portafoglioId !== id))} className="text-xs text-gray-400 hover:text-red-600">Rimuovi dal piano ✕</button>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-surface-100">
+                      <button onClick={() => setDrafts(p => p.filter(x => x.portafoglioId !== id))}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 hover:border-red-300 transition-colors">
+                        🗑 Rimuovi dal piano
+                      </button>
                       {onSimula && c.piano.importoOra > 0 && (
                         <button onClick={() => onSimula(id, c.piano.importoOra)} className="text-xs font-medium text-brand-700 hover:underline">Simula l&apos;acquisto di adesso →</button>
                       )}
@@ -748,26 +788,65 @@ export default function PianoAccumulo({
 
       {/* ───── Passo 4: Regole e importi ───── */}
       <StepBox id="pa-regole" numero="4" colore="bg-gray-800" titolo="Regole e importi"
-        riassunto={`Limite PMC ${limPmc.trim() === '' ? 'nessuno' : `+${limPmc}%`} · bonus ${bonus}% ogni −10% · max ×${mMax}`}
+        riassunto={`Sotto PMC: bonus ${bonus}% ogni −10% (max ×${mMax}) · Sopra PMC: limite ${limPmc.trim() === '' ? 'nessuno' : `+${limPmc}%`}`}
         aperto={aperti.regole} onToggle={() => setAperti(p => ({ ...p, regole: !p.regole }))}>
-        <p className="text-xs text-gray-500 mb-3">Queste regole valgono per tutti gli asset del piano e decidono quanto comprare a ogni soglia.</p>
-        <div className="grid sm:grid-cols-3 gap-4">
-          <label className="block text-xs text-gray-600">
-            <span className="font-medium text-gray-800">Limite aumento PMC (%)</span> <span className="text-gray-400">· sopra PMC</span>
-            <input type="number" inputMode="decimal" min={0} step="0.5" value={limPmc} onChange={e => setLimPmc(e.target.value)} className="input mt-1 !py-1.5" />
-            <span className="block text-[11px] text-gray-400 mt-1">Il nuovo PMC non può salire oltre questa %. Vuoto = nessun limite.</span>
-          </label>
-          <label className="block text-xs text-gray-600">
-            <span className="font-medium text-gray-800">Bonus ogni −10% sotto PMC (%)</span>
-            <input type="number" inputMode="decimal" min={0} step="5" value={bonus} onChange={e => setBonus(e.target.value)} className="input mt-1 !py-1.5" />
-            <span className="block text-[11px] text-gray-400 mt-1">50 = compri +50% in più ogni −10% sotto il tuo PMC.</span>
-          </label>
-          <label className="block text-xs text-gray-600">
-            <span className="font-medium text-gray-800">Moltiplicatore massimo (×)</span>
-            <input type="number" inputMode="decimal" min={1} step="0.5" value={mMax} onChange={e => setMMax(e.target.value)} className="input mt-1 !py-1.5" />
-            <span className="block text-[11px] text-gray-400 mt-1">Tetto al bonus: 2 = al massimo il doppio della tranche.</span>
-          </label>
+        <p className="text-sm text-gray-600 leading-relaxed">
+          Per ogni soglia l&apos;app parte dalla <strong className="text-gray-800">tranche</strong> (quota × peso) e la corregge in base al prezzo rispetto al tuo{' '}
+          <strong className="text-gray-800">PMC</strong>, il prezzo medio a cui hai comprato finora. Le regole valgono per tutti gli asset del piano.
+        </p>
+
+        <div className="grid lg:grid-cols-2 gap-4 mt-4">
+          {/* sotto PMC */}
+          <div className="rounded-xl ring-1 ring-brand-100 bg-brand-50/50 p-4">
+            <p className="text-sm font-semibold text-gray-900">📉 Prezzo sotto il tuo PMC</p>
+            <p className="text-xs text-gray-600 mt-1 leading-relaxed">Compri a sconto sul tuo costo medio: l&apos;app ti fa comprare <strong className="text-gray-800">di più</strong> e il PMC scende. Più sei sotto il PMC, più compri.</p>
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <label className="block text-xs text-gray-600">
+                <span className="font-medium text-gray-800">Bonus acquisto (%)</span>
+                <input type="number" inputMode="decimal" min={0} step="5" value={bonus} onChange={e => setBonus(e.target.value)} className="input mt-1 !py-1.5" />
+                <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Quanto in più compri per ogni −10% sotto il PMC. 50 = +50% ogni −10%.</span>
+              </label>
+              <label className="block text-xs text-gray-600">
+                <span className="font-medium text-gray-800">Tetto massimo (×)</span>
+                <input type="number" inputMode="decimal" min={1} step="0.5" value={mMax} onChange={e => setMMax(e.target.value)} className="input mt-1 !py-1.5" />
+                <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Il moltiplicatore non supera mai questo valore. 2 = al massimo il doppio.</span>
+              </label>
+            </div>
+            <div className="mt-3 rounded-lg bg-white ring-1 ring-surface-200 p-3 text-xs text-gray-600 leading-relaxed">
+              <p className="font-medium text-gray-800 mb-0.5">Esempio con i tuoi valori</p>
+              Tranche €1.000, prezzo 20% sotto il PMC. Moltiplicatore = 1 + {nf(bonusN, 0)}% × (20 ÷ 10) = ×{nf(1 + (bonusN / 100) * 2, 2)}
+              {1 + (bonusN / 100) * 2 > mMaxN + 1e-9 && <>, limitato dal tetto a ×{nf(mMaxN, 2)}</>}.
+              {' '}Compri <strong className="text-brand-700">{eur(1000 * moltEsempio)}</strong>.
+            </div>
+            <p className="mt-2 text-[11px] text-gray-500 leading-snug"><strong className="text-gray-700">Moltiplicatore</strong> = il numero per cui viene moltiplicata la tranche. ×1 = nessun bonus, ×2 = il doppio.</p>
+          </div>
+
+          {/* sopra PMC */}
+          <div className="rounded-xl ring-1 ring-amber-100 bg-amber-50/50 p-4">
+            <p className="text-sm font-semibold text-gray-900">📈 Prezzo sopra il tuo PMC</p>
+            <p className="text-xs text-gray-600 mt-1 leading-relaxed">Compri più caro del tuo costo medio, quindi il PMC <strong className="text-gray-800">sale</strong>. Il limite impedisce che salga troppo.</p>
+            <label className="block text-xs text-gray-600 mt-3">
+              <span className="font-medium text-gray-800">Limite aumento PMC (%)</span>
+              <input type="number" inputMode="decimal" min={0} step="0.5" placeholder="nessun limite" value={limPmc} onChange={e => setLimPmc(e.target.value)} className="input mt-1 !py-1.5 sm:max-w-[10rem]" />
+              <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Dopo l&apos;acquisto il nuovo PMC non può superare l&apos;attuale di più di questa %. Vuoto = nessun limite.</span>
+            </label>
+            <div className="mt-3 rounded-lg bg-white ring-1 ring-surface-200 p-3 text-xs text-gray-600 leading-relaxed">
+              <p className="font-medium text-gray-800 mb-0.5">Esempio con i tuoi valori</p>
+              {limN == null ? (
+                <>Nessun limite: compri sempre l&apos;intera tranche, anche se il PMC sale molto.</>
+              ) : (
+                <>PMC attuale €100, limite {nf(limN, 1)}%: dopo l&apos;acquisto il PMC può arrivare al massimo a <strong className="text-gray-800">€{nf(100 * (1 + limN / 100), 2)}</strong>.
+                  Se la tranche lo portasse oltre, l&apos;importo viene <strong className="text-amber-700">ridotto</strong> (non annullato) fino a stare dentro il limite.</>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-gray-500 leading-snug">
+              Se il prezzo è già dentro il limite (es. PMC 100, prezzo 101, limite 2%) la tranche resta intera. Valori tipici: 1–3%. Con 0% non compri mai sopra il PMC.
+            </p>
+          </div>
         </div>
+
+        <p className="mt-3 text-xs text-gray-500">🔒 In ogni caso non spendi mai più della quota assegnata all&apos;asset: niente prestiti dagli altri.</p>
+
         <div className="flex items-center gap-3 mt-4">
           <button onClick={salvaRegole} disabled={savingRegole} className="btn-primary !py-1.5 !px-3 text-xs">{savingRegole ? 'Salvo…' : 'Salva regole'}</button>
           {msgRegole && <span className="text-xs text-gray-500">{msgRegole}</span>}

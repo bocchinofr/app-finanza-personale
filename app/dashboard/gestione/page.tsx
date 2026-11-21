@@ -5,7 +5,7 @@ import { Movimento, Liquidita, AssetPortafoglio, AlertSoglia, Profilo, MediaStor
 import AnalisiPortafoglio from '@/components/portfolio/AnalisiPortafoglio'
 import PianoAccumulo from '@/components/PianoAccumulo'
 import AlertDettaglioSezione from '@/components/AlertDettaglioSezione'
-import InfoAccumuloModal from '@/components/InfoAccumuloModal'
+import InfoSoglieModal from '@/components/InfoSoglieModal'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
 import { HeatmapCell } from '@/components/charts/HeatmapCell'
@@ -1646,7 +1646,7 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
                   <div className="flex items-center gap-3">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Anagrafica portafoglio</p>
-                    <InfoAccumuloModal ddMax={profilo?.dd_max ?? 0.30} />
+                    <InfoSoglieModal />
                     <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
                       {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
                     </button>

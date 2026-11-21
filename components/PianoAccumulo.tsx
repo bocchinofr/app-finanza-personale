@@ -19,7 +19,7 @@ interface Props {
   prezziAttuali: Record<string, QuoteInfo>
   behaviorLabel: string | null
   pmcMaxAumento?: number | null      // %, es. 2 = max +2% sul PMC
-  bonusSottoPmc?: number | null      // frazione, 0.5 = +50% ogni -10% sotto PMC
+  bonusSottoPmc?: number | null      // frazione, 0.5 = +50% se la soglia è sotto PMC
   moltMax?: number | null
   onSaved?: () => void
   onSimula?: (assetId: string, importo: number) => void
@@ -133,8 +133,7 @@ function DettaglioCalcolo({ r, quota, config }: { r: RigaPiano; quota: number; c
       <Passaggio n={1}>{g('Tranche base')}: quota dell&apos;asset {eur(quota)} × peso {nf(r.pesoPct, 0)}% = {g(eur(r.base))}</Passaggio>
       <Passaggio n={2}>
         {r.sottoPmc ? (
-          <>{g('Sei sotto PMC')}: il prezzo {!r.scattata && 'ipotetico '}({prz(r.prezzoRif)}) è sotto il tuo PMC ({prz(r.pmcPrima)}) del {nf(sotto, 1)}%, quindi compri di più.
-            Moltiplicatore = 1 + {nf(config.bonusSottoPmc * 100)}% × ({nf(sotto, 1)}% ÷ 10) = {g(`×${molt}`)}{r.moltiplicatore >= config.moltMax - 1e-9 && ` (tetto massimo ×${nf(config.moltMax, 1)})`}.
+          <>{g('Sei sotto PMC')}: il prezzo {!r.scattata && 'ipotetico '}({prz(r.prezzoRif)}) è sotto il tuo PMC ({prz(r.pmcPrima)}) del {nf(sotto, 1)}%, quindi la tranche aumenta del {nf(config.bonusSottoPmc * 100)}% (×{molt}){1 + config.bonusSottoPmc > config.moltMax + 1e-9 && <>, fermata dal tetto ×{nf(config.moltMax, 1)}</>}.
             Quindi {eur(r.base)} × {molt} = {g(eur(r.base * r.moltiplicatore))}</>
         ) : (
           <>{g('Sei sopra PMC')}: il prezzo {!r.scattata && 'ipotetico '}({prz(r.prezzoRif)}) è sopra il tuo PMC ({prz(r.pmcPrima)}), quindi nessun bonus: {g('×1')}.</>
@@ -507,7 +506,7 @@ export default function PianoAccumulo({
   const bonusN = Math.max(0, parseFloat(bonus.replace(',', '.')) || 0)
   const mMaxN = Math.max(1, parseFloat(mMax.replace(',', '.')) || 1)
   const limN = limPmc.trim() === '' ? null : Math.max(0, parseFloat(limPmc.replace(',', '.')) || 0)
-  const moltEsempio = Math.min(mMaxN, 1 + (bonusN / 100) * 2)
+  const moltEsempio = Math.min(mMaxN, 1 + bonusN / 100)
 
   return (
     <div className="space-y-4">
@@ -786,74 +785,12 @@ export default function PianoAccumulo({
         </div>
       </StepBox>
 
-      {/* ───── Passo 4: Regole e importi ───── */}
-      <StepBox id="pa-regole" numero="4" colore="bg-gray-800" titolo="Regole e importi"
-        riassunto={`Sotto PMC: bonus ${bonus}% ogni −10% (max ×${mMax}) · Sopra PMC: limite ${limPmc.trim() === '' ? 'nessuno' : `+${limPmc}%`}`}
+      {/* ───── Passo 4: Importi e regole ───── */}
+      <StepBox id="pa-regole" numero="4" colore="bg-gray-800" titolo="Importi e regole"
+        riassunto={calcoli.length > 0 ? `${eur(impegnatoOra)} da investire ora · regole avanzate già impostate` : 'Importi consigliati e impostazioni avanzate'}
         aperto={aperti.regole} onToggle={() => setAperti(p => ({ ...p, regole: !p.regole }))}>
-        <p className="text-sm text-gray-600 leading-relaxed">
-          Per ogni soglia l&apos;app parte dalla <strong className="text-gray-800">tranche</strong> (quota × peso) e la corregge in base al prezzo rispetto al tuo{' '}
-          <strong className="text-gray-800">PMC</strong>, il prezzo medio a cui hai comprato finora. Le regole valgono per tutti gli asset del piano.
-        </p>
-
-        <div className="grid lg:grid-cols-2 gap-4 mt-4">
-          {/* sotto PMC */}
-          <div className="rounded-xl ring-1 ring-brand-100 bg-brand-50/50 p-4">
-            <p className="text-sm font-semibold text-gray-900">📉 Prezzo sotto il tuo PMC</p>
-            <p className="text-xs text-gray-600 mt-1 leading-relaxed">Compri a sconto sul tuo costo medio: l&apos;app ti fa comprare <strong className="text-gray-800">di più</strong> e il PMC scende. Più sei sotto il PMC, più compri.</p>
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <label className="block text-xs text-gray-600">
-                <span className="font-medium text-gray-800">Bonus acquisto (%)</span>
-                <input type="number" inputMode="decimal" min={0} step="5" value={bonus} onChange={e => setBonus(e.target.value)} className="input mt-1 !py-1.5" />
-                <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Quanto in più compri per ogni −10% sotto il PMC. 50 = +50% ogni −10%.</span>
-              </label>
-              <label className="block text-xs text-gray-600">
-                <span className="font-medium text-gray-800">Tetto massimo (×)</span>
-                <input type="number" inputMode="decimal" min={1} step="0.5" value={mMax} onChange={e => setMMax(e.target.value)} className="input mt-1 !py-1.5" />
-                <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Il moltiplicatore non supera mai questo valore. 2 = al massimo il doppio.</span>
-              </label>
-            </div>
-            <div className="mt-3 rounded-lg bg-white ring-1 ring-surface-200 p-3 text-xs text-gray-600 leading-relaxed">
-              <p className="font-medium text-gray-800 mb-0.5">Esempio con i tuoi valori</p>
-              Tranche €1.000, prezzo 20% sotto il PMC. Moltiplicatore = 1 + {nf(bonusN, 0)}% × (20 ÷ 10) = ×{nf(1 + (bonusN / 100) * 2, 2)}
-              {1 + (bonusN / 100) * 2 > mMaxN + 1e-9 && <>, limitato dal tetto a ×{nf(mMaxN, 2)}</>}.
-              {' '}Compri <strong className="text-brand-700">{eur(1000 * moltEsempio)}</strong>.
-            </div>
-            <p className="mt-2 text-[11px] text-gray-500 leading-snug"><strong className="text-gray-700">Moltiplicatore</strong> = il numero per cui viene moltiplicata la tranche. ×1 = nessun bonus, ×2 = il doppio.</p>
-          </div>
-
-          {/* sopra PMC */}
-          <div className="rounded-xl ring-1 ring-amber-100 bg-amber-50/50 p-4">
-            <p className="text-sm font-semibold text-gray-900">📈 Prezzo sopra il tuo PMC</p>
-            <p className="text-xs text-gray-600 mt-1 leading-relaxed">Compri più caro del tuo costo medio, quindi il PMC <strong className="text-gray-800">sale</strong>. Il limite impedisce che salga troppo.</p>
-            <label className="block text-xs text-gray-600 mt-3">
-              <span className="font-medium text-gray-800">Limite aumento PMC (%)</span>
-              <input type="number" inputMode="decimal" min={0} step="0.5" placeholder="nessun limite" value={limPmc} onChange={e => setLimPmc(e.target.value)} className="input mt-1 !py-1.5 sm:max-w-[10rem]" />
-              <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Dopo l&apos;acquisto il nuovo PMC non può superare l&apos;attuale di più di questa %. Vuoto = nessun limite.</span>
-            </label>
-            <div className="mt-3 rounded-lg bg-white ring-1 ring-surface-200 p-3 text-xs text-gray-600 leading-relaxed">
-              <p className="font-medium text-gray-800 mb-0.5">Esempio con i tuoi valori</p>
-              {limN == null ? (
-                <>Nessun limite: compri sempre l&apos;intera tranche, anche se il PMC sale molto.</>
-              ) : (
-                <>PMC attuale €100, limite {nf(limN, 1)}%: dopo l&apos;acquisto il PMC può arrivare al massimo a <strong className="text-gray-800">€{nf(100 * (1 + limN / 100), 2)}</strong>.
-                  Se la tranche lo portasse oltre, l&apos;importo viene <strong className="text-amber-700">ridotto</strong> (non annullato) fino a stare dentro il limite.</>
-              )}
-            </div>
-            <p className="mt-2 text-[11px] text-gray-500 leading-snug">
-              Se il prezzo è già dentro il limite (es. PMC 100, prezzo 101, limite 2%) la tranche resta intera. Valori tipici: 1–3%. Con 0% non compri mai sopra il PMC.
-            </p>
-          </div>
-        </div>
-
-        <p className="mt-3 text-xs text-gray-500">🔒 In ogni caso non spendi mai più della quota assegnata all&apos;asset: niente prestiti dagli altri.</p>
-
-        <div className="flex items-center gap-3 mt-4">
-          <button onClick={salvaRegole} disabled={savingRegole} className="btn-primary !py-1.5 !px-3 text-xs">{savingRegole ? 'Salvo…' : 'Salva regole'}</button>
-          {msgRegole && <span className="text-xs text-gray-500">{msgRegole}</span>}
-        </div>
-
-        {calcoli.length > 0 && (
-          <div className="mt-5 pt-4 border-t border-surface-100">
+        {calcoli.length > 0 ? (
+          <div>
             <p className="text-xs font-medium text-gray-600 mb-2">Importi consigliati adesso</p>
             <div className="divide-y divide-surface-100 rounded-xl border border-surface-200 overflow-hidden">
               {calcoli.map(c => (
@@ -866,7 +803,77 @@ export default function PianoAccumulo({
               ))}
             </div>
           </div>
+        ) : (
+          <p className="text-xs text-gray-500">Aggiungi un asset al piano per vedere gli importi consigliati.</p>
         )}
+
+        <details className="mt-4 rounded-xl ring-1 ring-surface-200 bg-white">
+          <summary className="cursor-pointer select-none px-4 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span className="text-sm font-semibold text-gray-800">⚙️ Impostazioni avanzate</span>
+            <span className="text-xs text-gray-500">
+              Bonus +{bonus || 0}% · Tetto ×{mMax || 1} · Limite PMC {limPmc.trim() === '' ? 'nessuno' : `+${limPmc}%`}
+            </span>
+          </summary>
+          <div className="px-4 pb-4 pt-3 border-t border-surface-100">
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Sono già impostate su valori sensati: se non sai cosa cambiare, lasciale così. Valgono per tutti gli asset del piano.
+            </p>
+
+            <div className="grid lg:grid-cols-2 gap-4 mt-3">
+              {/* sotto PMC */}
+              <div className="rounded-xl ring-1 ring-brand-100 bg-brand-50/50 p-4">
+                <p className="text-sm font-semibold text-gray-900">📉 Soglia sotto il tuo PMC</p>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">Stai comprando a sconto, quindi compri un po&apos; di più.</p>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <label className="block text-xs text-gray-600">
+                    <span className="font-medium text-gray-800">Bonus acquisto (%)</span>
+                    <input type="number" inputMode="decimal" min={0} step="5" value={bonus} onChange={e => setBonus(e.target.value)} className="input mt-1 !py-1.5" />
+                    <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Di quanto aumenti la tranche quando la soglia è sotto il PMC. Vale uguale per ogni soglia sotto il PMC (−10%, −15%…).</span>
+                  </label>
+                  <label className="block text-xs text-gray-600">
+                    <span className="font-medium text-gray-800">Tetto massimo (×)</span>
+                    <input type="number" inputMode="decimal" min={1} step="0.5" value={mMax} onChange={e => setMMax(e.target.value)} className="input mt-1 !py-1.5" />
+                    <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Il massimo per cui puoi moltiplicare la tranche. ×2 = mai più del doppio.</span>
+                  </label>
+                </div>
+                <div className="mt-3 rounded-lg bg-white ring-1 ring-surface-200 p-3 text-xs text-gray-600 leading-relaxed">
+                  <p className="font-medium text-gray-800 mb-0.5">Esempio con i tuoi valori</p>
+                  Tranche €1.000 + bonus {nf(bonusN, 0)}% = {eur(1000 * (1 + bonusN / 100))}
+                  {1 + bonusN / 100 > mMaxN + 1e-9 && <>, ma il tetto ×{nf(mMaxN, 2)} lo ferma a {eur(1000 * mMaxN)}</>}.
+                  {' '}Compri <strong className="text-brand-700">{eur(1000 * moltEsempio)}</strong>.
+                </div>
+              </div>
+
+              {/* sopra PMC */}
+              <div className="rounded-xl ring-1 ring-amber-100 bg-amber-50/50 p-4">
+                <p className="text-sm font-semibold text-gray-900">📈 Soglia sopra il tuo PMC</p>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">Comprare qui fa salire il tuo PMC: il limite dice di quanto lo accetti.</p>
+                <label className="block text-xs text-gray-600 mt-3">
+                  <span className="font-medium text-gray-800">Limite aumento PMC (%)</span>
+                  <input type="number" inputMode="decimal" min={0} step="0.5" placeholder="nessun limite" value={limPmc} onChange={e => setLimPmc(e.target.value)} className="input mt-1 !py-1.5 sm:max-w-[10rem]" />
+                  <span className="block text-[11px] text-gray-400 mt-1 leading-snug">Di quanto accetti che il tuo PMC salga. Se un acquisto lo farebbe salire di più, la tranche viene ridotta. Vuoto = nessun limite.</span>
+                </label>
+                <div className="mt-3 rounded-lg bg-white ring-1 ring-surface-200 p-3 text-xs text-gray-600 leading-relaxed">
+                  <p className="font-medium text-gray-800 mb-0.5">Esempio con i tuoi valori</p>
+                  {limN == null ? (
+                    <>Nessun limite: compri sempre l&apos;intera tranche, anche se il PMC sale molto.</>
+                  ) : (
+                    <>PMC attuale €100, limite {nf(limN, 1)}%: dopo l&apos;acquisto il PMC può arrivare al massimo a <strong className="text-gray-800">€{nf(100 * (1 + limN / 100), 2)}</strong>.
+                      Se la tranche lo portasse oltre, viene <strong className="text-amber-700">ridotta</strong> (non annullata) fino a restare dentro il limite.</>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-gray-500">🔒 In ogni caso non spendi mai più della quota assegnata all&apos;asset.</p>
+
+            <div className="flex flex-wrap items-center gap-3 mt-4">
+              <button onClick={salvaRegole} disabled={savingRegole} className="btn-primary !py-1.5 !px-3 text-xs">{savingRegole ? 'Salvo…' : 'Salva regole'}</button>
+              <button onClick={() => { setBonus('50'); setMMax('2'); setLimPmc('2') }} className="btn-secondary !py-1.5 !px-3 text-xs">Ripristina predefiniti</button>
+              {msgRegole && <span className="text-xs text-gray-500">{msgRegole}</span>}
+            </div>
+          </div>
+        </details>
       </StepBox>
 
       {/* ───── Barra di salvataggio ───── */}

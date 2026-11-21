@@ -112,7 +112,7 @@ export interface Profilo {
   target_obbligazioni_pct?: number | null
   target_liquidita_pct?: number | null
   pmc_max_aumento_pct?: number | null
-  // Piano di accumulo: bonus d'acquisto per ogni -10% sotto PMC (0.5 = +50%) e moltiplicatore massimo
+  // Piano di accumulo: aumento della tranche se la soglia è sotto PMC (0.5 = +50%) e moltiplicatore massimo
   accumulo_bonus_pmc?: number | null
   accumulo_molt_max?: number | null
 }

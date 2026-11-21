@@ -72,8 +72,8 @@ export default function InfoAccumuloModal(_: Props) {
                 Dipende da dove sta il prezzo rispetto al tuo PMC (prezzo medio di carico):
                 <ul className="mt-1.5 space-y-1 list-disc pl-4">
                   <li>
-                    <strong className="text-gray-800">Sotto il PMC</strong>: stai comprando a sconto sul tuo costo, quindi compri di più. Più scendi sotto il PMC, più il bonus cresce, fino al tetto che scegli.
-                    <Formula>importo = tranche × M &nbsp;con&nbsp; M = 1 + bonus × (% sotto PMC ÷ 10), max moltiplicatore</Formula>
+                    <strong className="text-gray-800">Sotto il PMC</strong>: stai comprando a sconto sul tuo costo, quindi compri di più. Il bonus è lo stesso per ogni soglia sotto il PMC, e non supera mai il tetto che scegli.
+                    <Formula>importo = tranche × (1 + bonus), al massimo tranche × tetto</Formula>
                   </li>
                   <li>
                     <strong className="text-gray-800">Sopra il PMC</strong> (sei in guadagno): compri sui crolli ma senza alzare troppo il PMC. Se il nuovo PMC superasse il limite che hai scelto, l&apos;importo si riduce.
@@ -88,7 +88,7 @@ export default function InfoAccumuloModal(_: Props) {
               <p className="text-xs font-semibold text-gray-800 mb-1.5">Esempio con i numeri</p>
               <p className="text-xs text-gray-600 leading-relaxed">
                 Riserva 20.000 €, 2 asset: quota ETF A = 10.000 €. Soglie −5/−10/−15/−20% con pesi crescenti 10/20/30/40%,
-                quindi tranche da 1.000 / 2.000 / 3.000 / 4.000 €. Bonus 50% ogni −10% sotto PMC, limite PMC +2%.
+                quindi tranche da 1.000 / 2.000 / 3.000 / 4.000 €. Bonus +50% sotto PMC (tetto ×2), limite PMC +2%.
                 L&apos;ETF scende al −10% dal massimo (massimo 110 €, prezzo 99 €):
               </p>
               <ul className="mt-2 space-y-1.5 text-xs text-gray-600 leading-relaxed">
@@ -96,7 +96,7 @@ export default function InfoAccumuloModal(_: Props) {
                   <strong className="text-gray-800">PMC 90 € (in guadagno)</strong>: tranche −10% = 2.000 €. Il limite PMC permetterebbe fino a ~2.475 €, quindi investi <strong className="text-brand-700">2.000 €</strong> e il nuovo PMC è circa 91,5 €.
                 </li>
                 <li>
-                  <strong className="text-gray-800">PMC 105 € (sotto PMC)</strong>: il prezzo è 5,7% sotto il PMC, quindi M = 1 + 0,5 × 0,57 ≈ 1,29. Investi 2.000 × 1,29 ≈ <strong className="text-brand-700">2.570 €</strong> e il PMC scende a circa 103,8 €.
+                  <strong className="text-gray-800">PMC 105 € (sotto PMC)</strong>: il prezzo è sotto il PMC, quindi la tranche aumenta del 50%. Investi 2.000 × 1,5 = <strong className="text-brand-700">3.000 €</strong> e il PMC scende.
                 </li>
               </ul>
             </div>

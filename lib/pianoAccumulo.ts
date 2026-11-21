@@ -7,7 +7,7 @@
 //  2. QUOTA asset     = R × peso dell'asset (uguale per tutti, o % manuale)
 //  3. TRANCHE i       = quota asset × peso della soglia i (uguale / crescente / manuale)
 //  4. IMPORTO tranche =
-//       sotto PMC : tranche × M,  M = 1 + bonus × (% sotto PMC ÷ 10), max `moltMax`
+//       sotto PMC : tranche × M,  M = 1 + bonus (uguale per ogni soglia sotto PMC), max `moltMax`
 //       sopra PMC : tranche, ridotta se il nuovo PMC supera il limite scelto
 //     In ogni caso non si supera la quota dell'asset (niente prestiti dagli altri asset).
 import { importoMassimoPerLimitePmc, nuovoPmcDopoAcquisto } from '@/lib/accumuloFormula'
@@ -17,7 +17,7 @@ export type Distribuzione = 'uguale' | 'crescente' | 'manuale'
 export const SOGLIE_DEFAULT = [5, 10, 15, 20]
 
 export interface PianoConfig {
-  /** bonus di acquisto per ogni -10% sotto il PMC (0.5 = +50% ogni -10%) */
+  /** aumento della tranche quando la soglia è sotto il PMC (0.5 = +50%), uguale per ogni soglia sotto PMC */
   bonusSottoPmc: number
   /** moltiplicatore massimo applicabile a una tranche (es. 2 = al massimo il doppio) */
   moltMax: number
@@ -103,8 +103,7 @@ export interface PianoAssetInput {
 
 export function moltiplicatoreSottoPmc(prezzo: number, pmc: number, cfg: Pick<PianoConfig, 'bonusSottoPmc' | 'moltMax'>): number {
   if (pmc <= 0 || prezzo >= pmc) return 1
-  const ddSotto = (pmc - prezzo) / pmc
-  return Math.min(Math.max(1, cfg.moltMax), 1 + cfg.bonusSottoPmc * (ddSotto / 0.10))
+  return Math.min(Math.max(1, cfg.moltMax), 1 + cfg.bonusSottoPmc)
 }
 
 export function calcolaPianoAsset(input: PianoAssetInput): PianoAsset {

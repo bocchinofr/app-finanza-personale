@@ -6,203 +6,15 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import {
-  Liquidita, FondoPensione, AssetPortafoglio, Movimento,
-  MESI, CATEGORIE_ENTRATE, CATEGORIE_USCITE, statoAttuale,
-} from '@/types'
-
-// Stesso filtro legacy della pagina Patrimonio (asset taggati come fondo pensione nel vecchio approccio)
-const CATEGORIA_FONDO_PENSIONE_LEGACY = 'Fondo Pensione'
-const PAGINA = 1000
+import { RigaAnnuale, Colonna, caricaRigheAnnuali, congelaAnno } from '@/lib/patrimonioAnnuale'
 
 const MESI_LABEL: Record<string, string> = {
   gen: 'Gen', feb: 'Feb', mar: 'Mar', apr: 'Apr', mag: 'Mag', giu: 'Giu',
   lug: 'Lug', ago: 'Ago', set: 'Set', ott: 'Ott', nov: 'Nov', dic: 'Dic',
 }
 
-type MovimentoLight = Pick<Movimento, 'anno' | 'mese' | 'categoria' | 'entrate' | 'uscite' | 'portafoglio_id'>
-type LiquiditaLight = Pick<Liquidita, 'anno' | 'mese' | 'saldo'>
-type FondoLight = Pick<FondoPensione, 'anno' | 'mese' | 'saldo'>
-
-/** Riga di storico_annuale: totali inseriti a mano per anni senza dati dettagliati. */
-interface StoricoManuale {
-  anno: number
-  patrimonio_totale: number
-  fondo_pensione: number
-  capitale_investito: number
-  liquidita: number
-  entrate: number
-  uscite: number
-}
-
-type Colonna = 'patrimonio' | 'fondo' | 'capitale' | 'liquidita' | 'entrate' | 'uscite'
-
-interface RigaAnnuale {
-  anno: number
-  ultimoMese: string
-  parziale: boolean // anno non ancora completo (ultimo mese con dati < dicembre)
-  manuale: boolean // totali inseriti a mano da storico_annuale (nessun dettaglio)
-  valori: Record<Colonna, number>
-  variazioni: Record<Colonna, number | null> // % vs anno precedente
-}
-
 function fmtEuro(n: number) {
   return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
-}
-
-function varPct(attuale: number, precedente: number | null): number | null {
-  if (precedente == null || precedente === 0) return null
-  return ((attuale - precedente) / Math.abs(precedente)) * 100
-}
-
-function parseDataAcquisto(v: string): { anno: number; meseIdx: number } | null {
-  const parti = (v ?? '').split('/')
-  if (parti.length !== 3) return null
-  const meseNum = Number(parti[1])
-  const annoNum = Number(parti[2])
-  if (!annoNum || !meseNum || meseNum < 1 || meseNum > 12) return null
-  return { anno: annoNum, meseIdx: meseNum - 1 }
-}
-
-/** Legge tutte le righe di una query paginando (Supabase limita a 1000 righe per richiesta). */
-async function fetchTutte<T>(
-  pagina: (da: number, a: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>
-): Promise<T[]> {
-  const tutte: T[] = []
-  for (let da = 0; ; da += PAGINA) {
-    const { data, error } = await pagina(da, da + PAGINA - 1)
-    if (error) throw new Error(error.message)
-    const righe = (data ?? []) as T[]
-    tutte.push(...righe)
-    if (righe.length < PAGINA) break
-  }
-  return tutte
-}
-
-function costruisciRighe(
-  liquidita: LiquiditaLight[],
-  fondo: FondoLight[],
-  movimenti: MovimentoLight[],
-  assetInvestiti: AssetPortafoglio[],
-  manuali: StoricoManuale[]
-): RigaAnnuale[] {
-  // Anni con dati dettagliati: se un anno è presente anche in storico_annuale, vince il calcolato
-  const anniCalcolati = new Set([
-    ...liquidita.map(l => l.anno),
-    ...fondo.map(f => f.anno),
-    ...movimenti.map(m => m.anno),
-  ])
-  const anni = [...new Set([...anniCalcolati, ...manuali.map(m => m.anno)])]
-    .filter(a => a > 0).sort((a, b) => a - b)
-
-  const chiave = (anno: number, meseIdx: number) => anno * 12 + meseIdx
-  const idxMese = (m: string) => (MESI as readonly string[]).indexOf(m)
-
-  // Ultimo mese con dati per ciascun anno
-  const ultimoIdxPerAnno = new Map<number, number>()
-  const registra = (anno: number, mese: string) => {
-    const i = idxMese(mese)
-    if (i < 0) return
-    ultimoIdxPerAnno.set(anno, Math.max(ultimoIdxPerAnno.get(anno) ?? -1, i))
-  }
-  liquidita.forEach(l => registra(l.anno, l.mese))
-  fondo.forEach(f => registra(f.anno, f.mese))
-  movimenti.forEach(m => registra(m.anno, m.mese))
-
-  // Saldo "fine anno": somma dei saldi nell'ultimo mese valorizzato dell'anno
-  function saldoFineAnno(righe: { anno: number; mese: string; saldo: number }[], anno: number): number {
-    const dellAnno = righe.filter(r => r.anno === anno)
-    const ultimo = Math.max(-1, ...dellAnno.map(r => idxMese(r.mese)))
-    if (ultimo < 0) return 0
-    return dellAnno.filter(r => idxMese(r.mese) === ultimo).reduce((s, r) => s + (r.saldo ?? 0), 0)
-  }
-
-  // Capitale investito ricostruito (stesso metodo del riepilogo mensile): ancora alla
-  // data_acquisto = prezzo_acquisto x quantita, poi si sommano i flussi dei movimenti
-  // INVESTIMENTI collegati all'asset (uscita = +, entrata = -).
-  const flussiInvestimenti = movimenti.filter(m => m.categoria === 'INVESTIMENTI' && m.portafoglio_id)
-  function capitaleA(anno: number, meseIdx: number): number {
-    const limite = chiave(anno, meseIdx)
-    return assetInvestiti.reduce((somma, a) => {
-      const acq = parseDataAcquisto(a.data_acquisto)
-      if (!acq) return somma
-      const ancora = chiave(acq.anno, acq.meseIdx)
-      if (ancora > limite) return somma
-      const flusso = flussiInvestimenti
-        .filter(m => m.portafoglio_id === a.id)
-        .filter(m => {
-          const k = chiave(m.anno, idxMese(m.mese))
-          return k > ancora && k <= limite
-        })
-        .reduce((s, m) => s + (m.uscite ?? 0) - (m.entrate ?? 0), 0)
-      return somma + a.prezzo_acquisto * a.quantita + flusso
-    }, 0)
-  }
-
-  function flussoAnno(anno: number, fineMeseIdx: number, categorie: string[], campo: 'entrate' | 'uscite'): number {
-    return movimenti
-      .filter(m => m.anno === anno && idxMese(m.mese) <= fineMeseIdx && categorie.includes(m.categoria))
-      .reduce((s, m) => s + (m[campo] ?? 0), 0)
-  }
-
-  const righe: RigaAnnuale[] = []
-  for (const anno of anni) {
-    const man = anniCalcolati.has(anno) ? undefined : manuali.find(m => m.anno === anno)
-    const ultimoIdx = man ? 11 : (ultimoIdxPerAnno.get(anno) ?? 11)
-    const parziale = ultimoIdx < 11
-
-    let valori: Record<Colonna, number>
-    if (man) {
-      valori = {
-        patrimonio: man.patrimonio_totale,
-        fondo: man.fondo_pensione,
-        capitale: man.capitale_investito,
-        liquidita: man.liquidita,
-        entrate: man.entrate,
-        uscite: man.uscite,
-      }
-    } else {
-      const liq = saldoFineAnno(liquidita, anno)
-      const fon = saldoFineAnno(fondo, anno)
-      const cap = capitaleA(anno, ultimoIdx)
-      valori = {
-        patrimonio: liq + fon + cap,
-        fondo: fon,
-        capitale: cap,
-        liquidita: liq,
-        entrate: flussoAnno(anno, ultimoIdx, CATEGORIE_ENTRATE, 'entrate'),
-        uscite: flussoAnno(anno, ultimoIdx, CATEGORIE_USCITE, 'uscite'),
-      }
-    }
-
-    const prec = righe.find(r => r.anno === anno - 1) ?? null
-    // Per gli stock si confronta con la fine dell'anno precedente; per i flussi di un anno
-    // parziale si confronta lo stesso periodo (stessi mesi) dell'anno precedente.
-    // Se l'anno precedente è manuale (solo totali annui) il confronto sullo stesso periodo
-    // non è possibile: per un anno parziale la variazione dei flussi non viene mostrata.
-    const flussoPrec = (campo: 'entrate' | 'uscite', categorie: string[]): number | null => {
-      if (!prec) return null
-      if (prec.manuale) return parziale ? null : prec.valori[campo]
-      return flussoAnno(anno - 1, ultimoIdx, categorie, campo)
-    }
-
-    righe.push({
-      anno,
-      ultimoMese: MESI[ultimoIdx],
-      parziale,
-      manuale: !!man,
-      valori,
-      variazioni: {
-        patrimonio: varPct(valori.patrimonio, prec ? prec.valori.patrimonio : null),
-        fondo: varPct(valori.fondo, prec ? prec.valori.fondo : null),
-        capitale: varPct(valori.capitale, prec ? prec.valori.capitale : null),
-        liquidita: varPct(valori.liquidita, prec ? prec.valori.liquidita : null),
-        entrate: varPct(valori.entrate, flussoPrec('entrate', CATEGORIE_ENTRATE)),
-        uscite: varPct(valori.uscite, flussoPrec('uscite', CATEGORIE_USCITE)),
-      },
-    })
-  }
-  return righe.reverse() // anno più recente in alto, come il riepilogo mensile
 }
 
 const COLONNE: { chiave: Colonna; titolo: string; invertiColore?: boolean; evidenzia?: boolean }[] = [
@@ -240,50 +52,39 @@ export default function PatrimonioAnnuale() {
   const supabase = createClient()
   const [righe, setRighe] = useState<RigaAnnuale[] | null>(null)
   const [errore, setErrore] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState<number | null>(null)
+  const [erroreSalvataggio, setErroreSalvataggio] = useState<string | null>(null)
+
+  async function carica(): Promise<RigaAnnuale[] | null> {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    return caricaRigheAnnuali(supabase, user.id)
+  }
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-
-        const [liquidita, fondo, movimenti, portRes, manRes] = await Promise.all([
-          fetchTutte<LiquiditaLight>((da, a) =>
-            supabase.from('liquidita').select('anno, mese, saldo').eq('user_id', user.id).range(da, a)),
-          fetchTutte<FondoLight>((da, a) =>
-            supabase.from('fondo_pensione').select('anno, mese, saldo').eq('user_id', user.id).range(da, a)),
-          fetchTutte<MovimentoLight>((da, a) =>
-            supabase.from('movimenti').select('anno, mese, categoria, entrate, uscite, portafoglio_id')
-              .eq('user_id', user.id).range(da, a)),
-          supabase.from('portafoglio').select('*').eq('user_id', user.id),
-          supabase.from('storico_annuale').select('*').eq('user_id', user.id),
-        ])
-        if (portRes.error) throw new Error(portRes.error.message)
-        if (cancelled) return
-
-        const assetInvestiti = ((portRes.data ?? []) as AssetPortafoglio[]).filter(
-          a => a.asset !== CATEGORIA_FONDO_PENSIONE_LEGACY && statoAttuale(a).quantita > 0
-        )
-        // Se la tabella non esiste ancora o la query fallisce, la vista resta quella calcolata
-        const manuali: StoricoManuale[] = manRes.error ? [] : (manRes.data ?? []).map(r => ({
-          anno: Number(r.anno),
-          patrimonio_totale: Number(r.patrimonio_totale) || 0,
-          fondo_pensione: Number(r.fondo_pensione) || 0,
-          capitale_investito: Number(r.capitale_investito) || 0,
-          liquidita: Number(r.liquidita) || 0,
-          entrate: Number(r.entrate) || 0,
-          uscite: Number(r.uscite) || 0,
-        }))
-        setRighe(costruisciRighe(liquidita, fondo, movimenti, assetInvestiti, manuali))
-      } catch (e) {
-        if (!cancelled) setErrore(e instanceof Error ? e.message : 'errore sconosciuto')
-      }
-    }
-    load()
+    carica()
+      .then(r => { if (!cancelled && r) setRighe(r) })
+      .catch(e => { if (!cancelled) setErrore(e instanceof Error ? e.message : 'errore sconosciuto') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function salvaAnno(anno: number) {
+    setSalvando(anno)
+    setErroreSalvataggio(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Non autenticato')
+      await congelaAnno(supabase, user.id, anno)
+      const r = await carica()
+      if (r) setRighe(r)
+    } catch (e) {
+      setErroreSalvataggio(e instanceof Error ? e.message : 'errore sconosciuto')
+    } finally {
+      setSalvando(null)
+    }
+  }
 
   if (errore) {
     return (
@@ -298,6 +99,12 @@ export default function PatrimonioAnnuale() {
   return (
     <div className="card mt-4">
       <p className="num-display text-sm font-semibold text-gray-900 mb-3">Vista annuale</p>
+
+      {erroreSalvataggio && (
+        <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 mb-3">
+          Salvataggio non riuscito: {erroreSalvataggio}
+        </p>
+      )}
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-xs border-collapse">
@@ -320,14 +127,25 @@ export default function PatrimonioAnnuale() {
                 <td className="px-3 py-2 align-top text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50 whitespace-nowrap">
                   {r.anno}
                   {r.manuale && (
-                    <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-600">
-                      manuale
+                    <span className={`ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${r.fonte === 'salvato' ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-600'}`}>
+                      {r.fonte === 'salvato' ? 'salvato' : 'manuale'}
                     </span>
                   )}
                   {r.parziale && (
                     <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
                       a {MESI_LABEL[r.ultimoMese]}
                     </span>
+                  )}
+                  {!r.manuale && (
+                    <button
+                      type="button"
+                      onClick={() => salvaAnno(r.anno)}
+                      disabled={salvando !== null}
+                      title="Congela i totali di quest'anno in archivio, così restano invariati anche se cambiano i dati o il portafoglio"
+                      className="mt-1 block text-[10px] font-medium px-2 py-0.5 rounded-full border border-surface-300 text-gray-500 hover:bg-surface-50 hover:text-brand-600 transition-colors disabled:opacity-40"
+                    >
+                      {salvando === r.anno ? 'Salvo…' : r.inArchivio ? '✓ Aggiorna archivio' : 'Salva anno'}
+                    </button>
                   )}
                 </td>
                 {COLONNE.map(c => (
@@ -347,9 +165,9 @@ export default function PatrimonioAnnuale() {
 
       <p className="text-[11px] text-gray-400 mt-2">
         Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, ultimo mese con dati). Entrate e uscite sono i totali dell&apos;anno; per l&apos;anno in corso la variazione % è sullo stesso periodo dell&apos;anno prima. Il capitale investito è ricostruito come nel riepilogo mensile, quindi il patrimonio può differire dalla card a valore di mercato.
-        {righe.some(r => r.manuale) && (
-          <> Le righe con badge &ldquo;manuale&rdquo; sono totali annui inseriti in archivio (tabella storico_annuale) per anni senza dati dettagliati: se per un anno esistono anche i dati dettagliati, vale il calcolo.</>
-        )}
+      </p>
+      <p className="text-[11px] text-gray-400 mt-1">
+        <strong className="text-gray-500">Archivio:</strong> con &ldquo;Salva anno&rdquo; i totali di un anno vengono congelati (badge &ldquo;salvato&rdquo;) e non cambiano più, anche se poi vendi asset o modifichi i dati. Gli anni passati usano sempre l&apos;archivio quando presente; l&apos;anno in corso resta calcolato. Le righe &ldquo;manuali&rdquo; sono totali inseriti a mano per anni senza dati dettagliati. Prima di sincronizzare un anno nuovo l&apos;app propone di congelare quello precedente.
       </p>
     </div>
   )

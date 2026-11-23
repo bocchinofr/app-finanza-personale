@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { parseMovimentiSheet } from '@/lib/parseXlsx'
 import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv, parseFondoPensioneCsv } from '@/lib/parseGoogleSheet'
 import { Movimento } from '@/types'
+import { serveCongelamento, congelaAnno } from '@/lib/patrimonioAnnuale'
 
 type Status = 'idle' | 'fetching' | 'parsing' | 'saving' | 'done' | 'error'
 
@@ -33,6 +34,9 @@ function UploadPageInner() {
   const [sheetInput, setSheetInput]   = useState('')
   const [profileLoading, setProfileLoading] = useState(true)
   const [savingSheet, setSavingSheet] = useState(false)
+  // Modale "congela l'anno precedente": azione = sync/import da eseguire dopo la scelta
+  const [conferma, setConferma]       = useState<{ annoPrec: number; azione: () => Promise<void> } | null>(null)
+  const [congelando, setCongelando]   = useState(false)
   const supabase = createClient()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -59,10 +63,46 @@ function UploadPageInner() {
     if (searchParams.get('autosync') === '1' && sheetId) {
       autoSyncTriggered.current = true
       router.replace('/dashboard/upload')
-      syncGoogleSheets()
+      conControlloCongelamento(syncGoogleSheets)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileLoading, sheetId])
+
+  // Primo caricamento di un anno nuovo: se l'anno precedente non è ancora in archivio
+  // (storico_annuale) chiede se congelarlo prima di importare, perché il capitale
+  // investito si ricostruisce dal portafoglio attuale e potrebbe cambiare.
+  async function conControlloCongelamento(azione: () => Promise<void>) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user && await serveCongelamento(supabase, user.id, anno)) {
+        setConferma({ annoPrec: anno - 1, azione })
+        return
+      }
+    } catch { /* se il controllo fallisce non blocco la sincronizzazione */ }
+    await azione()
+  }
+
+  async function confermaCongelamento(congela: boolean) {
+    if (!conferma) return
+    const { annoPrec, azione } = conferma
+    if (congela) {
+      setCongelando(true)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Non autenticato')
+        await congelaAnno(supabase, user.id, annoPrec)
+      } catch (err: unknown) {
+        setCongelando(false)
+        setConferma(null)
+        setStatus('error')
+        setMessage(`Salvataggio del ${annoPrec} non riuscito: ${err instanceof Error ? err.message : 'errore sconosciuto'}. Sincronizzazione annullata.`)
+        return
+      }
+      setCongelando(false)
+    }
+    setConferma(null)
+    await azione()
+  }
 
   // Salva (o aggiorna) il foglio Google nel profilo
   async function saveSheetId() {
@@ -288,6 +328,10 @@ function UploadPageInner() {
 
   async function processFile(file: File) {
     if (!file.name.endsWith('.xlsx')) { setStatus('error'); setMessage('Carica un file .xlsx'); return }
+    await conControlloCongelamento(() => importaFile(file))
+  }
+
+  async function importaFile(file: File) {
     setStatus('parsing'); setMessage('Lettura del file…')
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -376,7 +420,7 @@ function UploadPageInner() {
                 )}
 
                 <button
-                  onClick={syncGoogleSheets}
+                  onClick={() => conControlloCongelamento(syncGoogleSheets)}
                   disabled={isLoading || !sheetId}
                   className="btn-primary text-sm w-full mt-3"
                 >
@@ -526,6 +570,53 @@ function UploadPageInner() {
             status === 'error' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>
           {isLoading && <span className="animate-spin text-base">⟳</span>}
           {message}
+        </div>
+      )}
+
+      {conferma && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="card w-full max-w-md space-y-3 shadow-xl">
+            <div className="flex items-start gap-3">
+              <span className="text-xl">🧊</span>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Congelare i dati del {conferma.annoPrec} prima di importare il {anno}?
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Stai caricando il primo file del {anno} e il {conferma.annoPrec} non è ancora salvato nella vista annuale.
+                  Se non lo congeli, in futuro i suoi totali verranno ricalcolati dai dati attuali.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+              Attenzione: il <strong>capitale investito</strong> si ricostruisce dagli asset in portafoglio oggi.
+              Se hai già venduto o modificato posizioni dopo il {conferma.annoPrec}, il valore salvato
+              potrebbe risultare inesatto. Congelare adesso, prima del sync, è il momento più preciso.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <button
+                onClick={() => confermaCongelamento(true)}
+                disabled={congelando}
+                className="btn-primary text-sm flex-1"
+              >
+                {congelando ? 'Salvo…' : `Congela ${conferma.annoPrec} e sincronizza`}
+              </button>
+              <button
+                onClick={() => confermaCongelamento(false)}
+                disabled={congelando}
+                className="btn-secondary text-sm flex-1"
+              >
+                Sincronizza senza congelare
+              </button>
+            </div>
+            <button
+              onClick={() => setConferma(null)}
+              disabled={congelando}
+              className="w-full text-xs text-gray-400 hover:text-gray-600"
+            >
+              Annulla
+            </button>
+          </div>
         </div>
       )}
 

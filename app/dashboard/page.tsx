@@ -1,12 +1,13 @@
 'use client'
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import {
-  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
-} from 'recharts'
 import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, type Mese, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
-import PatrimonioAnnuale from '@/components/PatrimonioAnnuale'
+import KpiCard from '@/components/ui/KpiCard'
+import PatrimonioHero, {
+  AndamentoPatrimonio, DettaglioMensileDrawer,
+  type VistaPatrimonio, type ColonnaEvidenziata,
+} from '@/components/patrimonio/PatrimonioSezioni'
 
 const MESI_LABEL: Record<string, string> = {
   gen: 'Gen', feb: 'Feb', mar: 'Mar', apr: 'Apr', mag: 'Mag', giu: 'Giu',
@@ -23,44 +24,6 @@ function fmtEuro(n: number) {
   return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
-function KpiCard({
-  label, value, sub, tone = 'neutral', delta, badge,
-}: {
-  label: string
-  value: string
-  sub?: ReactNode
-  tone?: 'neutral' | 'positive' | 'negative' | 'warning'
-  delta?: { value: number; pct: number | null } | null
-  badge?: ReactNode
-}) {
-  const toneClass =
-    tone === 'positive' ? 'text-green-700' :
-    tone === 'negative' ? 'text-red-700' :
-    tone === 'warning' ? 'text-amber-600' :
-    'text-gray-900'
-
-  return (
-    <div className="card flex flex-col gap-1">
-      <p className="text-xs text-gray-500">{label}</p>
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <p className={`num-display text-xl sm:text-2xl font-semibold ${toneClass}`}>{value}</p>
-        {badge}
-      </div>
-      {sub}
-      {delta !== undefined && (
-        delta === null ? (
-          <p className="text-xs text-gray-300">N/D ultimo mese</p>
-        ) : (
-          <p className={`text-xs font-medium ${delta.value >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-            {delta.value >= 0 ? '+' : ''}{fmtEuro(delta.value)}
-            {delta.pct != null && ` (${delta.pct >= 0 ? '+' : ''}${delta.pct.toFixed(1)}%)`} ultimo mese
-          </p>
-        )
-      )}
-    </div>
-  )
-}
-
 export default function PatrimonioPage() {
   const supabase = createClient()
   const { anno } = useAnno()
@@ -72,7 +35,10 @@ export default function PatrimonioPage() {
   const [portafoglioStorico, setPortafoglioStorico] = useState<{ mese: string; plus_minus: number; valore_mercato: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
   const [vistaPercentuale, setVistaPercentuale] = useState(false)
-  const [meseEspanso, setMeseEspanso] = useState<string | null>(null)
+  const [vista, setVista] = useState<VistaPatrimonio>('mensile')
+  const [drawerAperto, setDrawerAperto] = useState(false)
+  const [meseEvidenziato, setMeseEvidenziato] = useState<string | null>(null)
+  const [colonnaEvidenziata, setColonnaEvidenziata] = useState<ColonnaEvidenziata>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -379,233 +345,91 @@ export default function PatrimonioPage() {
     return { row, totale, varAssoluta, varPct, varTone, plusMinusTone }
   })
 
+  function apriDettaglio(mese: string | null = null, colonna: ColonnaEvidenziata = null) {
+    setMeseEvidenziato(mese)
+    setColonnaEvidenziata(colonna)
+    setDrawerAperto(true)
+  }
+
+  // Serie per le sparkline dei KPI (andamento dei mesi dell'anno selezionato)
+  const serie = (k: 'Liquidità' | 'Capitale investito' | 'Fondo pensione') => storicoData.map(r => r[k])
+  const serieTotale = storicoData.map(r => r['Liquidità'] + r['Capitale investito'] + r['Fondo pensione'])
+
+  const plusMinusTone: 'negative' | 'warning' | 'positive' =
+    plusMinus < 0 ? 'negative'
+    : deltaPlusMinus && deltaPlusMinus.value < 0 ? 'warning'
+    : 'positive'
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+    <div className="max-w-7xl mx-auto space-y-4">
+      <PatrimonioHero
+        patrimonio={patrimonioTotale}
+        delta={deltaPatrimonioTotale}
+        aggiornatoA={`${MESI_LABEL[ultimoMeseConDati]} ${anno}`}
+        spark={serieTotale}
+        parti={[
+          { label: 'Liquidità', value: liquiditaTotale, color: '#4a6fa1' },
+          { label: 'Investito', value: capitaleInvestito, color: '#3f6b4f' },
+          { label: 'Fondo pensione', value: fondoPensioneTotale, color: '#a67c3d' },
+        ]}
+        plusMinus={plusMinus}
+        plusMinusDelta={deltaPlusMinus}
+        plusMinusTone={plusMinusTone}
+        plusMinusInvestimenti={plusMinusInvestimenti}
+        plusMinusInvestimentiPct={plusMinusPct}
+        fondoInteressi={fondoPensioneInteressi}
+        fondoInteressiPct={fondoPensionePct}
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
-          label="Patrimonio totale"
-          value={fmtEuro(patrimonioTotale)}
-          delta={deltaPatrimonioTotale}
-          badge={
-            <span
-              className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                plusMinus < 0 ? 'bg-red-50 text-red-700'
-                : deltaPlusMinus && deltaPlusMinus.value < 0 ? 'bg-amber-50 text-amber-600'
-                : 'bg-green-50 text-green-700'
-              }`}
-              title="Plus/minus non realizzato"
-            >
-              {plusMinus >= 0 ? '+' : ''}{fmtEuro(plusMinus)}
-            </span>
-          }
-          sub={
-            <p className="text-xs text-gray-400">
-              Plus/minus: fondo pensione {fondoPensioneInteressi >= 0 ? '+' : ''}{fmtEuro(fondoPensioneInteressi)}
-              {' ('}{fondoPensionePct >= 0 ? '+' : ''}{fondoPensionePct.toFixed(1)}%{') · '}
-              investimenti {plusMinusInvestimenti >= 0 ? '+' : ''}{fmtEuro(plusMinusInvestimenti)}
-              {' ('}{plusMinusPct >= 0 ? '+' : ''}{plusMinusPct.toFixed(1)}%{')'}
-            </p>
-          }
-        />
-        <KpiCard
-          label="Liquidità totale"
+          label="Liquidità"
           value={fmtEuro(liquiditaTotale)}
+          color="#4a6fa1"
           delta={deltaLiquidita}
+          spark={serie('Liquidità')}
+          onClick={() => apriDettaglio(null, 'Liquidità')}
         />
         <KpiCard
           label="Capitale investito"
           value={fmtEuro(capitaleInvestito)}
-          sub={
-            <p className="text-xs text-gray-400">
-              Valore di mercato
-              {tickerSenzaPrezzoLive.length > 0 && (
-                <span className="text-amber-600"> · quotazione non disp.: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</span>
-              )}
-            </p>
-          }
+          color="#3f6b4f"
           delta={deltaCapitale}
+          spark={serie('Capitale investito')}
+          onClick={() => apriDettaglio(null, 'Capitale investito')}
+          footnote={tickerSenzaPrezzoLive.length > 0 && (
+            <>Quotazione non disponibile: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</>
+          )}
         />
         <KpiCard
           label="Fondo pensione"
           value={fmtEuro(fondoPensioneTotale)}
+          color="#a67c3d"
           delta={deltaFondo}
+          spark={serie('Fondo pensione')}
+          onClick={() => apriDettaglio(null, 'Fondo pensione')}
         />
       </div>
 
-      <div className="card">
-        <div className="flex items-start justify-between gap-3 mb-1">
-          <p className="num-display text-sm font-semibold text-gray-900">Andamento patrimonio {anno}</p>
-          <div className="flex items-center rounded-full bg-surface-100 p-0.5 text-xs shrink-0">
-            <button
-              type="button"
-              onClick={() => setVistaPercentuale(false)}
-              className={`px-2.5 py-1 rounded-full font-medium transition-colors ${
-                !vistaPercentuale ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'
-              }`}
-            >
-              €
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaPercentuale(true)}
-              className={`px-2.5 py-1 rounded-full font-medium transition-colors ${
-                vistaPercentuale ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400'
-              }`}
-            >
-              %
-            </button>
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 mb-4">
-          Capitale investito: versato cumulato (movimenti Investimento, al netto di eventuali
-          prelievi). Plus/minus: rendimento reale da snapshot, più interessi fondo pensione
-          (N/D nei mesi senza snapshot registrato).
-        </p>
-        {storicoData.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={340}>
-            <ComposedChart data={chartData} margin={{ top: 22, right: 8, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7d8" />
-              <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 11 }}
-                domain={vistaPercentuale ? [0, 100] : undefined}
-                tickFormatter={v => vistaPercentuale ? `${v}%` : `${Math.round(v / 1000)}k`}
-              />
-              <Tooltip
-                formatter={(v: number, name: string) =>
-                  name === 'Totale' ? [fmtEuro(v), name] : vistaPercentuale ? [`${v}%`, name] : [fmtEuro(v), name]
-                }
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" />
-              <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" />
-              <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" />
-              <Bar yAxisId="left" dataKey="Plus/minus" stackId="patrimonio" fill="#c65d3b" radius={[4, 4, 0, 0]} />
-              {!vistaPercentuale && (
-                <Line
-                  yAxisId="left"
-                  dataKey="Totale"
-                  stroke="none"
-                  dot={false}
-                  activeDot={false}
-                  legendType="none"
-                  isAnimationActive={false}
-                  label={{ position: 'top', fontSize: 11, fill: '#3a3a2e', formatter: (v: number) => fmtEuro(v) }}
-                />
-              )}
-            </ComposedChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+      <AndamentoPatrimonio
+        anno={anno}
+        data={chartData}
+        vista={vista}
+        onVista={setVista}
+        percentuale={vistaPercentuale}
+        onPercentuale={setVistaPercentuale}
+        onMese={mese => apriDettaglio(mese)}
+        onApriDettaglio={() => apriDettaglio()}
+      />
 
-      {storicoData.length > 0 && (
-        <div className="card mt-4">
-          <p className="num-display text-sm font-semibold text-gray-900 mb-3">Riepilogo mensile</p>
-
-          {/* Desktop: tabella completa */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="min-w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Mese</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Liquidità</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Capitale investito</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Fondo pensione</th>
-                  <th className="text-right px-3 py-2 text-gray-500 font-semibold uppercase tracking-wide">Totale</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. mese</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Var. %</th>
-                  <th className="text-right px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide">Plus/minus</th>
-                </tr>
-              </thead>
-              <tbody>
-                {riepilogoRows.map(({ row, totale, varAssoluta, varPct, varTone, plusMinusTone }) => (
-                  <tr key={row.mese}>
-                    <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50">
-                      {row.mese}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
-                      {fmtEuro(row['Liquidità'])}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
-                      {fmtEuro(row['Capitale investito'])}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-600 border-b border-surface-200/50">
-                      {fmtEuro(row['Fondo pensione'])}
-                    </td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900 font-semibold border-b border-surface-200/50">
-                      {fmtEuro(totale)}
-                    </td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${varTone}`}>
-                      {varAssoluta == null ? '–' : `${varAssoluta >= 0 ? '+' : ''}${fmtEuro(varAssoluta)}`}
-                    </td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${varTone}`}>
-                      {varPct == null ? '–' : `${varPct >= 0 ? '+' : ''}${varPct.toFixed(1)}%`}
-                    </td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-b border-surface-200/50 ${plusMinusTone}`}>
-                      {row['Plus/minus'] == null ? 'N/D' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile: accordion — riga sommaria sempre visibile, dettaglio a tap */}
-          <div className="md:hidden divide-y divide-surface-200/60">
-            {riepilogoRows.map(({ row, totale, varAssoluta, varPct, varTone, plusMinusTone }) => {
-              const isOpen = meseEspanso === row.mese
-              return (
-                <div key={row.mese}>
-                  <button
-                    type="button"
-                    onClick={() => setMeseEspanso(isOpen ? null : row.mese)}
-                    className="w-full flex items-center justify-between gap-2 py-2.5 text-left"
-                  >
-                    <span className="text-sm font-medium text-gray-700 w-12 shrink-0">{row.mese}</span>
-                    <span className="font-mono tabular-nums text-sm font-semibold text-gray-900 flex-1 text-right">
-                      {fmtEuro(totale)}
-                    </span>
-                    <span className={`font-mono tabular-nums text-xs font-medium w-16 text-right shrink-0 ${varTone}`}>
-                      {varPct == null ? '–' : `${varPct >= 0 ? '+' : ''}${varPct.toFixed(1)}%`}
-                    </span>
-                    <span className={`text-gray-300 text-xs shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
-                  </button>
-                  {isOpen && (
-                    <div className="pb-3 pl-14 pr-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                      <span className="text-gray-400">Liquidità</span>
-                      <span className="font-mono tabular-nums text-gray-700 text-right">{fmtEuro(row['Liquidità'])}</span>
-                      <span className="text-gray-400">Capitale investito</span>
-                      <span className="font-mono tabular-nums text-gray-700 text-right">{fmtEuro(row['Capitale investito'])}</span>
-                      <span className="text-gray-400">Fondo pensione</span>
-                      <span className="font-mono tabular-nums text-gray-700 text-right">{fmtEuro(row['Fondo pensione'])}</span>
-                      <span className="text-gray-400">Var. mese</span>
-                      <span className={`font-mono tabular-nums text-right font-medium ${varTone}`}>
-                        {varAssoluta == null ? '–' : `${varAssoluta >= 0 ? '+' : ''}${fmtEuro(varAssoluta)}`}
-                      </span>
-                      <span className="text-gray-400">Plus/minus</span>
-                      <span className={`font-mono tabular-nums text-right font-medium ${plusMinusTone}`}>
-                        {row['Plus/minus'] == null ? 'N/D' : `${row['Plus/minus'] >= 0 ? '+' : ''}${fmtEuro(row['Plus/minus'])}`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          <p className="text-[11px] text-gray-400 mt-2">
-            Var. mese/%: variazione del patrimonio totale rispetto al mese precedente.
-            Plus/minus: <span className="text-green-700 font-medium">verde</span> se positivo e in crescita,{' '}
-            <span className="text-amber-600 font-medium">giallo</span> se positivo ma in calo rispetto al mese prima,{' '}
-            <span className="text-red-700 font-medium">rosso</span> se negativo.
-          </p>
-        </div>
-      )}
-
-      <PatrimonioAnnuale />
+      <DettaglioMensileDrawer
+        open={drawerAperto}
+        onClose={() => setDrawerAperto(false)}
+        anno={anno}
+        rows={riepilogoRows}
+        mese={meseEvidenziato}
+        colonna={colonnaEvidenziata}
+      />
     </div>
   )
 }

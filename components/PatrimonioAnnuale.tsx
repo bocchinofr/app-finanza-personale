@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { RigaAnnuale, Colonna, caricaRigheAnnuali, congelaAnno } from '@/lib/patrimonioAnnuale'
+import InfoBox from '@/components/ui/InfoBox'
 
 const MESI_LABEL: Record<string, string> = {
   gen: 'Gen', feb: 'Feb', mar: 'Mar', apr: 'Apr', mag: 'Mag', giu: 'Giu',
@@ -48,7 +49,9 @@ function Cella({
   )
 }
 
-export default function PatrimonioAnnuale() {
+// embedded: usata dentro la card Patrimonio (tab "Anno su anno"), senza card/titolo propri
+export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boolean }) {
+  const wrap = embedded ? '' : 'card mt-4'
   const supabase = createClient()
   const [righe, setRighe] = useState<RigaAnnuale[] | null>(null)
   const [errore, setErrore] = useState<string | null>(null)
@@ -88,17 +91,19 @@ export default function PatrimonioAnnuale() {
 
   if (errore) {
     return (
-      <div className="card mt-4 text-sm text-red-700">Vista annuale non disponibile: {errore}</div>
+      <div className={`${wrap} text-sm text-red-700`}>Vista annuale non disponibile: {errore}</div>
     )
   }
   if (!righe) {
-    return <div className="card mt-4 text-sm text-gray-400">Caricamento vista annuale…</div>
+    return <div className={`${wrap} text-sm text-gray-400`}>Caricamento vista annuale…</div>
   }
-  if (righe.length === 0) return null
+  if (righe.length === 0) {
+    return embedded ? <p className="text-sm text-gray-400 text-center py-12">Nessun dato annuale disponibile</p> : null
+  }
 
   return (
-    <div className="card mt-4">
-      <p className="num-display text-sm font-semibold text-gray-900 mb-3">Vista annuale</p>
+    <div className={wrap}>
+      {!embedded && <p className="num-display text-sm font-semibold text-gray-900 mb-3">Vista annuale</p>}
 
       {erroreSalvataggio && (
         <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 mb-3">
@@ -163,12 +168,14 @@ export default function PatrimonioAnnuale() {
         </table>
       </div>
 
-      <p className="text-[11px] text-gray-400 mt-2">
-        Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, ultimo mese con dati). Entrate e uscite sono i totali dell&apos;anno; per l&apos;anno in corso la variazione % è sullo stesso periodo dell&apos;anno prima. Il capitale investito è ricostruito come nel riepilogo mensile, quindi il patrimonio può differire dalla card a valore di mercato.
-      </p>
-      <p className="text-[11px] text-gray-400 mt-1">
-        <strong className="text-gray-500">Archivio:</strong> con &ldquo;Salva anno&rdquo; i totali di un anno vengono congelati (badge &ldquo;salvato&rdquo;) e non cambiano più, anche se poi vendi asset o modifichi i dati. Gli anni passati usano sempre l&apos;archivio quando presente; l&apos;anno in corso resta calcolato. Le righe &ldquo;manuali&rdquo; sono totali inseriti a mano per anni senza dati dettagliati. Prima di sincronizzare un anno nuovo l&apos;app propone di congelare quello precedente.
-      </p>
+      {!embedded && (
+        <div className="mt-3">
+          <InfoBox title="Come leggere la vista annuale">
+            <p>Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, ultimo mese con dati). Entrate e uscite sono i totali dell&apos;anno; per l&apos;anno in corso la variazione % è sullo stesso periodo dell&apos;anno prima.</p>
+            <p>Con &ldquo;Salva anno&rdquo; i totali di un anno vengono congelati (badge &ldquo;salvato&rdquo;). Le righe &ldquo;manuali&rdquo; sono totali inseriti a mano per anni senza dati dettagliati.</p>
+          </InfoBox>
+        </div>
+      )}
     </div>
   )
 }

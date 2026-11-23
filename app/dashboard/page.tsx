@@ -4,8 +4,9 @@ import { createClient } from '@/lib/supabase'
 import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, type Mese, statoAttuale } from '@/types'
 import { useAnno } from '@/lib/AnnoContext'
 import KpiCard from '@/components/ui/KpiCard'
-import PatrimonioHero, {
-  AndamentoPatrimonio, DettaglioMensileDrawer,
+import InfoBox from '@/components/ui/InfoBox'
+import {
+  AndamentoPatrimonio, ComposizioneCard, RiepilogoAnnoCard, DettaglioMensileDrawer,
   type VistaPatrimonio, type ColonnaEvidenziata,
 } from '@/components/patrimonio/PatrimonioSezioni'
 
@@ -361,27 +362,50 @@ export default function PatrimonioPage() {
     : 'positive'
 
   return (
-    <div className="max-w-7xl mx-auto space-y-4">
-      <PatrimonioHero
-        patrimonio={patrimonioTotale}
-        delta={deltaPatrimonioTotale}
-        aggiornatoA={`${MESI_LABEL[ultimoMeseConDati]} ${anno}`}
-        spark={serieTotale}
-        parti={[
-          { label: 'Liquidità', value: liquiditaTotale, color: '#4a6fa1' },
-          { label: 'Investito', value: capitaleInvestito, color: '#3f6b4f' },
-          { label: 'Fondo pensione', value: fondoPensioneTotale, color: '#a67c3d' },
-        ]}
-        plusMinus={plusMinus}
-        plusMinusDelta={deltaPlusMinus}
-        plusMinusTone={plusMinusTone}
-        plusMinusInvestimenti={plusMinusInvestimenti}
-        plusMinusInvestimentiPct={plusMinusPct}
-        fondoInteressi={fondoPensioneInteressi}
-        fondoInteressiPct={fondoPensionePct}
-      />
+    <div className="max-w-screen-2xl mx-auto space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-500">
+          Situazione a <span className="font-medium text-gray-700">{MESI_LABEL[ultimoMeseConDati]} {anno}</span>
+          <span className="hidden sm:inline"> · variazioni rispetto al mese precedente · clicca una card per il dettaglio mensile</span>
+        </p>
+        <InfoBox title="Come leggere i KPI">
+          <p><strong>Patrimonio totale</strong> = liquidità + capitale investito (a valore di mercato) + fondo pensione. Il plus/minus è già incluso nel valore di mercato, non si somma a parte.</p>
+          <p><strong>Plus/minus</strong> = guadagno o perdita non realizzati sugli investimenti rispetto al prezzo di carico, più gli interessi del fondo pensione.</p>
+          <p>Il chip colorato è la variazione rispetto al mese precedente; la linea sotto è l&apos;andamento dei mesi dell&apos;anno.</p>
+        </InfoBox>
+      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+        <KpiCard
+          label="Patrimonio totale"
+          value={fmtEuro(patrimonioTotale)}
+          color="#3f6b4f"
+          delta={deltaPatrimonioTotale}
+          spark={serieTotale}
+          onClick={() => apriDettaglio()}
+        />
+        <KpiCard
+          label="Plus/minus"
+          value={`${plusMinus >= 0 ? '+' : '−'}${fmtEuro(Math.abs(plusMinus))}`}
+          color="#c65d3b"
+          tone={plusMinusTone}
+          delta={deltaPlusMinus}
+          minis={[
+            {
+              label: 'Investimenti',
+              value: `${plusMinusInvestimenti >= 0 ? '+' : '−'}${fmtEuro(Math.abs(plusMinusInvestimenti))}`,
+              sub: `${plusMinusPct >= 0 ? '+' : '−'}${Math.abs(plusMinusPct).toFixed(1).replace('.', ',')}%`,
+              tone: plusMinusInvestimenti >= 0 ? 'positive' : 'negative',
+            },
+            {
+              label: 'Fondo pensione',
+              value: `${fondoPensioneInteressi >= 0 ? '+' : '−'}${fmtEuro(Math.abs(fondoPensioneInteressi))}`,
+              sub: `${fondoPensionePct >= 0 ? '+' : '−'}${Math.abs(fondoPensionePct).toFixed(1).replace('.', ',')}%`,
+              tone: fondoPensioneInteressi >= 0 ? 'positive' : 'negative',
+            },
+          ]}
+          onClick={() => apriDettaglio()}
+        />
         <KpiCard
           label="Liquidità"
           value={fmtEuro(liquiditaTotale)}
@@ -396,10 +420,11 @@ export default function PatrimonioPage() {
           color="#3f6b4f"
           delta={deltaCapitale}
           spark={serie('Capitale investito')}
-          onClick={() => apriDettaglio(null, 'Capitale investito')}
+          minis={[{ label: 'Prezzo di carico', value: fmtEuro(carico) }]}
           footnote={tickerSenzaPrezzoLive.length > 0 && (
             <>Quotazione non disponibile: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</>
           )}
+          onClick={() => apriDettaglio(null, 'Capitale investito')}
         />
         <KpiCard
           label="Fondo pensione"
@@ -407,20 +432,34 @@ export default function PatrimonioPage() {
           color="#a67c3d"
           delta={deltaFondo}
           spark={serie('Fondo pensione')}
+          className="col-span-2 sm:col-span-1"
           onClick={() => apriDettaglio(null, 'Fondo pensione')}
         />
       </div>
 
-      <AndamentoPatrimonio
-        anno={anno}
-        data={chartData}
-        vista={vista}
-        onVista={setVista}
-        percentuale={vistaPercentuale}
-        onPercentuale={setVistaPercentuale}
-        onMese={mese => apriDettaglio(mese)}
-        onApriDettaglio={() => apriDettaglio()}
-      />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <AndamentoPatrimonio
+          anno={anno}
+          data={chartData}
+          vista={vista}
+          onVista={setVista}
+          percentuale={vistaPercentuale}
+          onPercentuale={setVistaPercentuale}
+          onMese={mese => apriDettaglio(mese)}
+          onApriDettaglio={() => apriDettaglio()}
+        />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 content-start">
+          <ComposizioneCard
+            parti={[
+              { label: 'Liquidità', value: liquiditaTotale, color: '#4a6fa1', colonna: 'Liquidità' },
+              { label: 'Capitale investito', value: capitaleInvestito, color: '#3f6b4f', colonna: 'Capitale investito' },
+              { label: 'Fondo pensione', value: fondoPensioneTotale, color: '#a67c3d', colonna: 'Fondo pensione' },
+            ]}
+            onSelect={c => apriDettaglio(null, c)}
+          />
+          <RiepilogoAnnoCard anno={anno} rows={riepilogoRows} />
+        </div>
+      </div>
 
       <DettaglioMensileDrawer
         open={drawerAperto}

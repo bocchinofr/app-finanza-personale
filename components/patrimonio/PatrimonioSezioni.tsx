@@ -1,122 +1,21 @@
 // components/patrimonio/PatrimonioSezioni.tsx
 // Sezioni della pagina Patrimonio, raggruppate in un solo file:
-//  - PatrimonioHero: totale, composizione e plus/minus
 //  - AndamentoPatrimonio: grafico mensile / vista anno su anno
+//  - ComposizioneCard: ripartizione del patrimonio per categoria
+//  - RiepilogoAnnoCard: sintesi dei mesi dell'anno (miglior/peggior mese, media…)
 //  - DettaglioMensileDrawer: riepilogo mensile in pannello a comparsa
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
-import { DeltaChip, MiniStat, Sparkline, fmtEuro, type Delta, type Tone } from '@/components/ui/KpiCard'
+import { MiniStat, fmtEuro, fmtSigned, fmtPct } from '@/components/ui/KpiCard'
 import Drawer from '@/components/ui/Drawer'
 import InfoBox from '@/components/ui/InfoBox'
 import SegmentedControl from '@/components/ui/SegmentedControl'
 import { IconTable, IconChevronDown } from '@/components/ui/Icons'
 import PatrimonioAnnuale from '@/components/PatrimonioAnnuale'
-
-
-// ─── Hero ────────────────────────────────────────────────────────
-
-type Parte = { label: string; value: number; color: string }
-
-const segno = (n: number) => `${n >= 0 ? '+' : '−'}${fmtEuro(Math.abs(n))}`
-const pct = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1).replace('.', ',')}%`
-
-export default function PatrimonioHero({
-  patrimonio, delta, aggiornatoA, spark, parti,
-  plusMinus, plusMinusDelta, plusMinusTone,
-  plusMinusInvestimenti, plusMinusInvestimentiPct,
-  fondoInteressi, fondoInteressiPct,
-}: {
-  patrimonio: number
-  delta: Delta
-  aggiornatoA: string
-  spark: number[]
-  parti: Parte[]
-  plusMinus: number
-  plusMinusDelta: Delta
-  plusMinusTone: Tone
-  plusMinusInvestimenti: number
-  plusMinusInvestimentiPct: number
-  fondoInteressi: number
-  fondoInteressiPct: number
-}) {
-  const totale = parti.reduce((s, p) => s + Math.max(p.value, 0), 0)
-  const quota = (v: number) => (totale > 0 ? (Math.max(v, 0) / totale) * 100 : 0)
-
-  return (
-    <section className="card !p-0 overflow-hidden">
-      <div className="grid lg:grid-cols-[1.15fr_1fr]">
-        {/* Sinistra: totale + composizione */}
-        <div className="p-5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[13px] font-medium text-gray-600">Patrimonio totale</p>
-            <p className="text-[11px] text-gray-400">Aggiornato a {aggiornatoA}</p>
-          </div>
-          <div className="mt-2 flex items-end justify-between gap-4">
-            <p className="num-display text-4xl font-semibold text-gray-900 leading-none">{fmtEuro(patrimonio)}</p>
-            <Sparkline values={spark} color="#3f6b4f" />
-          </div>
-          <div className="mt-3"><DeltaChip delta={delta} /></div>
-
-          {/* Barra di composizione */}
-          <div className="mt-5">
-            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-100" role="img"
-                 aria-label="Composizione del patrimonio">
-              {parti.map(p => (
-                <div key={p.label} style={{ width: `${quota(p.value)}%`, backgroundColor: p.color }} />
-              ))}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-              {parti.map(p => (
-                <span key={p.label} className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-                  {p.label} <span className="font-mono tabular-nums text-gray-700">{quota(p.value).toFixed(0)}%</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Destra: rendimento non realizzato */}
-        <div className="p-5 bg-surface-50/70 border-t lg:border-t-0 lg:border-l border-surface-200 flex flex-col">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[13px] font-medium text-gray-600">Plus/minus non realizzato</p>
-            <DeltaChip delta={plusMinusDelta} />
-          </div>
-          <p className={`mt-2 num-display text-2xl font-semibold leading-none ${
-            plusMinusTone === 'negative' ? 'text-red-700' : plusMinusTone === 'warning' ? 'text-amber-600' : 'text-green-700'
-          }`}>
-            {segno(plusMinus)}
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <MiniStat
-              label="Investimenti"
-              value={segno(plusMinusInvestimenti)}
-              sub={pct(plusMinusInvestimentiPct)}
-              tone={plusMinusInvestimenti >= 0 ? 'positive' : 'negative'}
-            />
-            <MiniStat
-              label="Fondo pensione"
-              value={segno(fondoInteressi)}
-              sub={pct(fondoInteressiPct)}
-              tone={fondoInteressi >= 0 ? 'positive' : 'negative'}
-            />
-          </div>
-          <div className="mt-auto pt-4">
-            <InfoBox title="Come leggere questi numeri">
-              <p><strong>Patrimonio totale</strong> = liquidità + capitale investito (a valore di mercato) + fondo pensione. Il plus/minus è già incluso nel valore di mercato, non si somma a parte.</p>
-              <p><strong>Plus/minus non realizzato</strong> = guadagno o perdita sugli investimenti rispetto al prezzo di carico, più gli interessi del fondo pensione. Il chip mostra la variazione rispetto al mese precedente.</p>
-              <p>Il grafico a destra del totale è il trend dei mesi dell&apos;anno selezionato.</p>
-            </InfoBox>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
 
 // ─── Andamento (grafico) ─────────────────────────────────────────
 
@@ -147,7 +46,7 @@ export function AndamentoPatrimonio({
   return (
     <section className="card">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <SegmentedControl<VistaPatrimonio>
             ariaLabel="Vista patrimonio"
             value={vista}
@@ -157,6 +56,20 @@ export function AndamentoPatrimonio({
               { value: 'annuale', label: 'Anno su anno' },
             ]}
           />
+        <InfoBox title={vista === 'mensile' ? 'Come leggere il grafico' : 'Come leggere la vista annuale'}>
+          {vista === 'mensile' ? (
+            <>
+              <p><strong>Capitale investito</strong>: versato cumulato (movimenti Investimento, al netto di eventuali prelievi).</p>
+              <p><strong>Plus/minus</strong>: rendimento reale da snapshot, più interessi del fondo pensione (N/D nei mesi senza snapshot registrato).</p>
+              <p>Con <strong>%</strong> ogni categoria è espressa come quota del patrimonio del mese. Cliccando un mese si apre il riepilogo con le variazioni.</p>
+            </>
+          ) : (
+            <>
+              <p>Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, l&apos;ultimo mese con dati). Entrate e uscite sono i totali dell&apos;anno.</p>
+              <p>Con <strong>Salva anno</strong> i totali vengono congelati in archivio e non cambiano più. Le righe &ldquo;manuali&rdquo; sono totali inseriti a mano per anni senza dati dettagliati.</p>
+            </>
+          )}
+        </InfoBox>
         </div>
         {vista === 'mensile' && (
           <div className="flex items-center gap-2">
@@ -185,10 +98,11 @@ export function AndamentoPatrimonio({
         ) : (
           <>
             <div className="cursor-pointer">
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={330}>
                 <ComposedChart
                   data={data}
                   margin={{ top: 22, right: 8, bottom: 4, left: 0 }}
+                  barCategoryGap="12%"
                   onClick={state => { if (state?.activeLabel) onMese(String(state.activeLabel)) }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e7d8" />
@@ -209,10 +123,10 @@ export function AndamentoPatrimonio({
                     }
                   />
                   <Legend verticalAlign="top" align="left" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
-                  <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" maxBarSize={40} />
-                  <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" maxBarSize={40} />
-                  <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" maxBarSize={40} />
-                  <Bar yAxisId="left" dataKey="Plus/minus" stackId="patrimonio" fill="#c65d3b" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  <Bar yAxisId="left" dataKey="Liquidità" stackId="patrimonio" fill="#4a6fa1" maxBarSize={64} />
+                  <Bar yAxisId="left" dataKey="Capitale investito" stackId="patrimonio" fill="#3f6b4f" maxBarSize={64} />
+                  <Bar yAxisId="left" dataKey="Fondo pensione" stackId="patrimonio" fill="#a67c3d" maxBarSize={64} />
+                  <Bar yAxisId="left" dataKey="Plus/minus" stackId="patrimonio" fill="#c65d3b" radius={[4, 4, 0, 0]} maxBarSize={64} />
                   {!percentuale && (
                     <Line
                       yAxisId="left"
@@ -233,22 +147,6 @@ export function AndamentoPatrimonio({
         )}
       </div>
 
-      <div className="mt-3">
-        <InfoBox title={vista === 'mensile' ? 'Come leggere il grafico' : 'Come leggere la vista annuale'}>
-          {vista === 'mensile' ? (
-            <>
-              <p><strong>Capitale investito</strong>: versato cumulato (movimenti Investimento, al netto di eventuali prelievi).</p>
-              <p><strong>Plus/minus</strong>: rendimento reale da snapshot, più interessi del fondo pensione (N/D nei mesi senza snapshot registrato).</p>
-              <p>Con <strong>%</strong> ogni categoria è espressa come quota del patrimonio del mese. Cliccando un mese si apre il riepilogo con le variazioni.</p>
-            </>
-          ) : (
-            <>
-              <p>Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, l&apos;ultimo mese con dati). Entrate e uscite sono i totali dell&apos;anno.</p>
-              <p>Con <strong>Salva anno</strong> i totali vengono congelati in archivio e non cambiano più. Le righe &ldquo;manuali&rdquo; sono totali inseriti a mano per anni senza dati dettagliati.</p>
-            </>
-          )}
-        </InfoBox>
-      </div>
     </section>
   )
 }
@@ -297,7 +195,23 @@ export function DettaglioMensileDrawer({
   const hlRow = (m: string) => (mese === m ? 'bg-brand-50/60' : '')
 
   return (
-    <Drawer open={open} onClose={onClose} title="Dettaglio mensile" subtitle={`Anno ${anno} · dal mese più recente`}>
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="Dettaglio mensile"
+      subtitle={`Anno ${anno} · dal mese più recente`}
+      headerExtra={
+        <InfoBox title="Come leggere il riepilogo">
+          <p><strong>Var. / Var. %</strong>: variazione del patrimonio totale rispetto al mese precedente.</p>
+          <p>
+            <strong>Plus/minus</strong>: <span className="text-green-700 font-medium">verde</span> se positivo e in crescita,{' '}
+            <span className="text-amber-600 font-medium">giallo</span> se positivo ma in calo rispetto al mese prima,{' '}
+            <span className="text-red-700 font-medium">rosso</span> se negativo. N/D nei mesi senza snapshot registrato.
+          </p>
+          <p>Il mese o la colonna evidenziati sono quelli da cui hai aperto il pannello.</p>
+        </InfoBox>
+      }
+    >
       {/* Desktop: tabella completa */}
       <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full text-xs border-collapse">
@@ -375,17 +289,99 @@ export function DettaglioMensileDrawer({
         })}
       </div>
 
-      <div className="mt-4">
-        <InfoBox title="Come leggere il riepilogo">
-          <p><strong>Var. / Var. %</strong>: variazione del patrimonio totale rispetto al mese precedente.</p>
-          <p>
-            <strong>Plus/minus</strong>: <span className="text-green-700 font-medium">verde</span> se positivo e in crescita,{' '}
-            <span className="text-amber-600 font-medium">giallo</span> se positivo ma in calo rispetto al mese prima,{' '}
-            <span className="text-red-700 font-medium">rosso</span> se negativo. N/D nei mesi senza snapshot registrato.
-          </p>
-          <p>Il mese o la colonna evidenziati sono quelli da cui hai aperto il pannello.</p>
+    </Drawer>
+  )
+}
+
+// ─── Composizione ──────────────────────────────────────────────
+
+export type ParteComposizione = { label: string; value: number; color: string; colonna: ColonnaEvidenziata }
+
+export function ComposizioneCard({
+  parti, onSelect,
+}: { parti: ParteComposizione[]; onSelect: (c: ColonnaEvidenziata) => void }) {
+  const totale = parti.reduce((sum, p) => sum + Math.max(p.value, 0), 0)
+  const quota = (v: number) => (totale > 0 ? (Math.max(v, 0) / totale) * 100 : 0)
+  return (
+    <section className="card">
+      <div className="flex items-center justify-between gap-2">
+        <p className="num-display text-sm font-semibold text-gray-900">Composizione</p>
+        <InfoBox title="Come leggere la composizione">
+          <p>Come si ripartisce il patrimonio totale tra liquidità, capitale investito (a valore di mercato) e fondo pensione, all&apos;ultimo mese con dati.</p>
+          <p>Clicca una riga per aprire il dettaglio mensile con quella colonna evidenziata.</p>
         </InfoBox>
       </div>
-    </Drawer>
+      <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-surface-100" role="img" aria-label="Composizione del patrimonio">
+        {parti.map(p => <div key={p.label} style={{ width: `${quota(p.value)}%`, backgroundColor: p.color }} />)}
+      </div>
+      <ul className="mt-3 divide-y divide-surface-100">
+        {parti.map(p => (
+          <li key={p.label}>
+            <button
+              type="button"
+              onClick={() => onSelect(p.colonna)}
+              className="w-full flex items-center gap-2.5 py-2 text-left rounded hover:bg-surface-50 transition-colors"
+            >
+              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+              <span className="flex-1 text-[13px] text-gray-700">{p.label}</span>
+              <span className="font-mono tabular-nums text-[13px] text-gray-900">{fmtEuro(p.value)}</span>
+              <span className="font-mono tabular-nums text-xs text-gray-400 w-10 text-right">{quota(p.value).toFixed(0)}%</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+// ─── Sintesi dell'anno ─────────────────────────────────────────
+
+export function RiepilogoAnnoCard({ anno, rows }: { anno: number; rows: RigaRiepilogo[] }) {
+  // rows è dal mese più recente al più vecchio; teniamo solo i mesi con variazione
+  const conVar = rows.filter(r => r.varAssoluta != null) as (RigaRiepilogo & { varAssoluta: number })[]
+  const cronologico = [...conVar].reverse()
+  const primoMese = rows.length > 0 ? rows[rows.length - 1].row.mese : ''
+  const ultimoMese = rows.length > 0 ? rows[0].row.mese : ''
+
+  let corpo: ReactNode
+  if (conVar.length === 0) {
+    corpo = <p className="mt-3 text-xs text-gray-400">Servono almeno due mesi con dati per calcolare le variazioni.</p>
+  } else {
+    const migliore = conVar.reduce((a, b) => (b.varAssoluta > a.varAssoluta ? b : a))
+    const peggiore = conVar.reduce((a, b) => (b.varAssoluta < a.varAssoluta ? b : a))
+    const somma = conVar.reduce((sum, r) => sum + r.varAssoluta, 0)
+    const media = somma / conVar.length
+    const baseIniziale = cronologico[0].totale - cronologico[0].varAssoluta
+    const sommaPct = baseIniziale !== 0 ? (somma / Math.abs(baseIniziale)) * 100 : null
+    const inCrescita = conVar.filter(r => r.varAssoluta >= 0).length
+    corpo = (
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <MiniStat
+          label={`Da fine ${primoMese}`}
+          value={fmtSigned(somma)}
+          sub={sommaPct != null ? fmtPct(sommaPct) : undefined}
+          tone={somma >= 0 ? 'positive' : 'negative'}
+        />
+        <MiniStat label="Media mensile" value={fmtSigned(media)} tone={media >= 0 ? 'positive' : 'negative'} />
+        <MiniStat label={`Mese migliore · ${migliore.row.mese}`} value={fmtSigned(migliore.varAssoluta)} tone={migliore.varAssoluta >= 0 ? 'positive' : 'negative'} />
+        <MiniStat label={`Mese peggiore · ${peggiore.row.mese}`} value={fmtSigned(peggiore.varAssoluta)} tone={peggiore.varAssoluta >= 0 ? 'positive' : 'negative'} />
+        <div className="col-span-2">
+          <MiniStat label="Mesi in crescita" value={`${inCrescita} su ${conVar.length}`} />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <section className="card">
+      <div className="flex items-center justify-between gap-2">
+        <p className="num-display text-sm font-semibold text-gray-900">Nell&apos;anno {anno}</p>
+        <InfoBox title="Come leggere la sintesi">
+          <p>Calcolata sulle variazioni mensili del patrimonio totale (liquidità + capitale investito + fondo pensione), da {primoMese || '–'} a {ultimoMese || '–'}.</p>
+          <p>Il primo mese dell&apos;anno non ha un mese precedente nello stesso anno, quindi fa da punto di partenza.</p>
+        </InfoBox>
+      </div>
+      {corpo}
+    </section>
   )
 }

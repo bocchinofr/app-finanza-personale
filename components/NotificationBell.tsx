@@ -71,7 +71,7 @@ export default function NotificationBell() {
       <div className="fixed inset-0 z-[100]" onClick={() => setOpen(false)} />
       <div
         className="fixed w-80 max-w-[85vw] max-h-96 overflow-y-auto bg-white border border-surface-200 rounded-xl shadow-2xl z-[101]"
-        style={{ top: pos.top, left: window.innerWidth < 640 ? undefined : pos.left, right: window.innerWidth < 640 ? 16 : pos.right }}
+        style={{ top: pos.top, right: Math.max(window.innerWidth < 640 ? 16 : pos.right, 8) }}
       >
         <div className="px-4 py-3 border-b border-surface-100 sticky top-0 bg-white">
           <p className="text-sm font-semibold text-gray-900">Notifiche</p>

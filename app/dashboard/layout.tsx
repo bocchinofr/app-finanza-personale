@@ -195,7 +195,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         className={`lg:hidden fixed top-0 left-0 h-full w-64 max-w-[80%] bg-white border-r border-surface-200 flex flex-col z-50
           transform transition-transform duration-200 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="px-4 h-14 border-b border-surface-100 flex items-center justify-between shrink-0">
+        <div className="px-4 h-14 border-b border-surface-200 flex items-center justify-between shrink-0">
           <Logo />
           <button onClick={() => setMenuOpen(false)} aria-label="Chiudi menu" className="p-1.5 text-gray-400 hover:text-gray-600">
             <IconClose size={18} />
@@ -215,7 +215,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         className={`hidden lg:flex flex-col fixed h-full bg-white border-r border-surface-200 z-40 transition-[width] duration-200
           ${collapsed ? 'w-[68px]' : 'w-60'}`}
       >
-        <div className={`h-14 border-b border-surface-100 flex items-center shrink-0 ${collapsed ? 'justify-center' : 'px-4'}`}>
+        <div className={`h-14 border-b border-surface-200 flex items-center shrink-0 ${collapsed ? 'justify-center' : 'px-4'}`}>
           <Logo collapsed={collapsed} />
         </div>
         {renderNav(collapsed)}
@@ -242,8 +242,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
       <div className={`flex-1 min-w-0 transition-[margin] duration-200 ${collapsed ? 'lg:ml-[68px]' : 'lg:ml-60'}`}>
         {/* Barra in alto: titolo pagina + strumenti globali */}
-        <header className="sticky top-0 z-30 bg-surface-50/90 backdrop-blur border-b border-surface-200">
-          <div className="flex items-center gap-3 h-14 px-4 md:px-6">
+        <header className="sticky top-0 z-30 h-14 bg-white border-b border-surface-200">
+          <div className="flex items-center gap-3 h-full px-4 md:px-6">
             <button
               onClick={() => setMenuOpen(true)}
               aria-label="Apri menu"

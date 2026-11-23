@@ -8,12 +8,13 @@ import { createPortal } from 'react-dom'
 import { IconClose } from './Icons'
 
 export default function Drawer({
-  open, onClose, title, subtitle, children,
+  open, onClose, title, subtitle, headerExtra, children,
 }: {
   open: boolean
   onClose: () => void
   title: string
   subtitle?: string
+  headerExtra?: ReactNode
   children: ReactNode
 }) {
   const [mounted, setMounted] = useState(false)
@@ -46,6 +47,8 @@ export default function Drawer({
             <h2 className="num-display text-base font-semibold text-gray-900">{title}</h2>
             {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
           </div>
+          <div className="flex items-center gap-1 shrink-0">
+          {headerExtra}
           <button
             type="button"
             onClick={onClose}
@@ -54,6 +57,7 @@ export default function Drawer({
           >
             <IconClose size={18} />
           </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
       </div>

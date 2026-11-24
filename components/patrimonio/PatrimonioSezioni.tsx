@@ -44,7 +44,7 @@ export function AndamentoPatrimonio({
   onApriDettaglio: () => void
 }) {
   return (
-    <section className="card h-full">
+    <section className="card h-full flex flex-col min-h-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <SegmentedControl<VistaPatrimonio>
@@ -90,15 +90,15 @@ export function AndamentoPatrimonio({
         )}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex-1 min-h-0 flex flex-col">
         {vista === 'annuale' ? (
-          <PatrimonioAnnuale embedded />
+          <div className="flex-1 min-h-0 xl:overflow-y-auto"><PatrimonioAnnuale embedded /></div>
         ) : data.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile per {anno}</p>
         ) : (
           <>
-            <div className="cursor-pointer">
-              <ResponsiveContainer width="100%" height={380}>
+            <div className="cursor-pointer flex-1 min-h-[320px]">
+              <ResponsiveContainer width="100%" height="100%" minHeight={320}>
                 <ComposedChart
                   data={data}
                   margin={{ top: 22, right: 8, bottom: 4, left: 0 }}

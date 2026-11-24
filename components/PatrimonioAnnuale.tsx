@@ -42,7 +42,7 @@ function Cella({
       <p className={`font-mono tabular-nums whitespace-nowrap ${evidenzia ? 'text-gray-900 font-semibold' : 'text-gray-600'}`}>
         {fmtEuro(valore)}
       </p>
-      <p className={`font-mono tabular-nums whitespace-nowrap text-[10px] font-medium ${tono}`}>
+      <p className={`font-mono tabular-nums whitespace-nowrap text-[11px] 2xl:text-xs min-[1700px]:text-sm font-medium ${tono}`}>
         {variazione == null ? '–' : `${variazione >= 0 ? '▲ +' : '▼ '}${variazione.toFixed(1)}%`}
       </p>
     </td>
@@ -113,15 +113,15 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
 
       {/* Desktop: la tabella sta nel box (colonne a larghezza fissa); sotto md resta scorrevole */}
       <div className="overflow-x-auto md:overflow-visible">
-        <table className="w-full min-w-[640px] md:min-w-0 md:table-fixed text-[11px] border-collapse">
+        <table className="w-full min-w-[640px] md:min-w-0 md:table-fixed text-xs 2xl:text-sm min-[1700px]:text-base border-collapse">
           <thead>
             <tr>
-              <th className="text-left px-1.5 py-2 w-[96px] text-gray-400 font-semibold uppercase tracking-wide">Anno</th>
+              <th className="text-left px-1.5 py-2 w-[100px] 2xl:w-[130px] text-[11px] 2xl:text-xs text-gray-400 font-semibold uppercase tracking-wide">Anno</th>
               {COLONNE.map(c => (
                 <th
                   key={c.chiave}
                   title={c.titolo}
-                  className={`text-right px-1.5 py-2 font-semibold uppercase tracking-wide whitespace-nowrap ${c.evidenzia ? 'text-gray-500' : 'text-gray-400'}`}
+                  className={`text-right px-1.5 py-2 text-[11px] 2xl:text-xs font-semibold uppercase tracking-wide whitespace-nowrap ${c.evidenzia ? 'text-gray-500' : 'text-gray-400'}`}
                 >
                   {c.corto}
                 </th>
@@ -132,14 +132,14 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
             {righe.map(r => (
               <tr key={r.anno}>
                 <td className="px-1.5 py-2 align-top text-gray-700 font-medium border-b border-surface-200/50">
-                  <span className="text-xs">{r.anno}</span>
+                  <span className="text-sm 2xl:text-base">{r.anno}</span>
                   {r.manuale && (
-                    <span className={`block w-fit mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${r.fonte === 'salvato' ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-600'}`}>
+                    <span className={`block w-fit mt-0.5 text-[10px] 2xl:text-[11px] font-medium px-1.5 py-0.5 rounded-full ${r.fonte === 'salvato' ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-600'}`}>
                       {r.fonte === 'salvato' ? 'salvato' : 'manuale'}
                     </span>
                   )}
                   {r.parziale && (
-                    <span className="block w-fit mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
+                    <span className="block w-fit mt-0.5 text-[10px] 2xl:text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
                       a {MESI_LABEL[r.ultimoMese]}
                     </span>
                   )}
@@ -149,7 +149,7 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
                       onClick={() => salvaAnno(r.anno)}
                       disabled={salvando !== null}
                       title="Congela i totali di quest'anno in archivio, così restano invariati anche se cambiano i dati o il portafoglio"
-                      className="mt-1 block text-[10px] font-medium px-2 py-0.5 rounded-full border border-surface-300 text-gray-500 hover:bg-surface-50 hover:text-brand-600 transition-colors disabled:opacity-40"
+                      className="mt-1 block text-[10px] 2xl:text-[11px] font-medium px-2 py-0.5 rounded-full border border-surface-300 text-gray-500 hover:bg-surface-50 hover:text-brand-600 transition-colors disabled:opacity-40"
                     >
                       {salvando === r.anno ? 'Salvo…' : r.inArchivio ? '✓ Aggiorna archivio' : 'Salva anno'}
                     </button>

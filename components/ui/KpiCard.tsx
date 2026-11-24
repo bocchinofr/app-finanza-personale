@@ -81,6 +81,23 @@ export function MiniStat({
   )
 }
 
+function pillClass(tone: Tone) {
+  return tone === 'positive' ? 'bg-green-50 text-green-700'
+    : tone === 'negative' ? 'bg-red-50 text-red-700'
+    : 'bg-surface-100 text-gray-500'
+}
+
+/** Dettaglio in linea (versione compatta): etichetta, valore e pillola % sulla stessa riga. */
+function MiniInline({ label, value, sub, tone = 'neutral' }: MiniDef) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 text-[12px]">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-semibold font-mono tabular-nums ${TONE_TEXT[tone]}`}>{value}</span>
+      {sub && <span className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${pillClass(tone)}`}>{sub}</span>}
+    </span>
+  )
+}
+
 export type MiniDef = { label: string; value: string; sub?: string; tone?: Tone }
 
 /** Riga di dettaglio sotto il KPI: etichetta + pillola %, valore sotto. Leggera, senza riquadri. */
@@ -100,8 +117,11 @@ function MiniRow({ label, value, sub, tone = 'neutral' }: MiniDef) {
   )
 }
 
+export type KpiVariant = 'default' | 'featured' | 'compact'
+
 export default function KpiCard({
-  label, value, color, tone = 'neutral', delta, badge, spark, minis, footnote, onClick, href, cta, featured = false, extra, minisInRow = false, className = '',
+  label, value, color, tone = 'neutral', delta, badge, spark, minis, footnote, onClick, href, cta,
+  variant = 'default', headerRight, extra, minisInRow = false, className = '',
 }: {
   label: string
   value: string
@@ -118,42 +138,85 @@ export default function KpiCard({
   /** se presente la card è un link a un'altra sezione (con cta come etichetta) */
   href?: string
   cta?: string
-  /** card in evidenza (Patrimonio): numero e trend più grandi */
-  featured?: boolean
-  /** contenuto aggiuntivo in fondo alla card (es. barra di composizione) */
+  /** default = verticale; featured = in evidenza (numero grande + trend a lato); compact = tile bassa */
+  variant?: KpiVariant
+  /** contenuto in alto a destra (variant featured), es. data di aggiornamento e info */
+  headerRight?: ReactNode
+  /** contenuto in fondo alla card (variant featured), es. barra di composizione */
   extra?: ReactNode
-  /** mostra i dettagli affiancati su due colonne invece che in colonna */
+  /** variant default: dettagli affiancati su due colonne */
   minisInRow?: boolean
   className?: string
 }) {
-  const accent = ''
-  const body = (
-    <>
-      <p className={`flex items-center gap-2 font-medium text-gray-600 ${featured ? 'text-sm' : 'text-[13px]'}`}>
-        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="truncate">{label}</span>
-      </p>
-      <p className={`num-display font-semibold leading-none ${featured ? 'text-3xl xl:text-4xl mt-3' : 'text-2xl mt-2.5'} ${TONE_TEXT[tone]}`}>{value}</p>
-      <div className="mt-2.5">{badge ?? <DeltaChip delta={delta} />}</div>
-      {spark && <div className="mt-3"><Sparkline values={spark} color={color} height={featured ? 44 : 28} /></div>}
-      {minis && minis.length > 0 && (
-        <div className={`mt-2 border-t border-surface-100 ${minisInRow ? 'grid grid-cols-2 gap-x-4 [&>div]:border-b-0' : ''}`}>
-          {minis.map(m => <MiniRow key={m.label} {...m} />)}
-        </div>
-      )}
-      {extra && <div className="mt-4">{extra}</div>}
-      {footnote && <div className="mt-2 text-[11px] text-amber-600 leading-snug">{footnote}</div>}
-      {href && (
-        <p className="mt-3 flex items-center gap-0.5 text-[11px] font-medium text-brand-700 group-hover:underline">
-          {cta ?? 'Apri sezione'} <IconChevronRight size={12} />
-        </p>
-      )}
-    </>
-  )
+  const chip = badge ?? <DeltaChip delta={delta} />
+  const dot = <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+  const warn = footnote ? <div className="mt-2 text-[11px] text-amber-600 leading-snug">{footnote}</div> : null
+  const link = href ? (
+    <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-brand-700 group-hover:underline whitespace-nowrap">
+      {cta ?? 'Apri sezione'} <IconChevronRight size={12} />
+    </span>
+  ) : null
 
+  let body: ReactNode
+  if (variant === 'featured') {
+    body = (
+      <>
+        <div className="flex items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-sm font-medium text-gray-600">{dot}{label}</p>
+          {headerRight && <div className="flex items-center gap-1.5 text-[11px] text-gray-400">{headerRight}</div>}
+        </div>
+        <div className="mt-2.5 flex items-end justify-between gap-6">
+          <div className="min-w-0">
+            <p className={`num-display text-3xl 2xl:text-4xl font-semibold leading-none ${TONE_TEXT[tone]}`}>{value}</p>
+            <div className="mt-2.5">{chip}</div>
+          </div>
+          {spark && <div className="w-32 sm:w-56 2xl:w-72 pb-0.5"><Sparkline values={spark} color={color} height={52} /></div>}
+        </div>
+        {extra && <div className="mt-4">{extra}</div>}
+        {warn}
+      </>
+    )
+  } else if (variant === 'compact') {
+    body = (
+      <>
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+          <p className="flex items-center gap-2 text-[13px] font-medium text-gray-600 min-w-0">{dot}<span className="truncate">{label}</span></p>
+          <div className="shrink-0">{chip}</div>
+        </div>
+        <div className="mt-1.5 flex items-end justify-between gap-3">
+          <p className={`num-display text-2xl font-semibold leading-none ${TONE_TEXT[tone]}`}>{value}</p>
+          {link}
+        </div>
+        {minis && minis.length > 0 && (
+          <div className="mt-2.5 pt-2 border-t border-surface-100 flex flex-wrap gap-x-5 gap-y-1">
+            {minis.map(m => <MiniInline key={m.label} {...m} />)}
+          </div>
+        )}
+        {warn}
+      </>
+    )
+  } else {
+    body = (
+      <>
+        <p className="flex items-center gap-2 text-[13px] font-medium text-gray-600">{dot}<span className="truncate">{label}</span></p>
+        <p className={`num-display text-2xl font-semibold leading-none mt-2.5 ${TONE_TEXT[tone]}`}>{value}</p>
+        <div className="mt-2.5">{chip}</div>
+        {spark && <div className="mt-3"><Sparkline values={spark} color={color} /></div>}
+        {minis && minis.length > 0 && (
+          <div className={`mt-2 border-t border-surface-100 ${minisInRow ? 'grid grid-cols-2 gap-x-4 [&>div]:border-b-0' : ''}`}>
+            {minis.map(m => <MiniRow key={m.label} {...m} />)}
+          </div>
+        )}
+        {warn}
+        {link && <p className="mt-3">{link}</p>}
+      </>
+    )
+  }
+
+  const pad = variant === 'compact' ? '!p-4 h-full' : ''
   if (href) {
     return (
-      <Link href={href} className={`card group block text-left hover:border-brand-200 hover:shadow-sm transition-all ${accent} ${className}`}>
+      <Link href={href} className={`card group block text-left hover:border-brand-200 hover:shadow-sm transition-all ${pad} ${className}`}>
         {body}
       </Link>
     )
@@ -163,11 +226,11 @@ export default function KpiCard({
       <button
         type="button"
         onClick={onClick}
-        className={`card text-left w-full hover:border-brand-200 hover:shadow-sm transition-all ${accent} ${className}`}
+        className={`card text-left w-full hover:border-brand-200 hover:shadow-sm transition-all ${pad} ${className}`}
       >
         {body}
       </button>
     )
   }
-  return <div className={`card ${accent} ${className}`}>{body}</div>
+  return <div className={`card ${pad} ${className}`}>{body}</div>
 }

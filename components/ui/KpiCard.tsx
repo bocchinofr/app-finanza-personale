@@ -101,7 +101,7 @@ function MiniRow({ label, value, sub, tone = 'neutral' }: MiniDef) {
 }
 
 export default function KpiCard({
-  label, value, color, tone = 'neutral', delta, badge, spark, minis, footnote, onClick, href, cta, featured = false, className = '',
+  label, value, color, tone = 'neutral', delta, badge, spark, minis, footnote, onClick, href, cta, featured = false, extra, minisInRow = false, className = '',
 }: {
   label: string
   value: string
@@ -120,9 +120,13 @@ export default function KpiCard({
   cta?: string
   /** card in evidenza (Patrimonio): numero e trend più grandi */
   featured?: boolean
+  /** contenuto aggiuntivo in fondo alla card (es. barra di composizione) */
+  extra?: ReactNode
+  /** mostra i dettagli affiancati su due colonne invece che in colonna */
+  minisInRow?: boolean
   className?: string
 }) {
-  const accent = featured ? 'bg-gradient-to-br from-white to-brand-50/70 border-brand-100' : ''
+  const accent = ''
   const body = (
     <>
       <p className={`flex items-center gap-2 font-medium text-gray-600 ${featured ? 'text-sm' : 'text-[13px]'}`}>
@@ -131,12 +135,13 @@ export default function KpiCard({
       </p>
       <p className={`num-display font-semibold leading-none ${featured ? 'text-3xl xl:text-4xl mt-3' : 'text-2xl mt-2.5'} ${TONE_TEXT[tone]}`}>{value}</p>
       <div className="mt-2.5">{badge ?? <DeltaChip delta={delta} />}</div>
-      {spark && <div className="mt-3"><Sparkline values={spark} color={color} height={featured ? 56 : 28} /></div>}
+      {spark && <div className="mt-3"><Sparkline values={spark} color={color} height={featured ? 44 : 28} /></div>}
       {minis && minis.length > 0 && (
-        <div className="mt-2 border-t border-surface-100">
+        <div className={`mt-2 border-t border-surface-100 ${minisInRow ? 'grid grid-cols-2 gap-x-4 [&>div]:border-b-0' : ''}`}>
           {minis.map(m => <MiniRow key={m.label} {...m} />)}
         </div>
       )}
+      {extra && <div className="mt-4">{extra}</div>}
       {footnote && <div className="mt-2 text-[11px] text-amber-600 leading-snug">{footnote}</div>}
       {href && (
         <p className="mt-3 flex items-center gap-0.5 text-[11px] font-medium text-brand-700 group-hover:underline">

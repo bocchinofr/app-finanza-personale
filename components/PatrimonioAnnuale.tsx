@@ -18,13 +18,13 @@ function fmtEuro(n: number) {
   return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
-const COLONNE: { chiave: Colonna; titolo: string; invertiColore?: boolean; evidenzia?: boolean }[] = [
-  { chiave: 'patrimonio', titolo: 'Patrimonio totale', evidenzia: true },
-  { chiave: 'fondo', titolo: 'Fondo pensione' },
-  { chiave: 'capitale', titolo: 'Capitale investito' },
-  { chiave: 'liquidita', titolo: 'Liquidità' },
-  { chiave: 'entrate', titolo: 'Entrate' },
-  { chiave: 'uscite', titolo: 'Uscite', invertiColore: true },
+const COLONNE: { chiave: Colonna; titolo: string; corto: string; invertiColore?: boolean; evidenzia?: boolean }[] = [
+  { chiave: 'patrimonio', titolo: 'Patrimonio totale', corto: 'Patrimonio', evidenzia: true },
+  { chiave: 'fondo', titolo: 'Fondo pensione', corto: 'Fondo' },
+  { chiave: 'capitale', titolo: 'Capitale investito', corto: 'Capitale' },
+  { chiave: 'liquidita', titolo: 'Liquidità', corto: 'Liquidità' },
+  { chiave: 'entrate', titolo: 'Entrate', corto: 'Entrate' },
+  { chiave: 'uscite', titolo: 'Uscite', corto: 'Uscite', invertiColore: true },
 ]
 
 function Cella({
@@ -38,11 +38,11 @@ function Cella({
   const positivo = variazione != null && (invertiColore ? variazione <= 0 : variazione >= 0)
   const tono = variazione == null ? 'text-gray-300' : positivo ? 'text-green-700' : 'text-red-700'
   return (
-    <td className="px-3 py-2 text-right align-top border-b border-surface-200/50">
-      <p className={`font-mono tabular-nums ${evidenzia ? 'text-gray-900 font-semibold' : 'text-gray-600'}`}>
+    <td className="px-1.5 py-2 text-right align-top border-b border-surface-200/50">
+      <p className={`font-mono tabular-nums whitespace-nowrap ${evidenzia ? 'text-gray-900 font-semibold' : 'text-gray-600'}`}>
         {fmtEuro(valore)}
       </p>
-      <p className={`font-mono tabular-nums text-[11px] font-medium ${tono}`}>
+      <p className={`font-mono tabular-nums whitespace-nowrap text-[10px] font-medium ${tono}`}>
         {variazione == null ? '–' : `${variazione >= 0 ? '▲ +' : '▼ '}${variazione.toFixed(1)}%`}
       </p>
     </td>
@@ -111,17 +111,19 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
         </p>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-xs border-collapse">
+      {/* Desktop: la tabella sta nel box (colonne a larghezza fissa); sotto md resta scorrevole */}
+      <div className="overflow-x-auto md:overflow-visible">
+        <table className="w-full min-w-[640px] md:min-w-0 md:table-fixed text-[11px] border-collapse">
           <thead>
             <tr>
-              <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">Anno</th>
+              <th className="text-left px-1.5 py-2 w-[96px] text-gray-400 font-semibold uppercase tracking-wide">Anno</th>
               {COLONNE.map(c => (
                 <th
                   key={c.chiave}
-                  className={`text-right px-3 py-2 font-semibold uppercase tracking-wide whitespace-nowrap ${c.evidenzia ? 'text-gray-500' : 'text-gray-400'}`}
+                  title={c.titolo}
+                  className={`text-right px-1.5 py-2 font-semibold uppercase tracking-wide whitespace-nowrap ${c.evidenzia ? 'text-gray-500' : 'text-gray-400'}`}
                 >
-                  {c.titolo}
+                  {c.corto}
                 </th>
               ))}
             </tr>
@@ -129,15 +131,15 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
           <tbody>
             {righe.map(r => (
               <tr key={r.anno}>
-                <td className="px-3 py-2 align-top text-gray-700 font-medium sticky left-0 bg-white border-b border-surface-200/50 whitespace-nowrap">
-                  {r.anno}
+                <td className="px-1.5 py-2 align-top text-gray-700 font-medium border-b border-surface-200/50">
+                  <span className="text-xs">{r.anno}</span>
                   {r.manuale && (
-                    <span className={`ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${r.fonte === 'salvato' ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-600'}`}>
+                    <span className={`block w-fit mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${r.fonte === 'salvato' ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-600'}`}>
                       {r.fonte === 'salvato' ? 'salvato' : 'manuale'}
                     </span>
                   )}
                   {r.parziale && (
-                    <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
+                    <span className="block w-fit mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600">
                       a {MESI_LABEL[r.ultimoMese]}
                     </span>
                   )}

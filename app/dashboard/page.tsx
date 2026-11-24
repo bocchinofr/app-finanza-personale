@@ -8,7 +8,7 @@ import { useAnno } from '@/lib/AnnoContext'
 import KpiCard from '@/components/ui/KpiCard'
 import InfoBox from '@/components/ui/InfoBox'
 import {
-  AndamentoPatrimonio, ComposizioneCard, RiepilogoAnnoCard, DettaglioMensileDrawer,
+  AndamentoPatrimonio, ComposizioneBar, RiepilogoAnnoCard, DettaglioMensileDrawer,
   type VistaPatrimonio, type ColonnaEvidenziata,
 } from '@/components/patrimonio/PatrimonioSezioni'
 
@@ -409,7 +409,7 @@ export default function PatrimonioPage() {
           <p><strong>Patrimonio totale</strong> = liquidità + investimenti a valore di mercato + fondo pensione. Il plus/minus è già incluso nel valore di mercato, non si somma a parte.</p>
           <p><strong>Capitale investito</strong> = quanto hai messo nelle posizioni attuali (prezzo di carico), senza plus/minus. Capitale + plus/minus investimenti = valore di mercato.</p>
           <p><strong>Plus/minus</strong> = guadagno o perdita non realizzati sugli investimenti rispetto al carico, più gli interessi del fondo pensione. Se è positivo ma &ldquo;Investimenti&rdquo; è negativo, la differenza viene dal fondo pensione.</p>
-          <p>Il chip colorato è la variazione rispetto al mese precedente; la linea sotto è l&apos;andamento dei mesi dell&apos;anno.</p>
+          <p>Il chip colorato è la variazione rispetto al mese precedente; la linea sotto è l&apos;andamento dei mesi dell&apos;anno. La barra sotto il patrimonio mostra la ripartizione tra liquidità, investimenti (a mercato) e fondo pensione.</p>
           <p><strong>Risparmio</strong> = entrate − uscite dell&apos;anno (stesse categorie della vista annuale; le entrate includono anche interessi, rimborsi e vendita titoli). Il dettaglio è nel Cash flow.</p>
           <p><strong>FIRE</strong> = stima dall&apos;ultima previsione salvata nella sezione FIRE: per aggiornarla usa &ldquo;Ricalcola&rdquo; lì.</p>
         </InfoBox>
@@ -423,6 +423,15 @@ export default function PatrimonioPage() {
           color="#3f6b4f"
           delta={deltaPatrimonioTotale}
           spark={serieTotale}
+          extra={
+            <ComposizioneBar
+              parti={[
+                { label: 'Liquidità', value: liquiditaTotale, color: '#4a6fa1' },
+                { label: 'Investimenti', value: capitaleInvestito, color: '#3f6b4f' },
+                { label: 'Fondo pensione', value: fondoPensioneTotale, color: '#a67c3d' },
+              ]}
+            />
+          }
           footnote={tickerSenzaPrezzoLive.length > 0 && (
             <>Quotazione non disponibile: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</>
           )}
@@ -478,28 +487,17 @@ export default function PatrimonioPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-4 min-w-0">
-          <AndamentoPatrimonio
-            anno={anno}
-            data={chartData}
-            vista={vista}
-            onVista={setVista}
-            percentuale={vistaPercentuale}
-            onPercentuale={setVistaPercentuale}
-            onMese={mese => apriDettaglio(mese)}
-            onApriDettaglio={() => apriDettaglio()}
-          />
-          <RiepilogoAnnoCard anno={anno} rows={riepilogoRows} />
-        </div>
+        <AndamentoPatrimonio
+          anno={anno}
+          data={chartData}
+          vista={vista}
+          onVista={setVista}
+          percentuale={vistaPercentuale}
+          onPercentuale={setVistaPercentuale}
+          onMese={mese => apriDettaglio(mese)}
+          onApriDettaglio={() => apriDettaglio()}
+        />
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-1 content-start">
-          <ComposizioneCard
-            parti={[
-              { label: 'Liquidità', value: liquiditaTotale, color: '#4a6fa1', colonna: 'Liquidità' },
-              { label: 'Investimenti (mercato)', value: capitaleInvestito, color: '#3f6b4f', colonna: 'Capitale investito' },
-              { label: 'Fondo pensione', value: fondoPensioneTotale, color: '#a67c3d', colonna: 'Fondo pensione' },
-            ]}
-            onSelect={c => apriDettaglio(null, c)}
-          />
           <KpiCard
             label={`Risparmio ${anno}`}
             value={flussiAnno === null ? '…' : `${risparmioAnno >= 0 ? '+' : '−'}${fmtEuro(Math.abs(risparmioAnno))}`}
@@ -518,6 +516,7 @@ export default function PatrimonioPage() {
               { label: 'Entrate', value: fmtEuro(entrateAnno), tone: 'positive' },
               { label: 'Uscite', value: fmtEuro(usciteAnno) },
             ]}
+            minisInRow
             href="/dashboard/gestione?tab=cashflow"
             cta="Apri cash flow"
           />
@@ -542,6 +541,7 @@ export default function PatrimonioPage() {
             href="/dashboard/fire"
             cta="Ultima previsione · apri FIRE"
           />
+          <RiepilogoAnnoCard anno={anno} rows={riepilogoRows} />
         </div>
       </div>
 

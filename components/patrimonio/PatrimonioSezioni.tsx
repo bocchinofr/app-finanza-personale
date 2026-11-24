@@ -1,8 +1,8 @@
 // components/patrimonio/PatrimonioSezioni.tsx
 // Sezioni della pagina Patrimonio, raggruppate in un solo file:
 //  - AndamentoPatrimonio: grafico mensile / vista anno su anno
-//  - ComposizioneCard: ripartizione del patrimonio per categoria
-//  - RiepilogoAnnoCard: sintesi dei mesi dell'anno (miglior/peggior mese, media…)
+//  - ComposizioneBar: barra di ripartizione del patrimonio (dentro la card Patrimonio)
+//  - RiepilogoAnnoCard: sintesi compatta dei mesi dell'anno (miglior/peggior mese, media…)
 //  - DettaglioMensileDrawer: riepilogo mensile in pannello a comparsa
 'use client'
 
@@ -10,7 +10,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from 'recharts'
-import { MiniStat, fmtEuro, fmtSigned, fmtPct } from '@/components/ui/KpiCard'
+import { fmtEuro, fmtSigned, fmtPct } from '@/components/ui/KpiCard'
 import Drawer from '@/components/ui/Drawer'
 import InfoBox from '@/components/ui/InfoBox'
 import SegmentedControl from '@/components/ui/SegmentedControl'
@@ -44,7 +44,7 @@ export function AndamentoPatrimonio({
   onApriDettaglio: () => void
 }) {
   return (
-    <section className="card">
+    <section className="card h-full">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <SegmentedControl<VistaPatrimonio>
@@ -98,7 +98,7 @@ export function AndamentoPatrimonio({
         ) : (
           <>
             <div className="cursor-pointer">
-              <ResponsiveContainer width="100%" height={330}>
+              <ResponsiveContainer width="100%" height={380}>
                 <ComposedChart
                   data={data}
                   margin={{ top: 22, right: 8, bottom: 4, left: 0 }}
@@ -293,48 +293,43 @@ export function DettaglioMensileDrawer({
   )
 }
 
-// ─── Composizione ──────────────────────────────────────────────
+// ─── Barra di composizione ─────────────────────────────────────
 
-export type ParteComposizione = { label: string; value: number; color: string; colonna: ColonnaEvidenziata }
+export type ParteComposizione = { label: string; value: number; color: string }
 
-export function ComposizioneCard({
-  parti, onSelect,
-}: { parti: ParteComposizione[]; onSelect: (c: ColonnaEvidenziata) => void }) {
+export function ComposizioneBar({ parti }: { parti: ParteComposizione[] }) {
   const totale = parti.reduce((sum, p) => sum + Math.max(p.value, 0), 0)
   const quota = (v: number) => (totale > 0 ? (Math.max(v, 0) / totale) * 100 : 0)
   return (
-    <section className="card">
-      <div className="flex items-center justify-between gap-2">
-        <p className="num-display text-sm font-semibold text-gray-900">Composizione</p>
-        <InfoBox title="Come leggere la composizione">
-          <p>Come si ripartisce il patrimonio totale tra liquidità, investimenti (a valore di mercato) e fondo pensione, all&apos;ultimo mese con dati.</p>
-          <p>Clicca una riga per aprire il dettaglio mensile con quella colonna evidenziata.</p>
-        </InfoBox>
-      </div>
-      <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-surface-100" role="img" aria-label="Composizione del patrimonio">
+    <div>
+      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-100" role="img" aria-label="Composizione del patrimonio">
         {parti.map(p => <div key={p.label} style={{ width: `${quota(p.value)}%`, backgroundColor: p.color }} />)}
       </div>
-      <ul className="mt-3 divide-y divide-surface-100">
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
         {parti.map(p => (
-          <li key={p.label}>
-            <button
-              type="button"
-              onClick={() => onSelect(p.colonna)}
-              className="w-full flex items-center gap-2.5 py-2 text-left rounded hover:bg-surface-50 transition-colors"
-            >
-              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-              <span className="flex-1 text-[13px] text-gray-700">{p.label}</span>
-              <span className="font-mono tabular-nums text-[13px] text-gray-900">{fmtEuro(p.value)}</span>
-              <span className="font-mono tabular-nums text-xs text-gray-400 w-10 text-right">{quota(p.value).toFixed(0)}%</span>
-            </button>
-          </li>
+          <span key={p.label} className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+            {p.label} <span className="font-mono tabular-nums text-gray-700">{quota(p.value).toFixed(0)}%</span>
+          </span>
         ))}
-      </ul>
-    </section>
+      </div>
+    </div>
   )
 }
 
 // ─── Sintesi dell'anno ─────────────────────────────────────────
+
+function RigaSintesi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'positive' | 'negative' }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
+      <dt className="text-gray-500 truncate">{label}</dt>
+      <dd className={`font-mono tabular-nums font-semibold whitespace-nowrap ${tone === 'positive' ? 'text-green-700' : tone === 'negative' ? 'text-red-700' : 'text-gray-900'}`}>
+        {value}
+        {sub && <span className="ml-1.5 text-[11px] font-medium opacity-80">{sub}</span>}
+      </dd>
+    </div>
+  )
+}
 
 export function RiepilogoAnnoCard({ anno, rows }: { anno: number; rows: RigaRiepilogo[] }) {
   // rows è dal mese più recente al più vecchio; teniamo solo i mesi con variazione
@@ -342,10 +337,11 @@ export function RiepilogoAnnoCard({ anno, rows }: { anno: number; rows: RigaRiep
   const cronologico = [...conVar].reverse()
   const primoMese = rows.length > 0 ? rows[rows.length - 1].row.mese : ''
   const ultimoMese = rows.length > 0 ? rows[0].row.mese : ''
+  const tono = (n: number) => (n >= 0 ? 'positive' : 'negative') as 'positive' | 'negative'
 
   let corpo: ReactNode
   if (conVar.length === 0) {
-    corpo = <p className="mt-3 text-xs text-gray-400">Servono almeno due mesi con dati per calcolare le variazioni.</p>
+    corpo = <p className="mt-2 text-xs text-gray-400">Servono almeno due mesi con dati per calcolare le variazioni.</p>
   } else {
     const migliore = conVar.reduce((a, b) => (b.varAssoluta > a.varAssoluta ? b : a))
     const peggiore = conVar.reduce((a, b) => (b.varAssoluta < a.varAssoluta ? b : a))
@@ -355,18 +351,13 @@ export function RiepilogoAnnoCard({ anno, rows }: { anno: number; rows: RigaRiep
     const sommaPct = baseIniziale !== 0 ? (somma / Math.abs(baseIniziale)) * 100 : null
     const inCrescita = conVar.filter(r => r.varAssoluta >= 0).length
     corpo = (
-      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-        <MiniStat
-          label={`Da fine ${primoMese}`}
-          value={fmtSigned(somma)}
-          sub={sommaPct != null ? fmtPct(sommaPct) : undefined}
-          tone={somma >= 0 ? 'positive' : 'negative'}
-        />
-        <MiniStat label="Media mensile" value={fmtSigned(media)} tone={media >= 0 ? 'positive' : 'negative'} />
-        <MiniStat label={`Mese migliore · ${migliore.row.mese}`} value={fmtSigned(migliore.varAssoluta)} tone={migliore.varAssoluta >= 0 ? 'positive' : 'negative'} />
-        <MiniStat label={`Mese peggiore · ${peggiore.row.mese}`} value={fmtSigned(peggiore.varAssoluta)} tone={peggiore.varAssoluta >= 0 ? 'positive' : 'negative'} />
-        <MiniStat label="Mesi in crescita" value={`${inCrescita} su ${conVar.length}`} />
-      </div>
+      <dl className="mt-1 divide-y divide-surface-100">
+        <RigaSintesi label={`Da fine ${primoMese}`} value={fmtSigned(somma)} sub={sommaPct != null ? fmtPct(sommaPct) : undefined} tone={tono(somma)} />
+        <RigaSintesi label="Media mensile" value={fmtSigned(media)} tone={tono(media)} />
+        <RigaSintesi label={`Mese migliore · ${migliore.row.mese}`} value={fmtSigned(migliore.varAssoluta)} tone={tono(migliore.varAssoluta)} />
+        <RigaSintesi label={`Mese peggiore · ${peggiore.row.mese}`} value={fmtSigned(peggiore.varAssoluta)} tone={tono(peggiore.varAssoluta)} />
+        <RigaSintesi label="Mesi in crescita" value={`${inCrescita} su ${conVar.length}`} />
+      </dl>
     )
   }
 

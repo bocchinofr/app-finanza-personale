@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, type Mese, statoAttuale } from '@/types'
+import { Liquidita, AssetPortafoglio, Movimento, FondoPensione, MESI, type Mese, statoAttuale, CATEGORIE_ENTRATE, CATEGORIE_USCITE } from '@/types'
+import { fetchTutte } from '@/lib/patrimonioAnnuale'
+import type { AnnoProiezione } from '@/lib/fireCalculations'
 import { useAnno } from '@/lib/AnnoContext'
 import KpiCard from '@/components/ui/KpiCard'
 import InfoBox from '@/components/ui/InfoBox'
@@ -36,6 +38,9 @@ export default function PatrimonioPage() {
   const [portafoglioStorico, setPortafoglioStorico] = useState<{ mese: string; plus_minus: number; valore_mercato: number }[]>([])
   const [prezziAttuali, setPrezziAttuali] = useState<Record<string, number>>({})
   const [vistaPercentuale, setVistaPercentuale] = useState(false)
+  // KPI riassuntivi extra (caricati in secondo piano: se falliscono la pagina funziona lo stesso)
+  const [flussiAnno, setFlussiAnno] = useState<{ categoria: string; entrate: number; uscite: number }[] | null>(null)
+  const [fireProiezione, setFireProiezione] = useState<AnnoProiezione[] | null | undefined>(undefined)
   const [vista, setVista] = useState<VistaPatrimonio>('mensile')
   const [drawerAperto, setDrawerAperto] = useState(false)
   const [meseEvidenziato, setMeseEvidenziato] = useState<string | null>(null)
@@ -61,6 +66,21 @@ export default function PatrimonioPage() {
       setFondoPensione(fondoRes.data ?? [])
       setPortafoglioStorico(storicoRes.data ?? [])
       setLoading(false)
+
+      // Flussi di cassa dell'anno (tutte le categorie) per il KPI Risparmio
+      fetchTutte<{ categoria: string; entrate: number; uscite: number }>((da, a) =>
+        supabase.from('movimenti').select('categoria, entrate, uscite')
+          .eq('user_id', user.id).eq('anno', anno).range(da, a))
+        .then(r => { if (!cancelled) setFlussiAnno(r) })
+        .catch(() => { if (!cancelled) setFlussiAnno(null) })
+
+      // Ultima previsione FIRE salvata (la stessa mostrata nella sezione FIRE)
+      supabase.from('fire_snapshot').select('proiezione')
+        .eq('user_id', user.id).order('anno_creazione', { ascending: false }).limit(1).maybeSingle()
+        .then(({ data, error }) => {
+          if (cancelled) return
+          setFireProiezione(error ? null : ((data?.proiezione as AnnoProiezione[] | undefined) ?? null))
+        })
 
       // Prezzi correnti via proxy Yahoo Finance server-side
       const tickers = (portRes.data ?? [])
@@ -177,7 +197,13 @@ export default function PatrimonioPage() {
 
   const mesePrecCapitale = mesePrecedente(ultimoMeseSnapshot)
   const capitaleInvestitoPrec = mesePrecCapitale ? capitaleMercatoPerMese.get(mesePrecCapitale) ?? null : null
-  const deltaCapitale = delta(capitaleInvestito, capitaleInvestitoPrec)
+  // Valore di mercato (serve al Patrimonio) e capitale investito = carico (versato netto):
+  // il carico del mese precedente è mercato − plus/minus dello snapshot di quel mese.
+  const deltaMercato = delta(capitaleInvestito, capitaleInvestitoPrec)
+  const caricoPrec = mesePrecCapitale && capitaleInvestitoPrec != null
+    ? capitaleInvestitoPrec - (plusMinusInvestPerMese.get(mesePrecCapitale) ?? 0)
+    : null
+  const deltaCarico = delta(carico, caricoPrec)
 
   const interessiFondoMesePrec = mesePrecFondo
     ? fondoPensione.filter(f => f.mese === mesePrecFondo).reduce((s, f) => s + (f.interessi ?? 0), 0)
@@ -192,8 +218,8 @@ export default function PatrimonioPage() {
   // capitale investito, sommarlo di nuovo sarebbe un doppio conteggio.
   const patrimonioTotale = liquiditaTotale + capitaleInvestito + fondoPensioneTotale
   const deltaPatrimonioTotale =
-    deltaLiquidita && deltaCapitale && deltaFondo
-      ? delta(patrimonioTotale, patrimonioTotale - (deltaLiquidita.value + deltaCapitale.value + deltaFondo.value))
+    deltaLiquidita && deltaMercato && deltaFondo
+      ? delta(patrimonioTotale, patrimonioTotale - (deltaLiquidita.value + deltaMercato.value + deltaFondo.value))
       : null
 
   // ===== Storico mensile a pile: Liquidità / Capitale investito / Fondo pensione =====
@@ -361,6 +387,17 @@ export default function PatrimonioPage() {
     : deltaPlusMinus && deltaPlusMinus.value < 0 ? 'warning'
     : 'positive'
 
+  // KPI riassuntivo flussi di cassa (stesse categorie della Vista annuale)
+  const entrateAnno = (flussiAnno ?? []).filter(m => CATEGORIE_ENTRATE.includes(m.categoria)).reduce((s, m) => s + (m.entrate ?? 0), 0)
+  const usciteAnno = (flussiAnno ?? []).filter(m => CATEGORIE_USCITE.includes(m.categoria)).reduce((s, m) => s + (m.uscite ?? 0), 0)
+  const risparmioAnno = entrateAnno - usciteAnno
+  const tassoRisparmio = entrateAnno > 0 ? (risparmioAnno / entrateAnno) * 100 : null
+
+  // KPI riassuntivo FIRE: dall'ultima previsione salvata nella sezione FIRE
+  const annoOggi = new Date().getFullYear()
+  const fireAnno = fireProiezione ? fireProiezione.find(a => a.fireRaggiunto) : undefined
+  const fireAnniMancanti = fireAnno ? Math.max(fireAnno.anno - annoOggi, 0) : null
+
   return (
     <div className="max-w-screen-2xl mx-auto space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -369,19 +406,27 @@ export default function PatrimonioPage() {
           <span className="hidden sm:inline"> · variazioni rispetto al mese precedente · clicca una card per il dettaglio mensile</span>
         </p>
         <InfoBox title="Come leggere i KPI">
-          <p><strong>Patrimonio totale</strong> = liquidità + capitale investito (a valore di mercato) + fondo pensione. Il plus/minus è già incluso nel valore di mercato, non si somma a parte.</p>
-          <p><strong>Plus/minus</strong> = guadagno o perdita non realizzati sugli investimenti rispetto al prezzo di carico, più gli interessi del fondo pensione.</p>
+          <p><strong>Patrimonio totale</strong> = liquidità + investimenti a valore di mercato + fondo pensione. Il plus/minus è già incluso nel valore di mercato, non si somma a parte.</p>
+          <p><strong>Capitale investito</strong> = quanto hai messo nelle posizioni attuali (prezzo di carico), senza plus/minus. Capitale + plus/minus investimenti = valore di mercato.</p>
+          <p><strong>Plus/minus</strong> = guadagno o perdita non realizzati sugli investimenti rispetto al carico, più gli interessi del fondo pensione. Se è positivo ma &ldquo;Investimenti&rdquo; è negativo, la differenza viene dal fondo pensione.</p>
           <p>Il chip colorato è la variazione rispetto al mese precedente; la linea sotto è l&apos;andamento dei mesi dell&apos;anno.</p>
+          <p><strong>Risparmio</strong> = entrate − uscite dell&apos;anno (stesse categorie della vista annuale; le entrate includono anche interessi, rimborsi e vendita titoli). Il dettaglio è nel Cash flow.</p>
+          <p><strong>FIRE</strong> = stima dall&apos;ultima previsione salvata nella sezione FIRE: per aggiornarla usa &ldquo;Ricalcola&rdquo; lì.</p>
         </InfoBox>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))] gap-3">
         <KpiCard
+          featured
           label="Patrimonio totale"
           value={fmtEuro(patrimonioTotale)}
           color="#3f6b4f"
           delta={deltaPatrimonioTotale}
           spark={serieTotale}
+          footnote={tickerSenzaPrezzoLive.length > 0 && (
+            <>Quotazione non disponibile: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</>
+          )}
+          className="col-span-2 lg:col-span-4 xl:col-span-1"
           onClick={() => apriDettaglio()}
         />
         <KpiCard
@@ -416,14 +461,10 @@ export default function PatrimonioPage() {
         />
         <KpiCard
           label="Capitale investito"
-          value={fmtEuro(capitaleInvestito)}
+          value={fmtEuro(carico)}
           color="#3f6b4f"
-          delta={deltaCapitale}
+          delta={deltaCarico}
           spark={serie('Capitale investito')}
-          minis={[{ label: 'Prezzo di carico', value: fmtEuro(carico) }]}
-          footnote={tickerSenzaPrezzoLive.length > 0 && (
-            <>Quotazione non disponibile: {tickerSenzaPrezzoLive.join(', ')} (uso prezzo di carico)</>
-          )}
           onClick={() => apriDettaglio(null, 'Capitale investito')}
         />
         <KpiCard
@@ -432,32 +473,75 @@ export default function PatrimonioPage() {
           color="#a67c3d"
           delta={deltaFondo}
           spark={serie('Fondo pensione')}
-          className="col-span-2 sm:col-span-1"
           onClick={() => apriDettaglio(null, 'Fondo pensione')}
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <AndamentoPatrimonio
-          anno={anno}
-          data={chartData}
-          vista={vista}
-          onVista={setVista}
-          percentuale={vistaPercentuale}
-          onPercentuale={setVistaPercentuale}
-          onMese={mese => apriDettaglio(mese)}
-          onApriDettaglio={() => apriDettaglio()}
-        />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 content-start">
+        <div className="space-y-4 min-w-0">
+          <AndamentoPatrimonio
+            anno={anno}
+            data={chartData}
+            vista={vista}
+            onVista={setVista}
+            percentuale={vistaPercentuale}
+            onPercentuale={setVistaPercentuale}
+            onMese={mese => apriDettaglio(mese)}
+            onApriDettaglio={() => apriDettaglio()}
+          />
+          <RiepilogoAnnoCard anno={anno} rows={riepilogoRows} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-1 content-start">
           <ComposizioneCard
             parti={[
               { label: 'Liquidità', value: liquiditaTotale, color: '#4a6fa1', colonna: 'Liquidità' },
-              { label: 'Capitale investito', value: capitaleInvestito, color: '#3f6b4f', colonna: 'Capitale investito' },
+              { label: 'Investimenti (mercato)', value: capitaleInvestito, color: '#3f6b4f', colonna: 'Capitale investito' },
               { label: 'Fondo pensione', value: fondoPensioneTotale, color: '#a67c3d', colonna: 'Fondo pensione' },
             ]}
             onSelect={c => apriDettaglio(null, c)}
           />
-          <RiepilogoAnnoCard anno={anno} rows={riepilogoRows} />
+          <KpiCard
+            label={`Risparmio ${anno}`}
+            value={flussiAnno === null ? '…' : `${risparmioAnno >= 0 ? '+' : '−'}${fmtEuro(Math.abs(risparmioAnno))}`}
+            color="#5d8a7a"
+            tone={flussiAnno === null ? 'neutral' : risparmioAnno >= 0 ? 'positive' : 'negative'}
+            delta={null}
+            badge={
+              <span className={`inline-flex items-center rounded-full text-[11px] font-semibold px-2 py-0.5 ${
+                tassoRisparmio == null ? 'bg-surface-100 text-gray-400'
+                : tassoRisparmio >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+              }`}>
+                {tassoRisparmio == null ? 'N/D' : `Tasso di risparmio ${tassoRisparmio.toFixed(0)}%`}
+              </span>
+            }
+            minis={flussiAnno === null ? undefined : [
+              { label: 'Entrate', value: fmtEuro(entrateAnno), tone: 'positive' },
+              { label: 'Uscite', value: fmtEuro(usciteAnno) },
+            ]}
+            href="/dashboard/gestione?tab=cashflow"
+            cta="Apri cash flow"
+          />
+          <KpiCard
+            label="FIRE"
+            value={
+              fireProiezione === undefined ? '…'
+              : fireAnniMancanti == null ? '—'
+              : fireAnniMancanti === 0 ? 'Raggiunto'
+              : `${fireAnniMancanti} ${fireAnniMancanti === 1 ? 'anno' : 'anni'}`
+            }
+            color="#a67c3d"
+            delta={null}
+            badge={
+              <span className="inline-flex items-center rounded-full bg-brand-50 text-brand-700 text-[11px] font-semibold px-2 py-0.5">
+                {fireProiezione === undefined ? 'Caricamento…'
+                  : fireProiezione === null ? 'Previsione non ancora calcolata'
+                  : fireAnno ? `Stima ${fireAnno.anno} · a ${fireAnno.eta} anni`
+                  : 'Non raggiunto entro la proiezione'}
+              </span>
+            }
+            href="/dashboard/fire"
+            cta="Ultima previsione · apri FIRE"
+          />
         </div>
       </div>
 

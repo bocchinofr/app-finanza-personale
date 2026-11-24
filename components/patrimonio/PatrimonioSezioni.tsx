@@ -307,7 +307,7 @@ export function ComposizioneCard({
       <div className="flex items-center justify-between gap-2">
         <p className="num-display text-sm font-semibold text-gray-900">Composizione</p>
         <InfoBox title="Come leggere la composizione">
-          <p>Come si ripartisce il patrimonio totale tra liquidità, capitale investito (a valore di mercato) e fondo pensione, all&apos;ultimo mese con dati.</p>
+          <p>Come si ripartisce il patrimonio totale tra liquidità, investimenti (a valore di mercato) e fondo pensione, all&apos;ultimo mese con dati.</p>
           <p>Clicca una riga per aprire il dettaglio mensile con quella colonna evidenziata.</p>
         </InfoBox>
       </div>
@@ -355,7 +355,7 @@ export function RiepilogoAnnoCard({ anno, rows }: { anno: number; rows: RigaRiep
     const sommaPct = baseIniziale !== 0 ? (somma / Math.abs(baseIniziale)) * 100 : null
     const inCrescita = conVar.filter(r => r.varAssoluta >= 0).length
     corpo = (
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         <MiniStat
           label={`Da fine ${primoMese}`}
           value={fmtSigned(somma)}
@@ -365,9 +365,7 @@ export function RiepilogoAnnoCard({ anno, rows }: { anno: number; rows: RigaRiep
         <MiniStat label="Media mensile" value={fmtSigned(media)} tone={media >= 0 ? 'positive' : 'negative'} />
         <MiniStat label={`Mese migliore · ${migliore.row.mese}`} value={fmtSigned(migliore.varAssoluta)} tone={migliore.varAssoluta >= 0 ? 'positive' : 'negative'} />
         <MiniStat label={`Mese peggiore · ${peggiore.row.mese}`} value={fmtSigned(peggiore.varAssoluta)} tone={peggiore.varAssoluta >= 0 ? 'positive' : 'negative'} />
-        <div className="col-span-2">
-          <MiniStat label="Mesi in crescita" value={`${inCrescita} su ${conVar.length}`} />
-        </div>
+        <MiniStat label="Mesi in crescita" value={`${inCrescita} su ${conVar.length}`} />
       </div>
     )
   }

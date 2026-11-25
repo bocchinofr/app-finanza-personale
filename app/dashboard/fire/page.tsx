@@ -392,14 +392,8 @@ export default function FirePage() {
 
   return (
     <div className="max-w-[1680px] mx-auto flex flex-col gap-4 xl:h-[calc(100dvh-104px)]">
-      {/* Intestazione: titolo + azioni */}
-      <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="min-w-0">
-          <h1 className="num-display text-2xl text-gray-900">FIRE</h1>
-          <p className="text-sm text-gray-500">
-            Quando potrai vivere di rendita, e quanto dura il capitale se smettessi oggi.
-          </p>
-        </div>
+      {/* Azioni */}
+      <div className="flex justify-end shrink-0">
         <div className="flex items-center gap-2">
           <button
             type="button"

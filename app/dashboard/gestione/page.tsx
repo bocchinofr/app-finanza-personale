@@ -9,7 +9,7 @@ import InfoSoglieModal from '@/components/InfoSoglieModal'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
 import { HeatmapCell } from '@/components/charts/HeatmapCell'
-import KpiCard from '@/components/ui/KpiCard'
+import KpiCard, { type MiniDef } from '@/components/ui/KpiCard'
 import SegmentedControl from '@/components/ui/SegmentedControl'
 import Drawer from '@/components/ui/Drawer'
 import { IconSliders, IconClose } from '@/components/ui/Icons'
@@ -131,7 +131,7 @@ function HeatCell({ value, values, palette, format, total = false }: {
   value: number; values: number[]; palette: 'green' | 'red' | 'blue'; format: (n: number) => string; total?: boolean
 }) {
   // Colonna "Totale": bordo di separazione dai mesi + valore in grassetto, niente heat coloring
-  const tdClass = total ? 'text-center p-0.5 border-l-2 border-surface-300' : 'text-center p-0.5'
+  const tdClass = total ? 'text-center p-0.5 border-l border-surface-200' : 'text-center p-0.5'
   const weightClass = total ? 'font-bold' : 'font-medium'
 
   // Ignora valori <= 1
@@ -181,7 +181,7 @@ function MediaCell({ value, className = '' }: { value: number | undefined; class
   return (
     <td className={`text-center p-0.5 ${className}`}>
       {/* Colore testo di queste celle "secondarie": cambia qui text-gray-500 */}
-      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${value == null ? 'text-gray-300' : 'text-gray-500'}`}>
+      <div className={`py-0.5 text-[11px] font-mono tabular-nums ${value == null ? 'text-gray-300' : 'text-gray-400'}`}>
         {value == null ? '–' : fmtK(value)}
       </div>
     </td>
@@ -193,7 +193,7 @@ function MediaCell({ value, className = '' }: { value: number | undefined; class
 function PctCell({ value, className = '' }: { value: number | null | undefined; className?: string }) {
   return (
     <td className={`text-center p-0.5 ${className}`}>
-      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${value == null ? 'text-gray-300' : 'text-gray-500'}`}>
+      <div className={`py-0.5 text-[11px] font-mono tabular-nums ${value == null ? 'text-gray-300' : 'text-gray-400'}`}>
         {value == null ? '–' : `${value.toFixed(0)}%`}
       </div>
     </td>
@@ -207,7 +207,7 @@ function VarCell({ attuale, precedente, className = '' }: { attuale: number; pre
   return (
     <td className={`text-center p-0.5 ${className}`}>
       {/* Colore testo di queste celle "secondarie": cambia qui text-gray-500 */}
-      <div className={`bg-surface-50 py-0.5 rounded-lg text-[10px] font-normal ${pct == null ? 'text-gray-300' : 'text-gray-500'}`}>
+      <div className={`py-0.5 text-[11px] font-mono tabular-nums ${pct == null ? 'text-gray-300' : 'text-gray-400'}`}>
         {pct == null ? '–' : `${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct).toFixed(0)}%`}
       </div>
     </td>
@@ -300,10 +300,186 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   )
 }
 
+// ===== Cash flow: tabelle e grafici =====
+const CF_TH = 'py-2 px-1.5 text-center text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-surface-50 border-b border-surface-200 leading-tight'
+const CF_TONE = {
+  green: { dot: '#3f6b4f', text: 'text-green-800' },
+  red:   { dot: '#c0504d', text: 'text-red-800' },
+  blue:  { dot: '#4a6fa1', text: 'text-blue-800' },
+}
+type PrecAgg = { media: number; totale: number } | undefined
+
+/** Intestazione condivisa da riepilogo e dettaglio; le colonne di confronto con l'anno precedente sono opzionali. */
+function CfHead({ prima, mesi, anno, confronto }: { prima: string; mesi: string[]; anno: number; confronto: boolean }) {
+  return (
+    <thead>
+      <tr>
+        <th className={`${CF_TH} sticky left-0 z-10 text-left px-3 min-w-[11rem]`}>{prima}</th>
+        {confronto && <>
+          <th className={`${CF_TH} min-w-[52px]`}><span className="block">Media</span><span className="block">{anno - 1}</span></th>
+          <th className={`${CF_TH} min-w-[52px] border-r border-surface-200`}><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
+        </>}
+        {mesi.map(m => <th key={m} className={`${CF_TH} min-w-[62px]`}>{MESI_LABEL[m]}</th>)}
+        <th className={`${CF_TH} min-w-[84px] text-right px-3 !bg-surface-100 text-gray-600 border-l border-surface-200`}>Totale</th>
+        <th className={`${CF_TH} min-w-[52px]`}>Media</th>
+        {confronto && <>
+          <th className={`${CF_TH} min-w-[52px] border-l border-surface-200`}><span className="block">Var.</span><span className="block">media</span></th>
+          <th className={`${CF_TH} min-w-[52px]`}><span className="block">Var.</span><span className="block">totale</span></th>
+        </>}
+      </tr>
+    </thead>
+  )
+}
+
+/** Riga di totale (entrate / uscite / investimenti / risparmio) del riepilogo mensile. */
+function CfTotRow({ label, tone, prec, valori, totale, media, confronto }: {
+  label: string; tone: 'green' | 'red' | 'blue' | 'risp'; prec: PrecAgg
+  valori: number[]; totale: number; media: number; confronto: boolean
+}) {
+  const t = tone === 'risp' ? (totale >= 0 ? CF_TONE.green : CF_TONE.red) : CF_TONE[tone]
+  return (
+    <tr className="border-b border-surface-100 hover:bg-surface-50 transition-colors group">
+      <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors px-3 py-2 whitespace-nowrap">
+        <span className={`inline-flex items-center gap-2 text-xs font-semibold ${t.text}`}>
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.dot }} />{label}
+        </span>
+      </td>
+      {confronto && <>
+        <MediaCell value={prec?.media} />
+        <MediaCell value={prec?.totale} className="border-r border-surface-200" />
+      </>}
+      {valori.map((v, i) => (
+        <td key={i} className={`px-1.5 py-2 text-center font-mono tabular-nums text-xs ${
+          tone === 'risp' ? (v >= 0 ? 'text-green-800 font-semibold' : 'text-red-700 font-semibold') : `${t.text} font-medium`}`}>
+          {fmtK(v)}
+        </td>
+      ))}
+      <td className={`px-3 py-2 text-right font-mono tabular-nums text-xs font-bold border-l border-surface-200 ${
+        tone === 'risp' ? (totale >= 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700') : `bg-surface-50 ${t.text}`}`}>
+        {fmtK(totale)}
+      </td>
+      <MediaCell value={media} />
+      {confronto && <>
+        <VarCell attuale={media} precedente={prec?.media} className="border-l border-surface-200" />
+        <VarCell attuale={totale} precedente={prec?.totale} />
+      </>}
+    </tr>
+  )
+}
+
+/** Riga percentuale (tasso di risparmio, quota investita). */
+function CfPctRow({ label, precMedia, precTot, valori, totale, media, confronto, colora }: {
+  label: string; precMedia: number | null; precTot: number | null; valori: (number | null)[]
+  totale: number | null; media: number | null; confronto: boolean; colora: boolean
+}) {
+  return (
+    <tr className="border-b border-surface-100 last:border-b-0">
+      <td className="sticky left-0 z-10 bg-white px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{label}</td>
+      {confronto && <>
+        <PctCell value={precMedia} />
+        <PctCell value={precTot} className="border-r border-surface-200" />
+      </>}
+      {valori.map((v, i) => (
+        <td key={i} className={`px-1.5 py-2 text-center font-mono tabular-nums text-xs ${
+          v == null ? 'text-gray-300' : colora ? (v >= 0 ? 'text-green-700' : 'text-red-700') : 'text-gray-600'}`}>
+          {v == null ? '–' : `${v.toFixed(0)}%`}
+        </td>
+      ))}
+      <td className={`px-3 py-2 text-right font-mono tabular-nums text-xs font-bold bg-surface-50 border-l border-surface-200 ${
+        totale == null ? 'text-gray-300' : colora ? (totale >= 0 ? 'text-green-700' : 'text-red-700') : 'text-gray-700'}`}>
+        {totale == null ? '–' : `${totale.toFixed(0)}%`}
+      </td>
+      <PctCell value={media} />
+      {confronto && <><td className="border-l border-surface-200" /><td /></>}
+    </tr>
+  )
+}
+
+/** Intestazione di sezione nella tabella per categoria (resta visibile durante lo scroll orizzontale). */
+function CfSezione({ label, color, colSpan }: { label: string; color: string; colSpan: number }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="pt-4 pb-1.5 px-3 border-b border-surface-200 bg-white">
+        <div className="sticky left-3 w-max inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />{label}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+/** Riga di categoria con heatmap sui mesi. */
+function CfCatRow({ cat, vals, mesi, total, totaliColonna, nMesi, prec, palette, confronto }: {
+  cat: string; vals: Record<string, number>; mesi: string[]; total: number; totaliColonna: number[]
+  nMesi: number; prec: PrecAgg; palette: 'green' | 'red' | 'blue'; confronto: boolean
+}) {
+  const rowValues = mesi.map(m => vals[m] ?? 0)
+  const media = total / nMesi
+  return (
+    <tr className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
+      <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
+      {confronto && <>
+        <MediaCell value={prec?.media} />
+        <MediaCell value={prec?.totale} className="border-r border-surface-200" />
+      </>}
+      {mesi.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette={palette} format={fmtK} />)}
+      <HeatCell value={total} values={totaliColonna} palette={palette} format={fmtK} total />
+      <MediaCell value={media} />
+      {confronto && <>
+        <VarCell attuale={media} precedente={prec?.media} className="border-l border-surface-200" />
+        <VarCell attuale={total} precedente={prec?.totale} />
+      </>}
+    </tr>
+  )
+}
+
+/** Donut di distribuzione con totale al centro e legenda. */
+function DonutDistribuzione({ titolo, sottotitolo, data, shades, totale }: {
+  titolo: string; sottotitolo: string; data: { name: string; value: number }[]; shades: string[]; totale: number
+}) {
+  return (
+    <div className="flex flex-col">
+      <p className="num-display text-sm font-semibold text-gray-900">{titolo}</p>
+      <p className="text-xs text-gray-400 mt-0.5 mb-3">{sottotitolo}</p>
+      <div className="flex flex-wrap items-center justify-center gap-5">
+        <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
+            <p className="num-display text-base font-bold text-gray-900">{fmtK(totale)}</p>
+          </div>
+          <ResponsiveContainer width={220} height={220}>
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={108} innerRadius={70}>
+                {data.map((_, i) => <Cell key={i} fill={shades[i % shades.length]} />)}
+              </Pie>
+              <Tooltip formatter={(v: number) => fmtK(v)} wrapperStyle={{ zIndex: 50 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="min-w-[160px] flex-1 max-w-[240px] space-y-1.5">
+          {data.map((d, i) => (
+            <div key={d.name} className="flex justify-between items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: shades[i % shades.length] }} />
+                <span className="text-gray-600 truncate">{d.name}</span>
+              </div>
+              <span className="font-semibold text-gray-800 shrink-0 tabular-nums">{totale > 0 ? `${((d.value / totale) * 100).toFixed(0)}%` : '–'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const supabase = createClient()
   const [tab, setTab] = useState<'movimenti' | 'cashflow' | 'portafoglio' | 'analisi'>('movimenti')
-  const [showHeatmap, setShowHeatmap] = useState(false)
+  const [showHeatmap, setShowHeatmap] = useState(false)   // false = Riepilogo, true = Per categoria
+  const [mostraConfronto, setMostraConfronto] = useState(true)
+  const [cfGrafico, setCfGrafico] = useState<'andamento' | 'spese' | 'distribuzione'>('andamento')
+  // Su schermi stretti le colonne di confronto con l'anno precedente partono nascoste (meno scroll orizzontale)
+  useEffect(() => { if (window.innerWidth < 1280) setMostraConfronto(false) }, [])
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [liquidita, setLiquidita] = useState<Liquidita[]>([])
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
@@ -809,6 +985,19 @@ export default function DashboardPage() {
   const pctInvestitoPrecTotale = rispPrecTot && rispPrecTot > 0 ? ((investPrecTot ?? 0) / rispPrecTot) * 100 : null
   const pctInvestitoPrecMedia = rispPrecMedia && rispPrecMedia > 0 ? ((investPrecMedia ?? 0) / rispPrecMedia) * 100 : null
 
+  // Periodo coperto e numero di colonne della tabella per categoria
+  const periodoCf = mesiPresenti.length > 1
+    ? `${MESI_LABEL[mesiPresenti[0]]}–${MESI_LABEL[mesiPresenti[mesiPresenti.length - 1]]}`
+    : mesiPresenti.length === 1 ? MESI_LABEL[mesiPresenti[0]] : '–'
+  const cfColSpan = mesiPresenti.length + 3 + (mostraConfronto ? 4 : 0)
+  // Mini dettaglio "variazione media mensile vs anno precedente" (goodUp = se l'aumento è positivo)
+  const miniVar = (att: number, prec: number | undefined, goodUp: boolean): MiniDef[] => {
+    if (!prec) return []
+    const v = ((att - prec) / Math.abs(prec)) * 100
+    const up = v >= 0
+    return [{ label: `Media vs ${anno - 1}`, value: `${up ? '+' : '−'}${Math.abs(v).toFixed(0)}%`, tone: up === goodUp ? 'positive' : 'negative' }]
+  }
+
   const lineData = mesiPresenti.map((m, i) => ({
     mese: MESI_LABEL[m],
     Entrate: Math.round(cfTotIn[i]),
@@ -1108,375 +1297,161 @@ export default function DashboardPage() {
 
       {/* ===== CASH FLOW ===== */}
       {tab === 'cashflow' && (
-        <>
-          {/* KPI Cards - stile Stitch (icona, valore, badge con metrica reale) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {[
-              { label: 'Entrate YTD', val: fmtK(ytdIn), color: 'text-green-700', icon: '↑', iconBg: 'bg-green-100 text-green-700', badge: `Media mensile ${fmtK(mediaEntrateMensili)}`, badgeBg: 'bg-green-50 text-green-700' },
-              { label: 'Uscite YTD', val: fmtK(ytdOut), color: 'text-red-600', icon: '↓', iconBg: 'bg-red-100 text-red-600', badge: `Media mensile ${fmtK(mediaUsciteMensili)}`, badgeBg: 'bg-red-50 text-red-600' },
-              { label: 'Investimenti YTD', val: fmtK(ytdInv), color: 'text-blue-700', icon: '◆', iconBg: 'bg-blue-100 text-blue-700', badge: `${pctInvestitoSuEntrate.toFixed(0)}% delle entrate`, badgeBg: 'bg-blue-50 text-blue-700' },
-              { label: 'Risparmio netto YTD', val: fmtK(ytdRisp), color: ytdRisp >= 0 ? 'text-green-700' : 'text-red-600', icon: '●', iconBg: ytdRisp >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600', badge: `Saving rate ${savingRate.toFixed(0)}%`, badgeBg: ytdRisp >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600' },
-            ].map(c => (
-              <div key={c.label} className="card p-5 transition-transform hover:scale-[1.01]">
-                <div className="flex items-start justify-between mb-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
-                  <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
-                </div>
-                <p className={`num-display text-2xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
-                <div className="mt-3">
-                  <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
-                </div>
-              </div>
-            ))}
+        <div className="flex flex-col gap-4">
+          {/* KPI dell'anno */}
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              variant="compact" label="Entrate" color="#3f6b4f" tone="positive" delta={null}
+              value={fmtK(ytdIn)}
+              badge={<span className="inline-flex rounded-full bg-surface-100 text-gray-500 text-[11px] font-medium px-2 py-0.5">{periodoCf}</span>}
+              minis={[{ label: 'Media mensile', value: fmtK(mediaEntrateMensili) }, ...miniVar(mediaEntrateMensili, entratePrecMedia, true)]}
+            />
+            <KpiCard
+              variant="compact" label="Uscite" color="#c0504d" tone="negative" delta={null}
+              value={fmtK(ytdOut)}
+              badge={<span className="inline-flex rounded-full bg-surface-100 text-gray-500 text-[11px] font-medium px-2 py-0.5">{periodoCf}</span>}
+              minis={[{ label: 'Media mensile', value: fmtK(mediaUsciteMensili) }, ...miniVar(mediaUsciteMensili, storicoAnnoPrec['TOTALE_USCITE']?.media, false)]}
+            />
+            <KpiCard
+              variant="compact" label="Investimenti" color="#4a6fa1" delta={null}
+              value={fmtK(ytdInv)}
+              badge={<span className="inline-flex rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold px-2 py-0.5">{pctInvestitoSuEntrate.toFixed(0)}% delle entrate</span>}
+              minis={[{ label: 'Media mensile', value: fmtK(ytdInv / nMesi) }, ...miniVar(ytdInv / nMesi, investPrecMedia, true)]}
+            />
+            <KpiCard
+              variant="compact" label="Risparmio netto" color={ytdRisp >= 0 ? '#3f6b4f' : '#c0504d'} tone={ytdRisp >= 0 ? 'positive' : 'negative'} delta={null}
+              value={fmtK(ytdRisp)}
+              badge={<span className={`inline-flex rounded-full text-[11px] font-semibold px-2 py-0.5 ${ytdRisp >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>Saving rate {savingRate.toFixed(0)}%</span>}
+              minis={[{ label: 'Media mensile', value: fmtK(ytdRisp / nMesi) }, ...miniVar(ytdRisp / nMesi, rispPrecMedia, true)]}
+            />
           </div>
 
-          {/* Tabella riepilogo totali */}
-          <div className="card p-0 overflow-hidden mb-6">
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-              <div>
-                <p className="num-display text-sm font-semibold text-gray-900">Riepilogo mensile</p>
-                <p className="text-xs text-gray-400 mt-0.5">Totali e tasso di risparmio</p>
-              </div>
-              <button
-                onClick={() => setShowHeatmap(v => !v)}
-                className={`text-xs font-semibold px-3.5 py-1.5 rounded-full flex items-center gap-1.5 transition-colors
-                  ${showHeatmap ? 'bg-brand-600 text-white hover:bg-brand-700' : 'bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-100'}`}
-              >
-                {showHeatmap ? 'Nascondi dettaglio' : 'Dettaglio'}
-                <span className={`transition-transform ${showHeatmap ? 'rotate-180' : ''}`}>▾</span>
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-surface-200">
-                    <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
-                    {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[80px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 border-l-2 border-surface-300 min-w-[100px]">Totale</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 border-l-2 border-surface-200 min-w-[52px] leading-tight">Media</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[56px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[56px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-surface-100">
-                    <td className="sticky left-0 z-10 bg-green-50 py-1.5 px-3 text-xs font-bold text-green-800">Totale entrate</td>
-                    <MediaCell value={storicoAnnoPrec['TOTALE_ENTRATE']?.media} />
-                    <MediaCell value={storicoAnnoPrec['TOTALE_ENTRATE']?.totale} className="border-r-2 border-surface-200" />
-                    {cfTotIn.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-green-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-green-900 bg-green-50 border-l-2 border-surface-300">{fmtK(ytdIn)}</td>
-                    <MediaCell value={mediaEntrateMensili} className="border-l-2 border-surface-300" />
-                    <VarCell attuale={mediaEntrateMensili} precedente={storicoAnnoPrec['TOTALE_ENTRATE']?.media} className="border-l-2 border-surface-200" />
-                    <VarCell attuale={ytdIn} precedente={storicoAnnoPrec['TOTALE_ENTRATE']?.totale} />
-                  </tr>
-                  <tr className="border-b border-surface-100">
-                    <td className="sticky left-0 z-10 bg-red-50 py-1.5 px-3 text-xs font-bold text-red-800">Totale uscite</td>
-                    <MediaCell value={storicoAnnoPrec['TOTALE_USCITE']?.media} />
-                    <MediaCell value={storicoAnnoPrec['TOTALE_USCITE']?.totale} className="border-r-2 border-surface-200" />
-                    {cfTotOut.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-red-800">{fmtK(v)}</td>)}
-                    <td className="py-1.5 px-3 text-xs font-extrabold text-right text-red-900 bg-red-50 border-l-2 border-surface-300">{fmtK(ytdOut)}</td>
-                    <MediaCell value={mediaUsciteMensili} className="border-l-2 border-surface-300" />
-                    <VarCell attuale={mediaUsciteMensili} precedente={storicoAnnoPrec['TOTALE_USCITE']?.media} className="border-l-2 border-surface-200" />
-                    <VarCell attuale={ytdOut} precedente={storicoAnnoPrec['TOTALE_USCITE']?.totale} />
-                  </tr>
-                  {invTotals.length > 0 && (
-                    <tr className="border-b border-surface-100">
-                      <td className="sticky left-0 z-10 bg-blue-50 py-1.5 px-3 text-xs font-bold text-blue-800">Totale investimenti</td>
-                      <MediaCell value={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media} />
-                      <MediaCell value={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale} className="border-r-2 border-surface-200" />
-                      {cfTotInv.map((v, i) => <td key={i} className="py-1.5 px-2 text-center font-mono tabular-nums text-blue-800">{fmtK(v)}</td>)}
-                      <td className="py-1.5 px-3 text-xs font-extrabold text-right text-blue-900 bg-blue-50 border-l-2 border-surface-300">{fmtK(ytdInv)}</td>
-                      <MediaCell value={ytdInv / nMesi} className="border-l-2 border-surface-300" />
-                      <VarCell attuale={ytdInv / nMesi} precedente={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.media} className="border-l-2 border-surface-200" />
-                      <VarCell attuale={ytdInv} precedente={storicoAnnoPrec['TOTALE_INVESTIMENTI']?.totale} />
-                    </tr>
-                  )}
-                  <tr className="border-b-2 border-surface-200">
-                    <td className={`sticky left-0 z-10 py-1.5 px-3 text-xs font-bold text-gray-800 ${ytdRisp >= 0 ? 'bg-green-50/50' : 'bg-red-50/50'}`}>Risparmio netto</td>
-                    <MediaCell value={storicoAnnoPrec['RISPARMIO_NETTO']?.media} />
-                    <MediaCell value={storicoAnnoPrec['RISPARMIO_NETTO']?.totale} className="border-r-2 border-surface-200" />
-                    {cfRisparmio.map((v, i) => (
-                      <td key={i} className={`py-1.5 px-2 text-center font-mono tabular-nums font-semibold ${v >= 0 ? 'text-green-800 bg-green-50/50' : 'text-red-800 bg-red-50/50'}`}>{fmtK(v)}</td>
-                    ))}
-                    <td className={`py-1.5 px-3 text-sm font-extrabold text-right text-white border-l-2 border-surface-300 ${ytdRisp >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>{fmtK(ytdRisp)}</td>
-                    <MediaCell value={ytdRisp / nMesi} className="border-l-2 border-surface-300" />
-                    <VarCell attuale={ytdRisp / nMesi} precedente={storicoAnnoPrec['RISPARMIO_NETTO']?.media} className="border-l-2 border-surface-200" />
-                    <VarCell attuale={ytdRisp} precedente={storicoAnnoPrec['RISPARMIO_NETTO']?.totale} />
-                  </tr>
-                  <tr className="border-b border-surface-100">
-                    <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio del mese</td>
-                    <PctCell value={pctRisparmioPrecMedia} />
-                    <PctCell value={pctRisparmioPrecTotale} className="border-r-2 border-surface-200" />
-                    {mesiPresenti.map((m, i) => {
-                      const lordo = cfTotIn[i] - cfTotOut[i]
-                      const pct = cfTotIn[i] > 0 ? (lordo / cfTotIn[i]) * 100 : null
-                      return (
-                        <td key={m} className={`py-1.5 px-2 text-center font-mono tabular-nums ${pct == null ? 'text-gray-300' : pct >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                          {pct == null ? '–' : `${pct.toFixed(0)}%`}
-                        </td>
-                      )
-                    })}
-                    <td className={`py-1.5 px-3 text-right font-bold border-l-2 border-surface-300 ${savingRate >= 0 ? 'text-green-700' : 'text-red-700'} bg-surface-50`}>{savingRate.toFixed(0)}%</td>
-                    <PctCell value={pctRisparmioMediaMensile} className="border-l-2 border-surface-200" />
-                    <td className="border-l-2 border-surface-200 bg-white" />
-                    <td className="bg-white" />
-                  </tr>
-                  <tr>
-                    <td className="sticky left-0 z-10 bg-white py-1.5 px-3 text-xs font-semibold text-gray-600">% Risparmio investito</td>
-                    <PctCell value={pctInvestitoPrecMedia} />
-                    <PctCell value={pctInvestitoPrecTotale} className="border-r-2 border-surface-200" />
-                    {mesiPresenti.map((m, i) => {
-                      const lordo = cfTotIn[i] - cfTotOut[i]
-                      const pct = lordo > 0 ? (cfTotInv[i] / lordo) * 100 : (cfTotInv[i] > 0 ? null : 0)
-                      return (
-                        <td key={m} className="py-1.5 px-2 text-center font-mono tabular-nums text-gray-600">
-                          {pct == null ? '–' : `${pct.toFixed(0)}%`}
-                        </td>
-                      )
-                    })}
-                    <td className="py-1.5 px-3 text-right font-bold text-gray-700 bg-surface-50">
-                      {ytdRisp > 0 ? `${((ytdInv / ytdRisp) * 100).toFixed(0)}%` : '–'}
-                    </td>
-                    <PctCell value={pctInvestitoMediaMensile} className="border-l-2 border-surface-200" />
-                    <td className="border-l-2 border-surface-200 bg-white" />
-                    <td className="bg-white" />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Heatmap - dettaglio, mostrata solo su richiesta */}
-          {showHeatmap && (
+          {/* Tabella mensile a tutta larghezza: Riepilogo | Per categoria */}
           <div className="card p-0 overflow-hidden">
-            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <div className="px-4 pt-4 pb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="num-display text-sm font-semibold text-gray-900">Analisi mensile per categoria</p>
-                <p className="text-xs text-gray-400 mt-0.5">Intensità del colore proporzionale al peso della voce nel mese</p>
+                <p className="num-display text-sm font-semibold text-gray-900">Cash flow mensile</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {showHeatmap ? 'Per categoria · colore più intenso = voce più pesante rispetto alla sua media' : 'Totali e tasso di risparmio'}
+                </p>
               </div>
-              <div className="flex items-center gap-3 text-[11px] font-semibold text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.green.dark }} />Entrate</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.red.dark }} />Uscite</span>
-                {invTotals.length > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: HEAT_COLORS.blue.dark }} />Investimenti</span>}
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setMostraConfronto(v => !v)} aria-pressed={mostraConfronto}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    mostraConfronto ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-surface-200 text-gray-500 hover:bg-surface-50'}`}>
+                  Confronto {anno - 1}
+                </button>
+                <SegmentedControl
+                  ariaLabel="Vista della tabella" value={showHeatmap ? 'categorie' : 'riepilogo'}
+                  onChange={v => setShowHeatmap(v === 'categorie')}
+                  options={[{ value: 'riepilogo', label: 'Riepilogo' }, { value: 'categorie', label: 'Per categoria' }]}
+                />
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto border-t border-surface-100">
               <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-surface-200">
-                    <th className="sticky left-0 z-10 bg-white py-2 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400 w-40">Voce / Categoria</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[48px] leading-tight"><span className="block">Media</span><span className="block">{anno - 1}</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[48px] border-r-2 border-surface-200 leading-tight"><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
-                    {mesiPresenti.map(m => <th key={m} className="py-2 px-2 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[72px]">{MESI_LABEL[m]}</th>)}
-                    <th className="py-2 px-3 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-surface-100 min-w-[90px] border-l-2 border-surface-300">Totale</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[48px] leading-tight">Media</th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] border-l-2 border-surface-200 leading-tight"><span className="block">Var.</span><span className="block">Media</span></th>
-                    <th className="py-2 px-1 text-center text-[9px] font-medium uppercase tracking-wide text-gray-400 min-w-[52px] leading-tight"><span className="block">Var.</span><span className="block">Totale</span></th>
-                  </tr>
-                </thead>
+                <CfHead prima={showHeatmap ? 'Voce / categoria' : 'Voce'} mesi={mesiPresenti} anno={anno} confronto={mostraConfronto} />
                 <tbody>
-                  {/* Entrate */}
-                  <tr>
-                    <td colSpan={mesiPresenti.length + 7} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-green-700">Entrate</td>
-                  </tr>
-                  {entrateTotals.map(({ cat, total }) => {
-                    const vals = cfEntrate[cat];
-                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
-                    const totaliColonna = entrateTotals.map(e => e.total);
-                    const media = total / nMesi
-                    const prec = storicoAnnoPrec[cat]
-                    return (
-                      <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        <MediaCell value={prec?.media} />
-                        <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="green" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="green" format={fmtK} total />
-                        <MediaCell value={media} className="border-l-2 border-surface-300" />
-                        <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
-                        <VarCell attuale={total} precedente={prec?.totale} />
-                      </tr>
-                    )
-                  })}
-
-                  {/* Uscite */}
-                  <tr>
-                    <td colSpan={mesiPresenti.length + 7} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-red-700 border-t-4 border-white">Uscite</td>
-                  </tr>
-                  {usciteTotals.map(({ cat, total }) => {
-                    const vals = cfUscite[cat];
-                    const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
-                    const totaliColonna = usciteTotals.map(u => u.total);
-                    const media = total / nMesi
-                    const prec = storicoAnnoPrec[cat]
-                    return (
-                      <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                        <MediaCell value={prec?.media} />
-                        <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
-                        {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="red" format={fmtK} />)}
-                        <HeatCell value={total} values={totaliColonna} palette="red" format={fmtK} total />
-                        <MediaCell value={media} className="border-l-2 border-surface-300" />
-                        <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
-                        <VarCell attuale={total} precedente={prec?.totale} />
-                      </tr>
-                    )
-                  })}
-
-                  {/* Investimenti */}
-                  {invTotals.length > 0 && <>
-                    <tr>
-                      <td colSpan={mesiPresenti.length + 7} className="px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-white bg-blue-700 border-t-4 border-white">Investimenti</td>
-                    </tr>
-                    {invTotals.map(({ cat, total }) => {
-                      const vals = cfInv[cat];
-                      const rowValues = mesiPresenti.map(m => vals[m] ?? 0);
-                      const totaliColonna = invTotals.map(v => v.total);
-                      const media = total / nMesi
-                      const prec = storicoAnnoPrec[cat]
-                      return (
-                        <tr key={cat} className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
-                          <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-                          <MediaCell value={prec?.media} />
-                          <MediaCell value={prec?.totale} className="border-r-2 border-surface-200" />
-                          {mesiPresenti.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette="blue" format={fmtK} />)}
-                          <HeatCell value={total} values={totaliColonna} palette="blue" format={fmtK} total />
-                          <MediaCell value={media} className="border-l-2 border-surface-300" />
-                          <VarCell attuale={media} precedente={prec?.media} className="border-l-2 border-surface-200" />
-                          <VarCell attuale={total} precedente={prec?.totale} />
-                        </tr>
-                      )
-                    })}
-                  </>}
+                  {!showHeatmap ? (
+                    <>
+                      <CfTotRow label="Totale entrate" tone="green" prec={storicoAnnoPrec['TOTALE_ENTRATE']} valori={cfTotIn} totale={ytdIn} media={mediaEntrateMensili} confronto={mostraConfronto} />
+                      <CfTotRow label="Totale uscite" tone="red" prec={storicoAnnoPrec['TOTALE_USCITE']} valori={cfTotOut} totale={ytdOut} media={mediaUsciteMensili} confronto={mostraConfronto} />
+                      {invTotals.length > 0 && (
+                        <CfTotRow label="Totale investimenti" tone="blue" prec={storicoAnnoPrec['TOTALE_INVESTIMENTI']} valori={cfTotInv} totale={ytdInv} media={ytdInv / nMesi} confronto={mostraConfronto} />
+                      )}
+                      <CfTotRow label="Risparmio netto" tone="risp" prec={storicoAnnoPrec['RISPARMIO_NETTO']} valori={cfRisparmio} totale={ytdRisp} media={ytdRisp / nMesi} confronto={mostraConfronto} />
+                      <CfPctRow label="% risparmio del mese" precMedia={pctRisparmioPrecMedia} precTot={pctRisparmioPrecTotale}
+                        valori={pctRisparmioMensile} totale={savingRate} media={pctRisparmioMediaMensile} confronto={mostraConfronto} colora />
+                      <CfPctRow label="% risparmio investito" precMedia={pctInvestitoPrecMedia} precTot={pctInvestitoPrecTotale}
+                        valori={pctInvestitoMensile} totale={ytdRisp > 0 ? (ytdInv / ytdRisp) * 100 : null} media={pctInvestitoMediaMensile} confronto={mostraConfronto} colora={false} />
+                    </>
+                  ) : (
+                    <>
+                      <CfSezione label="Entrate" color="#3f6b4f" colSpan={cfColSpan} />
+                      {entrateTotals.map(({ cat, total }) => (
+                        <CfCatRow key={cat} cat={cat} vals={cfEntrate[cat]} mesi={mesiPresenti} total={total} totaliColonna={entrateTotals.map(e => e.total)}
+                          nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="green" confronto={mostraConfronto} />
+                      ))}
+                      <CfSezione label="Uscite" color="#c0504d" colSpan={cfColSpan} />
+                      {usciteTotals.map(({ cat, total }) => (
+                        <CfCatRow key={cat} cat={cat} vals={cfUscite[cat]} mesi={mesiPresenti} total={total} totaliColonna={usciteTotals.map(u => u.total)}
+                          nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="red" confronto={mostraConfronto} />
+                      ))}
+                      {invTotals.length > 0 && <>
+                        <CfSezione label="Investimenti" color="#4a6fa1" colSpan={cfColSpan} />
+                        {invTotals.map(({ cat, total }) => (
+                          <CfCatRow key={cat} cat={cat} vals={cfInv[cat]} mesi={mesiPresenti} total={total} totaliColonna={invTotals.map(v => v.total)}
+                            nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="blue" confronto={mostraConfronto} />
+                        ))}
+                      </>}
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
-          )}
 
-          {/* Bento: barre spese (full width) + torte entrate/uscite affiancate */}
-          <div className="grid grid-cols-1 gap-4 mb-6">
-            {/* Barre spese - raggruppate per categoria */}
-            <div className="card">
-              <p className="num-display text-sm font-semibold text-gray-900">Spese per categoria</p>
-              <p className="text-xs text-gray-400 mt-0.5 mb-4">Confronto mensile per categoria di spesa</p>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
-                  <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
-                  <Tooltip content={<SpeseCategoriaTooltip />} wrapperStyle={{ zIndex: 50 }} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {allUsciteCats.map((cat, i) => (
-                    <Bar key={cat} dataKey={cat} fill={BAR_COLORS.categorie[i % BAR_COLORS.categorie.length]} radius={[4, 4, 0, 0]} />
-                  ))}
-                  <Bar key="Altro" dataKey="Altro" fill={BAR_COLORS.altro} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Torta entrate - donut con totale al centro + legenda a destra */}
-              <div className="card flex flex-col">
-                <p className="num-display text-sm font-semibold text-gray-900">Distribuzione entrate YTD</p>
-                <p className="text-xs text-gray-400 mt-0.5 mb-4">Provenienza complessiva per categoria</p>
-                <div className="flex items-center justify-center gap-3">
-                  <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
-                      <p className="num-display text-base font-bold text-gray-900">{fmtK(ytdIn)}</p>
-                    </div>
-                    <ResponsiveContainer width={220} height={220}>
-                      <PieChart>
-                        <Pie data={pieDataEntrate} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={108} innerRadius={70}>
-                          {pieDataEntrate.map((_, i) => <Cell key={i} fill={GREEN_SHADES[i % GREEN_SHADES.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(v: number) => fmtK(v)} wrapperStyle={{ zIndex: 50 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="w-[110px] shrink-0 space-y-1.5">
-                    {pieDataEntrate.map((d, i) => (
-                      <div key={d.name} className="flex justify-between items-center gap-1.5 text-[10px]">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: GREEN_SHADES[i % GREEN_SHADES.length] }} />
-                          <span className="text-gray-600 truncate">{d.name}</span>
-                        </div>
-                        <span className="font-semibold text-gray-800 shrink-0">{ytdIn > 0 ? `${((d.value / ytdIn) * 100).toFixed(0)}%` : '–'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Torta spese - donut con totale al centro + legenda a destra */}
-              <div className="card flex flex-col">
-                <p className="num-display text-sm font-semibold text-gray-900">Distribuzione uscite YTD</p>
-                <p className="text-xs text-gray-400 mt-0.5 mb-4">Spesa complessiva per categoria</p>
-                <div className="flex items-center justify-center gap-3">
-                  <div className="relative shrink-0" style={{ width: 220, height: 220 }}>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Totale</p>
-                      <p className="num-display text-base font-bold text-gray-900">{fmtK(ytdOut)}</p>
-                    </div>
-                    <ResponsiveContainer width={220} height={220}>
-                      <PieChart>
-                        <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={108} innerRadius={70}>
-                          {pieData.map((_, i) => <Cell key={i} fill={RED_SHADES[i % RED_SHADES.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(v: number) => fmtK(v)} wrapperStyle={{ zIndex: 50 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="w-[110px] shrink-0 space-y-1.5">
-                    {pieData.map((d, i) => (
-                      <div key={d.name} className="flex justify-between items-center gap-1.5 text-[10px]">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: RED_SHADES[i % RED_SHADES.length] }} />
-                          <span className="text-gray-600 truncate">{d.name}</span>
-                        </div>
-                        <span className="font-semibold text-gray-800 shrink-0">{ytdOut > 0 ? `${((d.value / ytdOut) * 100).toFixed(0)}%` : '–'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Andamento mensile - full width, barre verticali per categoria */}
-          <div className="card mb-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          {/* Grafici in un'unica card, uno alla volta */}
+          <div className="card p-0 overflow-hidden">
+            <div className="px-4 pt-4 pb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="num-display text-sm font-semibold text-gray-900">Andamento mensile</p>
-                <p className="text-xs text-gray-400 mt-0.5">Entrate, uscite e risparmio nel tempo</p>
+                <p className="num-display text-sm font-semibold text-gray-900">
+                  {cfGrafico === 'andamento' ? 'Andamento mensile' : cfGrafico === 'spese' ? 'Spese per categoria' : 'Distribuzione YTD'}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {cfGrafico === 'andamento' ? 'Entrate, uscite e risparmio nel tempo' : cfGrafico === 'spese' ? 'Confronto mensile per categoria di spesa' : 'Da dove arrivano le entrate e dove vanno le uscite'}
+                </p>
               </div>
-              <div className="flex items-center gap-4">
-                {lineSeries.map(s => (
-                  <span key={s.key} className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: s.color }}>
-                    <span className="w-2.5 h-2.5 inline-block rounded-sm" style={{ backgroundColor: s.color }} />
-                    {s.key}
-                  </span>
-                ))}
-              </div>
+              <SegmentedControl
+                ariaLabel="Grafico" value={cfGrafico} onChange={setCfGrafico}
+                options={[{ value: 'andamento', label: 'Andamento' }, { value: 'spese', label: 'Spese' }, { value: 'distribuzione', label: 'Distribuzione' }]}
+              />
             </div>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={lineData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
-                <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `€${(v/1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => fmtK(v)} wrapperStyle={{ zIndex: 50 }} />
-                {lineSeries.map(s => (
-                  <Bar key={s.key} dataKey={s.key} fill={s.color} radius={[4, 4, 0, 0]} />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="px-4 pb-4 border-t border-surface-100 pt-4">
+              {cfGrafico === 'andamento' && (
+                <>
+                  <div className="flex flex-wrap items-center gap-4 mb-3">
+                    {lineSeries.map(s => (
+                      <span key={s.key} className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                        <span className="w-2.5 h-2.5 inline-block rounded-sm" style={{ backgroundColor: s.color }} />{s.key}
+                      </span>
+                    ))}
+                  </div>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={lineData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
+                      <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v: number) => fmtK(v)} wrapperStyle={{ zIndex: 50 }} />
+                      {lineSeries.map(s => <Bar key={s.key} dataKey={s.key} fill={s.color} radius={[4, 4, 0, 0]} />)}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </>
+              )}
+              {cfGrafico === 'spese' && (
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={barData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }} barGap={2} barCategoryGap="20%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
+                    <XAxis dataKey="mese" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmtShort(v)} />
+                    <Tooltip content={<SpeseCategoriaTooltip />} wrapperStyle={{ zIndex: 50 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {allUsciteCats.map((cat, i) => (
+                      <Bar key={cat} dataKey={cat} fill={BAR_COLORS.categorie[i % BAR_COLORS.categorie.length]} radius={[4, 4, 0, 0]} />
+                    ))}
+                    <Bar key="Altro" dataKey="Altro" fill={BAR_COLORS.altro} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+              {cfGrafico === 'distribuzione' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <DonutDistribuzione titolo="Entrate" sottotitolo="Provenienza per categoria" data={pieDataEntrate} shades={GREEN_SHADES} totale={ytdIn} />
+                  <DonutDistribuzione titolo="Uscite" sottotitolo="Spesa per categoria" data={pieData} shades={RED_SHADES} totale={ytdOut} />
+                </div>
+              )}
+            </div>
           </div>
-
-
-        </>
+        </div>
       )}
 
       {/* ===== ANALISI PORTAFOGLIO (look-through) ===== */}

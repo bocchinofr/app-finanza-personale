@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { IconClose, IconDownload, IconCopy, IconCheck, IconChart } from '@/components/ui/Icons'
 import { createClient } from '@/lib/supabase'
 import {
   Liquidita, AssetPortafoglio, Movimento, FondoPensione, Profilo, statoAttuale,
@@ -154,7 +155,7 @@ export default function AnalisiFinanziariaModal({ compact = false }: { compact?:
             <h3 className="text-sm font-semibold text-gray-900">Analisi Finanziaria</h3>
             <p className="text-xs text-gray-400 mt-0.5">Anno corrente · aggiornata a ogni apertura</p>
           </div>
-          <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">✕</button>
+          <button onClick={() => setOpen(false)} aria-label="Chiudi" className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-surface-100 hover:text-gray-800 transition-colors"><IconClose size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
@@ -178,9 +179,10 @@ export default function AnalisiFinanziariaModal({ compact = false }: { compact?:
 
         {!loading && analisi && (
           <div className="px-5 py-3 border-t border-surface-100 flex flex-wrap gap-2 shrink-0">
-            <button onClick={scaricaPdf} className="btn-secondary text-xs">⬇ Scarica PDF</button>
-            <button onClick={copiaPrompt} className="btn-primary text-xs">
-              {copiato ? '✓ Prompt copiato' : '📋 Copia prompt per AI'}
+            <button onClick={scaricaPdf} className="btn-secondary text-xs inline-flex items-center gap-1.5"><IconDownload size={14} /> Scarica PDF</button>
+            <button onClick={copiaPrompt} className="btn-primary text-xs inline-flex items-center gap-1.5">
+              {copiato ? <IconCheck size={14} /> : <IconCopy size={14} />}
+              {copiato ? 'Prompt copiato' : 'Copia prompt per AI'}
             </button>
           </div>
         )}
@@ -193,11 +195,12 @@ export default function AnalisiFinanziariaModal({ compact = false }: { compact?:
       <button
         onClick={apri}
         className={compact
-          ? 'h-9 w-9 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600'
+          ? 'h-9 w-9 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600 hover:bg-surface-50 transition-colors'
           : 'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 transition-colors'}
         title="Analisi Finanziaria"
       >
-        📊 {!compact && 'Analisi Finanziaria'}
+        <IconChart size={16} />
+        {!compact && 'Analisi Finanziaria'}
       </button>
 
       {mounted && modal && createPortal(modal, document.body)}

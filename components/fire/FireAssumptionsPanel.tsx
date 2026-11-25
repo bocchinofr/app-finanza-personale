@@ -1,241 +1,263 @@
 // components/fire/FireAssumptionsPanel.tsx
-"use client";
+// (include l'editor dei debiti)
+// Contenuto del Drawer "Ipotesi": tutti i parametri modificabili del modello.
+// Le modifiche si applicano subito alla proiezione (stessa logica di prima).
+'use client'
 
-import { useState } from "react";
-import type { FireParametri } from "@/lib/fireCalculations";
-import DebitiEditor from "./DebitiEditor";
-
-interface FireAssumptionsPanelProps {
-  parametri: FireParametri;
-  onChange: (parametri: FireParametri) => void;
-}
-
-// Ogni colonna ha un proprio accento cromatico (variazioni sage/terra coerenti
-// con la palette dell'app) così le quattro sezioni si distinguono senza bordi
-// pesanti o card-in-card.
-const ACCENTI = {
-  entrate: "border-t-sky-600",
-  spese: "border-t-stone-400",
-  investimenti: "border-t-emerald-600",
-  fondo: "border-t-teal-600",
-  generali: "border-t-amber-600",
-} as const;
+import type { ReactNode } from 'react'
+import type { Debito, FireParametri } from '@/lib/fireCalculations'
+import { useState } from 'react'
+import { IconPlus, IconTrash } from '@/components/ui/Icons'
 
 function Campo({
-  label,
-  value,
-  onChange,
-  suffix,
-  step = 1,
-  nota,
+  label, value, onChange, suffix, step = 1, nota,
 }: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  suffix?: string;
-  step?: number;
-  nota?: string;
+  label: string
+  value: number
+  onChange: (v: number) => void
+  suffix?: string
+  step?: number
+  nota?: string
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] leading-tight text-stone-500">{label}</span>
-      <div className="mt-1 flex items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 focus-within:border-emerald-500">
+      <span className="block text-[12px] leading-tight text-gray-500">{label}</span>
+      <div className="mt-1 flex items-center gap-1.5 rounded-lg border border-surface-200 bg-white px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-brand-500 focus-within:border-transparent">
         <input
           type="number"
           step={step}
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full min-w-0 border-0 p-0 font-mono text-sm text-stone-800 outline-none"
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-full min-w-0 border-0 p-0 font-mono text-sm tabular-nums text-gray-900 outline-none bg-transparent"
         />
-        {suffix && <span className="shrink-0 text-[10px] text-stone-400">{suffix}</span>}
+        {suffix && <span className="shrink-0 text-[10px] text-gray-400">{suffix}</span>}
       </div>
-      {nota && <p className="mt-1 text-[10px] leading-snug text-stone-400">{nota}</p>}
+      {nota && <p className="mt-1 text-[11px] leading-snug text-gray-400">{nota}</p>}
     </label>
-  );
+  )
 }
 
-function Colonna({
-  titolo,
-  accento,
-  children,
-}: {
-  titolo: string;
-  accento: string;
-  children: React.ReactNode;
-}) {
+function Sezione({ titolo, colore, children, className = '' }: { titolo: string; colore: string; children: ReactNode; className?: string }) {
   return (
-    <div className={`border-t-2 ${accento} pt-3`}>
-      <h4 className="mb-2.5 text-sm font-medium text-stone-700">{titolo}</h4>
-      <div className="space-y-2.5">{children}</div>
-    </div>
-  );
+    <section className={className}>
+      <h4 className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-gray-900">
+        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colore }} />
+        {titolo}
+      </h4>
+      <div className="space-y-3">{children}</div>
+    </section>
+  )
 }
 
-export default function FireAssumptionsPanel({
-  parametri,
-  onChange,
-}: FireAssumptionsPanelProps) {
-  const [aperto, setAperto] = useState(false);
+// ─── Editor debiti ───────────────────────────────────────────────
+function nuovoDebitoVuoto(): Debito {
+  return {
+    id: crypto.randomUUID(),
+    nome: '',
+    rataAnnua: 0,
+    annoEstinzione: new Date().getFullYear() + 1,
+  }
+}
 
-  function set<K extends keyof FireParametri>(campo: K, valore: FireParametri[K]) {
-    onChange({ ...parametri, [campo]: valore });
+const CAMPO = 'rounded-lg border border-surface-200 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent'
+
+function DebitiEditor({
+  debiti, onChange,
+}: {
+  debiti: Debito[]
+  onChange: (debiti: Debito[]) => void
+}) {
+  const [nuovo, setNuovo] = useState<Debito>(nuovoDebitoVuoto())
+
+  function aggiungiDebito() {
+    if (!nuovo.nome.trim() || nuovo.rataAnnua <= 0) return
+    onChange([...debiti, nuovo])
+    setNuovo(nuovoDebitoVuoto())
+  }
+
+  function rimuoviDebito(id: string) {
+    onChange(debiti.filter(d => d.id !== id))
+  }
+
+  function aggiornaDebito(id: string, campo: keyof Debito, valore: string | number) {
+    onChange(debiti.map(d => (d.id === id ? { ...d, [campo]: valore } : d)))
   }
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-stone-50/60">
-      <button
-        type="button"
-        onClick={() => setAperto((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="font-serif text-base text-stone-800">
-          Parametri e assunzioni
-        </span>
-        <span className="text-stone-400">{aperto ? "−" : "+"}</span>
-      </button>
+    <div className="space-y-3">
+      <p className="text-[12px] leading-relaxed text-gray-500">
+        Rate incluse nelle spese attuali che verranno rimosse dall&apos;anno di estinzione (es. mutuo).
+        L&apos;importo liberato riduce solo le spese, non aumenta automaticamente l&apos;investimento.
+      </p>
 
-      {aperto && (
-        <div className="space-y-6 border-t border-stone-200 px-4 py-4">
-          <div className="grid grid-cols-2 gap-x-5 gap-y-6 lg:grid-cols-5">
-            <Colonna titolo="Entrate" accento={ACCENTI.entrate}>
-              <Campo
-                label="Entrate annue base"
-                value={parametri.entrateAnnueBase}
-                onChange={(v) => set("entrateAnnueBase", v)}
-                suffix="€/anno"
-                nota="Media annualizzata di stipendi, assegno unico e bonus. Esclusi interessi, rimborsi e vendita titoli. Si azzerano quando raggiungi il FIRE."
+      {debiti.length > 0 && (
+        <div className="divide-y divide-surface-100 rounded-lg border border-surface-200">
+          {debiti.map(d => (
+            <div key={d.id} className="flex flex-wrap items-center gap-2 p-2.5">
+              <input
+                type="text"
+                value={d.nome}
+                onChange={e => aggiornaDebito(d.id, 'nome', e.target.value)}
+                placeholder="Nome (es. Mutuo casa)"
+                className={`${CAMPO} min-w-[140px] flex-1`}
               />
-              <Campo
-                label="Crescita entrate"
-                value={parametri.crescitaEntratePct}
-                onChange={(v) => set("crescitaEntratePct", v)}
-                suffix="%/anno"
-                step={0.1}
-              />
-            </Colonna>
-
-            <Colonna titolo="Spese" accento={ACCENTI.spese}>
-              <Campo
-                label="Spese annue base"
-                value={parametri.speseAnnueBase}
-                onChange={(v) => set("speseAnnueBase", v)}
-                suffix="€/anno"
-              />
-              <Campo
-                label="Crescita spese"
-                value={parametri.crescitaSpesePct}
-                onChange={(v) => set("crescitaSpesePct", v)}
-                suffix="%/anno"
-                step={0.1}
-              />
-            </Colonna>
-
-            <Colonna titolo="Investimenti" accento={ACCENTI.investimenti}>
-              <Campo
-                label="Investimento annuo"
-                value={parametri.investimentoAnnuoBase}
-                onChange={(v) => set("investimentoAnnuoBase", v)}
-                suffix="€/anno"
-              />
-              <Campo
-                label="Crescita investimento"
-                value={parametri.crescitaInvestimentoPct}
-                onChange={(v) => set("crescitaInvestimentoPct", v)}
-                suffix="%/anno"
-                step={0.1}
-              />
-              <Campo
-                label="Rendimento atteso"
-                value={parametri.rendimentoInvestimentiPct}
-                onChange={(v) => set("rendimentoInvestimentiPct", v)}
-                suffix="%/anno"
-                step={0.1}
-              />
-              <Campo
-                label="Tassazione interessi"
-                value={parametri.tassazioneInteressiPct}
-                onChange={(v) => set("tassazioneInteressiPct", v)}
-                suffix="%"
-                step={0.5}
-              />
-            </Colonna>
-
-            <Colonna titolo="Fondo pensione" accento={ACCENTI.fondo}>
-              <Campo
-                label="Rendimento atteso"
-                value={parametri.rendimentoFondoPensionePct}
-                onChange={(v) => set("rendimentoFondoPensionePct", v)}
-                suffix="%/anno"
-                step={0.1}
-              />
-              <Campo
-                label="Tassazione fondo"
-                value={parametri.tassazioneFondoPensionePct}
-                onChange={(v) => set("tassazioneFondoPensionePct", v)}
-                suffix="%"
-                step={0.5}
-              />
-              <Campo
-                label="Età sblocco"
-                value={parametri.etaRitiroFondoPensione}
-                onChange={(v) => set("etaRitiroFondoPensione", v)}
-                suffix="anni"
-                nota="Da questa età il fondo si libera: una parte come capitale, il resto come integrazione annua."
-              />
-              <Campo
-                label="Quota capitale (TFR)"
-                value={parametri.quotaCapitaleFondoPensionePct}
-                onChange={(v) => set("quotaCapitaleFondoPensionePct", v)}
-                suffix="%"
-                nota="Il resto esce come integrazione annua che riduce le spese nette."
-              />
-              <label className="flex items-center gap-1.5 pt-1 text-[11px] text-stone-500">
+              <label className="flex items-center gap-1 text-[12px] text-gray-500">
+                Rata annua €
                 <input
-                  type="checkbox"
-                  checked={parametri.includiFondoPensioneInFireNumber}
-                  onChange={(e) =>
-                    set("includiFondoPensioneInFireNumber", e.target.checked)
-                  }
+                  type="number"
+                  value={d.rataAnnua}
+                  onChange={e => aggiornaDebito(d.id, 'rataAnnua', Number(e.target.value))}
+                  className={`${CAMPO} w-24 font-mono tabular-nums`}
                 />
-                Conta anche da bloccato nel FIRE number
               </label>
-            </Colonna>
-
-            <Colonna titolo="Generali" accento={ACCENTI.generali}>
-              <Campo
-                label="Inflazione"
-                value={parametri.inflazionePct}
-                onChange={(v) => set("inflazionePct", v)}
-                suffix="%/anno"
-                step={0.1}
-                nota="Valore di riferimento; per farla incidere sulle spese, imposta anche la 'Crescita spese' qui sopra."
-              />
-              <Campo
-                label="Safe Withdrawal Rate"
-                value={parametri.swrPct}
-                onChange={(v) => set("swrPct", v)}
-                suffix="%"
-                step={0.1}
-                nota="Riferimento storico (regola del 4%): capitale target = spese ÷ SWR. Il vero criterio di raggiungimento è la simulazione, non questo rapporto — vedi il box info."
-              />
-              <Campo
-                label="Orizzonte proiezione"
-                value={parametri.orizzonteAnni}
-                onChange={(v) => set("orizzonteAnni", v)}
-                suffix="anni"
-              />
-            </Colonna>
-          </div>
-
-          <div className="border-t border-stone-200 pt-4">
-            <h4 className="mb-2.5 text-sm font-medium text-stone-700">Debiti</h4>
-            <DebitiEditor
-              debiti={parametri.debiti}
-              onChange={(debiti) => set("debiti", debiti)}
-            />
-          </div>
+              <label className="flex items-center gap-1 text-[12px] text-gray-500">
+                Estinto entro
+                <input
+                  type="number"
+                  value={d.annoEstinzione}
+                  onChange={e => aggiornaDebito(d.id, 'annoEstinzione', Number(e.target.value))}
+                  className={`${CAMPO} w-20 font-mono tabular-nums`}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => rimuoviDebito(d.id)}
+                className="ml-auto h-8 w-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                aria-label={`Rimuovi ${d.nome || 'debito'}`}
+                title="Rimuovi"
+              >
+                <IconTrash size={16} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-surface-300 p-2.5">
+        <input
+          type="text"
+          value={nuovo.nome}
+          onChange={e => setNuovo({ ...nuovo, nome: e.target.value })}
+          placeholder="Nome debito"
+          className={`${CAMPO} min-w-[140px] flex-1`}
+        />
+        <input
+          type="number"
+          value={nuovo.rataAnnua || ''}
+          onChange={e => setNuovo({ ...nuovo, rataAnnua: Number(e.target.value) })}
+          placeholder="Rata annua €"
+          className={`${CAMPO} w-28 font-mono tabular-nums`}
+        />
+        <input
+          type="number"
+          value={nuovo.annoEstinzione}
+          onChange={e => setNuovo({ ...nuovo, annoEstinzione: Number(e.target.value) })}
+          title="Anno di estinzione"
+          className={`${CAMPO} w-20 font-mono tabular-nums`}
+        />
+        <button type="button" onClick={aggiungiDebito} className="btn-primary !px-3 !py-1.5 text-sm inline-flex items-center gap-1.5">
+          <IconPlus size={14} /> Aggiungi
+        </button>
+      </div>
     </div>
-  );
+  )
+}
+
+// ─── Pannello ipotesi ────────────────────────────────────────────
+export default function FireAssumptionsPanel({
+  parametri, onChange,
+}: {
+  parametri: FireParametri
+  onChange: (parametri: FireParametri) => void
+}) {
+  function set<K extends keyof FireParametri>(campo: K, valore: FireParametri[K]) {
+    onChange({ ...parametri, [campo]: valore })
+  }
+
+  return (
+    <div className="space-y-6">
+      <p className="text-[12px] leading-relaxed text-gray-500">
+        Le modifiche aggiornano subito grafico e KPI. Premi <strong>Ricalcola</strong> per salvarle come nuova previsione di riferimento.
+      </p>
+
+      <div className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-2">
+        <Sezione titolo="Entrate" colore="#5d8a7a">
+          <Campo
+            label="Entrate annue base"
+            value={parametri.entrateAnnueBase}
+            onChange={v => set('entrateAnnueBase', v)}
+            suffix="€/anno"
+            nota="Media annualizzata di stipendi, assegno unico e bonus. Esclusi interessi, rimborsi e vendita titoli. Si azzerano quando raggiungi il FIRE."
+          />
+          <Campo label="Crescita entrate" value={parametri.crescitaEntratePct} onChange={v => set('crescitaEntratePct', v)} suffix="%/anno" step={0.1} />
+        </Sezione>
+
+        <Sezione titolo="Spese" colore="#78716c">
+          <Campo label="Spese annue base" value={parametri.speseAnnueBase} onChange={v => set('speseAnnueBase', v)} suffix="€/anno" />
+          <Campo label="Crescita spese" value={parametri.crescitaSpesePct} onChange={v => set('crescitaSpesePct', v)} suffix="%/anno" step={0.1} />
+        </Sezione>
+
+        <Sezione titolo="Investimenti" colore="#3f6b4f">
+          <Campo label="Investimento annuo" value={parametri.investimentoAnnuoBase} onChange={v => set('investimentoAnnuoBase', v)} suffix="€/anno" />
+          <Campo label="Crescita investimento" value={parametri.crescitaInvestimentoPct} onChange={v => set('crescitaInvestimentoPct', v)} suffix="%/anno" step={0.1} />
+          <Campo label="Rendimento atteso" value={parametri.rendimentoInvestimentiPct} onChange={v => set('rendimentoInvestimentiPct', v)} suffix="%/anno" step={0.1} />
+          <Campo label="Tassazione interessi" value={parametri.tassazioneInteressiPct} onChange={v => set('tassazioneInteressiPct', v)} suffix="%" step={0.5} />
+        </Sezione>
+
+        <Sezione titolo="Fondo pensione" colore="#a67c3d">
+          <Campo label="Rendimento atteso" value={parametri.rendimentoFondoPensionePct} onChange={v => set('rendimentoFondoPensionePct', v)} suffix="%/anno" step={0.1} />
+          <Campo label="Tassazione fondo" value={parametri.tassazioneFondoPensionePct} onChange={v => set('tassazioneFondoPensionePct', v)} suffix="%" step={0.5} />
+          <Campo
+            label="Età sblocco"
+            value={parametri.etaRitiroFondoPensione}
+            onChange={v => set('etaRitiroFondoPensione', v)}
+            suffix="anni"
+            nota="Da questa età il fondo si libera: una parte come capitale, il resto come integrazione annua."
+          />
+          <Campo
+            label="Quota capitale (TFR)"
+            value={parametri.quotaCapitaleFondoPensionePct}
+            onChange={v => set('quotaCapitaleFondoPensionePct', v)}
+            suffix="%"
+            nota="Il resto esce come integrazione annua che riduce le spese nette."
+          />
+          <label className="flex items-center gap-2 pt-0.5 text-[12px] text-gray-600">
+            <input
+              type="checkbox"
+              checked={parametri.includiFondoPensioneInFireNumber}
+              onChange={e => set('includiFondoPensioneInFireNumber', e.target.checked)}
+              className="h-3.5 w-3.5 accent-[#3f6b4f]"
+            />
+            Conta anche da bloccato nel FIRE number
+          </label>
+        </Sezione>
+      </div>
+
+      <Sezione titolo="Generali" colore="#8a8f7a" className="border-t border-surface-100 pt-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Campo
+            label="Inflazione"
+            value={parametri.inflazionePct}
+            onChange={v => set('inflazionePct', v)}
+            suffix="%/anno"
+            step={0.1}
+            nota="Riferimento: per farla incidere sulle spese imposta anche la «Crescita spese»."
+          />
+          <Campo
+            label="Safe Withdrawal Rate"
+            value={parametri.swrPct}
+            onChange={v => set('swrPct', v)}
+            suffix="%"
+            step={0.1}
+            nota="Regola del 4%: capitale target = spese ÷ SWR. Il criterio vero è la simulazione."
+          />
+          <Campo label="Orizzonte proiezione" value={parametri.orizzonteAnni} onChange={v => set('orizzonteAnni', v)} suffix="anni" />
+        </div>
+      </Sezione>
+
+      <Sezione titolo="Debiti" colore="#c3c9b0" className="border-t border-surface-100 pt-6">
+        <DebitiEditor debiti={parametri.debiti} onChange={debiti => set('debiti', debiti)} />
+      </Sezione>
+    </div>
+  )
 }

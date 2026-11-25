@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { MESI } from '@/types'
+import { IconCalendar, IconArrowRight } from '@/components/ui/Icons'
 
 // Stesse abbreviazioni usate in tutto il resto dell'app (types/index.ts):
 // ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic']
@@ -62,7 +63,7 @@ export default function SnapshotReminder({ compact = false }: { compact?: boolea
         title={`Registra chiusura ${MESI_LABEL[mese]}`}
         className="relative h-9 w-9 flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors"
       >
-        <span className="text-base leading-none">📅</span>
+        <IconCalendar size={18} />
         <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white" />
       </Link>
     )
@@ -71,19 +72,19 @@ export default function SnapshotReminder({ compact = false }: { compact?: boolea
   return (
     <Link
       href="/dashboard/gestione"
-      title="Gestione → scheda Portafoglio → Storico prezzi mensili"
+      title="Gestione › Portafoglio › Storico prezzi mensili"
       className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 hover:bg-amber-100 transition-colors"
     >
-      <span className="text-sm shrink-0">📅</span>
+      <IconCalendar size={16} className="shrink-0 mt-px" />
       <span className="flex-1 leading-snug">
         <span className="block">
           Registra chiusura <strong>{MESI_LABEL[mese]}</strong>{anno !== annoCorrente ? ` ${anno}` : ''}
         </span>
         <span className="block text-[10px] text-amber-600 mt-0.5">
-          Gestione → Portafoglio → Storico prezzi
+          Gestione › Portafoglio › Storico prezzi
         </span>
       </span>
-      <span className="shrink-0 text-amber-600">→</span>
+      <IconArrowRight size={14} className="shrink-0 text-amber-600 mt-0.5" />
     </Link>
   )
 }

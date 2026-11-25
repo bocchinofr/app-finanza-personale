@@ -13,14 +13,16 @@ import {
   confrontaConSnapshot, confrontaProiezioni,
   AnnoProiezione, ConfrontoAnnuale, EsitoRicalcolo, FireParametri, Debito,
 } from '@/lib/fireCalculations'
-import FireInfoBox from '@/components/fire/FireInfoBox'
+import KpiCard, { fmtEuro } from '@/components/ui/KpiCard'
+import Drawer from '@/components/ui/Drawer'
+import { IconSync, IconSliders } from '@/components/ui/Icons'
 import FireAssumptionsPanel from '@/components/fire/FireAssumptionsPanel'
-import FireNumberCard from '@/components/fire/FireNumberCard'
-import RunwayCard from '@/components/fire/RunwayCard'
-import PostFireCard from '@/components/fire/PostFireCard'
-import FireReviewCard from '@/components/fire/FireReviewCard'
-import FireProjectionChart from '@/components/fire/FireProjectionChart'
-import FireTabellaPrevisionale from '@/components/fire/FireTabellaPrevisionale'
+import {
+  FireNumberCard, PostFireCard, RunwayCard, FireReviewCard, FireReviewDettaglio,
+} from '@/components/fire/FireKpis'
+import {
+  FirePrevisionePanel, FireAssunzioniRiepilogo, FireEsitoRicalcolo,
+} from '@/components/fire/FirePanels'
 
 const DEFAULT_SWR = 4
 const DEFAULT_INFLAZIONE = 2
@@ -207,6 +209,9 @@ export default function FirePage() {
   const [ricalcolando, setRicalcolando] = useState(false)
   const [esito, setEsito] = useState<EsitoRicalcolo | null>(null)
 
+  // Pannelli a comparsa (solo UI)
+  const [drawer, setDrawer] = useState<'ipotesi' | 'andamento' | 'esito' | null>(null)
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -365,6 +370,7 @@ export default function FirePage() {
       )
       setAnnoSnapshot(anno)
       setEsito(esitoRicalcolo)
+      if (esitoRicalcolo) setDrawer('esito')
     } catch (e) {
       setErrore('Ricalcolo non riuscito: ' + messaggioErrore(e))
     } finally {
@@ -382,59 +388,120 @@ export default function FirePage() {
       : `calcolata a inizio ${snapshot.annoCreazione}`
     : ''
 
+  const patrimonioPartenza = parametri.patrimonioLiquidoIniziale + parametri.fondoPensioneIniziale
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-1.5">
-        <div>
-          <h1 className="font-serif text-2xl text-stone-800">FIRE</h1>
-          <p className="text-sm text-stone-500">
+    <div className="max-w-[1680px] mx-auto flex flex-col gap-4 xl:h-[calc(100dvh-104px)]">
+      {/* Intestazione: titolo + azioni */}
+      <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="min-w-0">
+          <h1 className="num-display text-2xl text-gray-900">FIRE</h1>
+          <p className="text-sm text-gray-500">
             Quando potrai vivere di rendita, e quanto dura il capitale se smettessi oggi.
           </p>
         </div>
-        <FireInfoBox />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDrawer('ipotesi')}
+            className="btn-secondary inline-flex items-center gap-1.5"
+          >
+            <IconSliders size={16} /> Ipotesi
+          </button>
+          <button
+            type="button"
+            onClick={handleRicalcola}
+            disabled={ricalcolando || !snapshot}
+            className="btn-primary inline-flex items-center gap-1.5"
+          >
+            <IconSync size={16} className={ricalcolando ? 'animate-spin' : ''} />
+            {ricalcolando ? 'Ricalcolo…' : 'Ricalcola'}
+          </button>
+        </div>
       </div>
 
       {errore && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <div className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
           {errore}
         </div>
       )}
       {birthDateMancante && !errore && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        <div className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
           Data di nascita non impostata: vai su Profilo per inserirla. Nel frattempo uso {ETA_DEFAULT_SE_MANCANTE} anni come default.
         </div>
       )}
 
-      <FireAssumptionsPanel parametri={parametri} onChange={setParametri} />
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {fireNumberResult && <FireNumberCard risultato={fireNumberResult} />}
-        {postFireResult && (
-          <PostFireCard
-            risultato={postFireResult}
-            etaRitiroFondoPensione={parametri.etaRitiroFondoPensione}
+      {/* Zona KPI: FIRE Number in evidenza + 3 KPI compatti */}
+      {fireNumberResult && postFireResult && (
+        <div className="grid gap-3 xl:grid-cols-[5fr_7fr] shrink-0">
+          <FireNumberCard
+            risultato={fireNumberResult}
+            proiezione={proiezione}
+            etichettaCalcolo={etichettaCalcolo}
           />
-        )}
-        <RunwayCard calcolaRunway={(includiFondo) => calcolaRunway(parametri, includiFondo)} />
-      </div>
-
-      {confronto && annoSnapshot && (
-        <FireReviewCard confronto={confronto} annoSnapshot={annoSnapshot} />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <PostFireCard
+              risultato={postFireResult}
+              etaRitiroFondoPensione={parametri.etaRitiroFondoPensione}
+            />
+            <RunwayCard calcolaRunway={(includiFondo) => calcolaRunway(parametri, includiFondo)} />
+            <FireReviewCard confronto={confronto} onClick={() => confronto && setDrawer('andamento')} />
+          </div>
+        </div>
       )}
 
-      <FireProjectionChart proiezione={proiezione} />
-
-      {snapshot && (
-        <FireTabellaPrevisionale
-          proiezione={snapshot.proiezione}
+      {/* Riga principale: grafico / tabella + colonna destra */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:flex-1 xl:min-h-0">
+        <FirePrevisionePanel
+          proiezione={proiezione}
+          proiezioneSalvata={snapshot ? snapshot.proiezione : null}
           annoCorrente={parametri.annoIniziale}
           etichettaCalcolo={etichettaCalcolo}
-          onRicalcola={handleRicalcola}
-          ricalcolando={ricalcolando}
-          esito={esito}
-          onChiudiEsito={() => setEsito(null)}
         />
-      )}
+        <div className="grid gap-3 xl:grid-rows-[auto_minmax(0,1fr)] xl:min-h-0">
+          <KpiCard
+            variant="compact"
+            label="Patrimonio di partenza"
+            value={fmtEuro(patrimonioPartenza)}
+            color="#3f6b4f"
+            delta={null}
+            minis={[
+              { label: 'Investito + liquido', value: fmtEuro(parametri.patrimonioLiquidoIniziale) },
+              { label: 'Fondo pensione', value: fmtEuro(parametri.fondoPensioneIniziale) },
+            ]}
+            href="/dashboard"
+            cta="Patrimonio"
+          />
+          <FireAssunzioniRiepilogo parametri={parametri} onModifica={() => setDrawer('ipotesi')} />
+        </div>
+      </div>
+
+      <Drawer
+        open={drawer === 'ipotesi'}
+        onClose={() => setDrawer(null)}
+        title="Ipotesi del modello"
+        subtitle="Parametri della proiezione FIRE"
+      >
+        <FireAssumptionsPanel parametri={parametri} onChange={setParametri} />
+      </Drawer>
+
+      <Drawer
+        open={drawer === 'andamento' && !!confronto && !!annoSnapshot}
+        onClose={() => setDrawer(null)}
+        title={confronto ? `Andamento ${confronto.anno}` : 'Andamento'}
+        subtitle={annoSnapshot ? `Previsione congelata a inizio ${annoSnapshot}` : undefined}
+      >
+        {confronto && <FireReviewDettaglio confronto={confronto} />}
+      </Drawer>
+
+      <Drawer
+        open={drawer === 'esito' && !!esito}
+        onClose={() => setDrawer(null)}
+        title="Esito del ricalcolo"
+        subtitle={etichettaCalcolo ? `Previsione ${etichettaCalcolo}` : undefined}
+      >
+        {esito && <FireEsitoRicalcolo esito={esito} />}
+      </Drawer>
     </div>
   )
 }

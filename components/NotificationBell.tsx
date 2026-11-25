@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase'
 import { Notifica } from '@/types'
 import Link from 'next/link'
+import { IconBell, IconMail, IconArrowRight } from '@/components/ui/Icons'
 
 export default function NotificationBell() {
   const supabase = createClient()
@@ -86,16 +87,16 @@ export default function NotificationBell() {
                 <li key={n.id} className="px-4 py-3">
                   <p className="text-xs text-gray-700">{n.messaggio}</p>
                   {n.dettaglio && (
-                    <Link href="/dashboard/gestione?tab=portafoglio&sezione=alert" onClick={() => setOpen(false)} className="inline-block mt-1.5 text-[11px] font-medium text-emerald-700 hover:underline">
-                      Vedi dettaglio in Portafoglio →
+                    <Link href="/dashboard/gestione?tab=portafoglio&sezione=alert" onClick={() => setOpen(false)} className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-medium text-brand-700 hover:underline">
+                      Vedi dettaglio in Portafoglio <IconArrowRight size={12} />
                     </Link>
                   )}
                   <p className="text-[10px] text-gray-400 mt-1">{fmtTime(n.created_at)}</p>
                 </li>
               ))}
             </ul>
-            <p className="px-4 py-2 text-[10px] text-gray-400 border-t border-surface-100 bg-surface-50">
-              📧 Ogni notifica viene inviata anche via email — se non la vedi, controlla lo spam.
+            <p className="px-4 py-2 flex items-center gap-1.5 text-[10px] text-gray-400 border-t border-surface-100 bg-surface-50">
+              <IconMail size={12} className="shrink-0" /> Ogni notifica viene inviata anche via email — se non la vedi, controlla lo spam.
             </p>
           </>
         )}
@@ -113,7 +114,7 @@ export default function NotificationBell() {
         aria-label="Notifiche"
         className="relative h-9 w-9 flex items-center justify-center rounded-lg border border-surface-200 text-gray-600 hover:bg-surface-50 transition-colors"
       >
-        <span className="text-lg leading-none">🔔</span>
+        <IconBell size={18} />
         {hasUnread && (
           <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" />
         )}

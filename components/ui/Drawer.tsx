@@ -1,14 +1,19 @@
 // components/ui/Drawer.tsx
 // Pannello a comparsa: laterale da destra su desktop, "bottom sheet" su mobile.
-// Chiusura con Esc, clic sullo sfondo o pulsante. Blocca lo scroll della pagina sotto.
+// Chiusura con Esc, clic sullo sfondo, clic su una zona vuota del pannello o pulsante.
+// variant 'center' = piccolo popup centrato (poche informazioni); su mobile resta bottom sheet.
+// Blocca lo scroll della pagina sotto.
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IconClose } from './Icons'
 
+/** Elementi che non devono chiudere il pannello se cliccati (controlli, tabelle, grafici). */
+const KEEP_OPEN = 'button, a, input, select, textarea, label, table, svg, canvas, summary, [role="button"], [role="tab"], [data-keep-open]'
+
 export default function Drawer({
-  open, onClose, title, subtitle, headerExtra, children,
+  open, onClose, title, subtitle, headerExtra, children, variant = 'side', closeOnBlankClick = true,
 }: {
   open: boolean
   onClose: () => void
@@ -16,6 +21,10 @@ export default function Drawer({
   subtitle?: string
   headerExtra?: ReactNode
   children: ReactNode
+  /** side = pannello laterale (default); center = piccolo popup centrato */
+  variant?: 'side' | 'center'
+  /** clic su una zona vuota del pannello lo chiude (disattivare per pannelli con form lunghi) */
+  closeOnBlankClick?: boolean
 }) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -34,13 +43,28 @@ export default function Drawer({
 
   if (!mounted || !open) return null
 
+  // Zona "vuota" = elemento non interattivo e senza testo proprio; non scatta se si sta selezionando testo
+  function handleBlankClick(e: React.MouseEvent<HTMLElement>) {
+    if (!closeOnBlankClick) return
+    const t = e.target as HTMLElement
+    if (t.closest(KEEP_OPEN)) return
+    if (Array.from(t.childNodes).some(n => n.nodeType === Node.TEXT_NODE && n.textContent?.trim())) return
+    if (window.getSelection()?.toString()) return
+    onClose()
+  }
+
+  const panelClass = variant === 'center'
+    ? `max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[88vh] max-sm:rounded-t-2xl sheet-in
+       sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[calc(100%-2rem)] sm:max-w-md sm:max-h-[80vh] sm:rounded-2xl sm:border sm:border-surface-200 fade-in`
+    : `max-sm:inset-x-0 max-sm:bottom-0 max-sm:h-[88vh] max-sm:rounded-t-2xl sheet-in
+       sm:top-0 sm:right-0 sm:h-full sm:w-full sm:max-w-3xl sm:border-l sm:border-surface-200 drawer-in`
+
   return createPortal(
     <div className="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-black/30 fade-in" onClick={onClose} />
       <div
-        className="absolute bg-white shadow-2xl flex flex-col
-                   max-sm:inset-x-0 max-sm:bottom-0 max-sm:h-[88vh] max-sm:rounded-t-2xl sheet-in
-                   sm:top-0 sm:right-0 sm:h-full sm:w-full sm:max-w-3xl sm:border-l sm:border-surface-200 drawer-in"
+        onClick={handleBlankClick}
+        className={`absolute bg-white shadow-2xl flex flex-col ${panelClass}`}
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-surface-100 shrink-0">
           <div className="min-w-0">

@@ -242,6 +242,53 @@ function SpeseCategoriaTooltip({ active, payload, label }: {
 type DraftSoglia = { massimo: number; mensile: number; attivo: boolean; accumulo: boolean }
 
 const PAGE_SIZE = 20
+type FiltroKey = 'mese' | 'cat' | 'conto'
+
+/** Gruppo di filtro a selezione multipla con modalità Includi / Escludi. */
+function FiltroGruppo({ titolo, opzioni, selezionati, escludi, onToggle, onModo, onReset }: {
+  titolo: string
+  opzioni: { value: string; label: string }[]
+  selezionati: string[]
+  escludi: boolean
+  onToggle: (v: string) => void
+  onModo: (escludi: boolean) => void
+  onReset: () => void
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          {titolo}{selezionati.length > 0 && <span className="ml-1.5 normal-case text-gray-400">({selezionati.length})</span>}
+        </p>
+        <div className="flex items-center gap-2">
+          {selezionati.length > 0 && (
+            <button type="button" onClick={onReset} className="text-[11px] font-medium text-gray-400 hover:text-gray-700">Deseleziona</button>
+          )}
+          <SegmentedControl
+            ariaLabel={`Modalità filtro ${titolo}`} value={escludi ? 'escludi' : 'includi'}
+            onChange={v => onModo(v === 'escludi')}
+            options={[{ value: 'includi', label: 'Includi' }, { value: 'escludi', label: 'Escludi' }]}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {opzioni.map(o => {
+          const on = selezionati.includes(o.value)
+          return (
+            <button key={o.value} type="button" onClick={() => onToggle(o.value)} aria-pressed={on}
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                on
+                  ? escludi ? 'bg-red-50 border-red-200 text-red-700 line-through decoration-red-300' : 'bg-brand-50 border-brand-200 text-brand-700'
+                  : 'bg-white border-surface-200 text-gray-600 hover:bg-surface-50'
+              }`}>
+              {o.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 type SortKey = 'mese' | 'data_operazione' | 'descrizione' | 'importo' | 'categoria' | 'componente'
 type SortDir = 'asc' | 'desc'
 
@@ -379,10 +426,10 @@ export default function DashboardPage() {
   }, [assetValori, totaleValori])
 
   // Filters
-  const [filterComponente, setFilterComponente] = useState('')
   const [expandedAssetRow, setExpandedAssetRow] = useState<number | null>(null)
-  const [filterMese, setFilterMese] = useState('')
-  const [filterCat, setFilterCat] = useState('')
+  // Filtri multi-selezione: per ogni gruppo si può includere o escludere i valori scelti
+  const [filtri, setFiltri] = useState<Record<FiltroKey, string[]>>({ mese: [], cat: [], conto: [] })
+  const [escludi, setEscludi] = useState<Record<FiltroKey, boolean>>({ mese: false, cat: false, conto: false })
   const [filterType, setFilterType] = useState<'all' | 'in' | 'out'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -619,10 +666,25 @@ export default function DashboardPage() {
 
   const componenti = [...new Set(movimenti.map(m => m.componente).filter(Boolean))].sort()
 
+  function passaFiltro(k: FiltroKey, val: string) {
+    const sel = filtri[k]
+    if (sel.length === 0) return true
+    return escludi[k] ? !sel.includes(val) : sel.includes(val)
+  }
+  function toggleFiltro(k: FiltroKey, v: string) {
+    setFiltri(f => ({ ...f, [k]: f[k].includes(v) ? f[k].filter(x => x !== v) : [...f[k], v] }))
+    setPage(1)
+  }
+  function azzeraFiltri() {
+    setFiltri({ mese: [], cat: [], conto: [] })
+    setEscludi({ mese: false, cat: false, conto: false })
+    setSearch(''); setFilterType('all'); setPage(1)
+  }
+
   const filtered = movimenti.filter(m => {
-    if (filterComponente && m.componente !== filterComponente) return false
-    if (filterMese && m.mese !== filterMese) return false
-    if (filterCat && m.categoria !== filterCat) return false
+    if (!passaFiltro('conto', m.componente)) return false
+    if (!passaFiltro('mese', m.mese)) return false
+    if (!passaFiltro('cat', m.categoria)) return false
     if (filterType === 'in' && m.entrate === 0) return false
     if (filterType === 'out' && m.uscite === 0) return false
     if (search && !m.descrizione.toLowerCase().includes(search.toLowerCase())) return false
@@ -649,7 +711,8 @@ export default function DashboardPage() {
   const totalOut = filtered.reduce((s, m) => s + m.uscite, 0)
   const saldo = totalIn - totalOut
   const cats = [...new Set(movimenti.map(m => m.categoria))].sort()
-  const filtriAttivi = [filterMese, filterCat, filterComponente].filter(Boolean).length
+  const filtriAttivi = filtri.mese.length + filtri.cat.length + filtri.conto.length
+  const qualcosaDaAzzerare = filtriAttivi > 0 || search !== '' || filterType !== 'all'
   const flussiPct = (v: number) => ((totalIn + totalOut) > 0 ? ((v / (totalIn + totalOut)) * 100).toFixed(0) : '0')
 
   // Ripartizione Entrate/Uscite per componente (conto), stesso stile della card Liquidità
@@ -867,7 +930,7 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Barra filtri: ricerca + tipo + filtri avanzati */}
+          {/* Barra filtri: ricerca + tipo + filtri avanzati (multi-selezione, includi/escludi) */}
           <div className="flex flex-wrap items-center gap-2">
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
               placeholder="Cerca descrizione…" className="input flex-1 min-w-[180px] sm:max-w-xs text-sm py-1.5" />
@@ -885,42 +948,58 @@ export default function DashboardPage() {
               {showFiltri && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowFiltri(false)} />
-                  <div className="absolute left-0 top-full mt-2 z-50 w-64 card p-4 shadow-xl flex flex-col gap-3 panel-in">
-                    <label className="text-[11px] font-medium text-gray-500">Mese
-                      <select value={filterMese} onChange={e => { setFilterMese(e.target.value); setPage(1) }} className="input mt-1 text-xs py-1.5">
-                        <option value="">Tutti i mesi</option>
-                        {MESI.map(m => <option key={m} value={m}>{MESI_LABEL[m]}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-[11px] font-medium text-gray-500">Categoria
-                      <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1) }} className="input mt-1 text-xs py-1.5">
-                        <option value="">Tutte le categorie</option>
-                        {cats.map(c => <option key={c}>{c}</option>)}
-                      </select>
-                    </label>
+                  <div className="z-50 card p-4 shadow-xl flex flex-col gap-4 panel-in overflow-y-auto
+                                  max-sm:fixed max-sm:inset-x-3 max-sm:top-28 max-sm:max-h-[70vh]
+                                  sm:absolute sm:left-0 sm:top-full sm:mt-2 sm:w-[420px] sm:max-h-[70vh]">
+                    <FiltroGruppo
+                      titolo="Categoria" opzioni={cats.map(c => ({ value: c, label: c }))}
+                      selezionati={filtri.cat} escludi={escludi.cat}
+                      onToggle={v => toggleFiltro('cat', v)}
+                      onModo={x => { setEscludi(e => ({ ...e, cat: x })); setPage(1) }}
+                      onReset={() => { setFiltri(f => ({ ...f, cat: [] })); setPage(1) }}
+                    />
+                    <FiltroGruppo
+                      titolo="Mese" opzioni={MESI.map(m => ({ value: m, label: MESI_LABEL[m] }))}
+                      selezionati={filtri.mese} escludi={escludi.mese}
+                      onToggle={v => toggleFiltro('mese', v)}
+                      onModo={x => { setEscludi(e => ({ ...e, mese: x })); setPage(1) }}
+                      onReset={() => { setFiltri(f => ({ ...f, mese: [] })); setPage(1) }}
+                    />
                     {componenti.length > 0 && (
-                      <label className="text-[11px] font-medium text-gray-500">Conto
-                        <select value={filterComponente} onChange={e => { setFilterComponente(e.target.value); setPage(1) }} className="input mt-1 text-xs py-1.5">
-                          <option value="">Tutti i conti</option>
-                          {componenti.map(c => <option key={c}>{c}</option>)}
-                        </select>
-                      </label>
+                      <FiltroGruppo
+                        titolo="Conto" opzioni={componenti.map(c => ({ value: c, label: c }))}
+                        selezionati={filtri.conto} escludi={escludi.conto}
+                        onToggle={v => toggleFiltro('conto', v)}
+                        onModo={x => { setEscludi(e => ({ ...e, conto: x })); setPage(1) }}
+                        onReset={() => { setFiltri(f => ({ ...f, conto: [] })); setPage(1) }}
+                      />
                     )}
-                    <button type="button" disabled={filtriAttivi === 0}
-                      onClick={() => { setFilterMese(''); setFilterCat(''); setFilterComponente(''); setPage(1) }}
-                      className="text-xs font-medium text-brand-700 disabled:text-gray-300 text-left">Azzera filtri</button>
+                    <div className="flex items-center justify-between pt-3 border-t border-surface-100">
+                      <button type="button" onClick={azzeraFiltri} disabled={!qualcosaDaAzzerare}
+                        className="text-xs font-medium text-brand-700 disabled:text-gray-300">Azzera filtri</button>
+                      <button type="button" onClick={() => setShowFiltri(false)} className="btn-primary px-3 py-1.5 text-xs">Fatto</button>
+                    </div>
                   </div>
                 </>
               )}
             </div>
-            {/* Chip dei filtri attivi, rimovibili con un clic */}
-            {([[filterMese && MESI_LABEL[filterMese], () => setFilterMese('')], [filterCat, () => setFilterCat('')], [filterComponente, () => setFilterComponente('')]] as [string, () => void][])
-              .filter(([l]) => l).map(([l, clear]) => (
-                <button key={l} type="button" onClick={() => { clear(); setPage(1) }}
-                  className="inline-flex items-center gap-1 rounded-full bg-brand-50 text-brand-700 text-[11px] font-medium px-2 py-1 hover:bg-brand-100">
-                  {l} <IconClose size={11} />
+            {/* Riepilogo dei filtri attivi: un chip per gruppo, si toglie con un clic */}
+            {(['cat', 'mese', 'conto'] as FiltroKey[]).filter(k => filtri[k].length > 0).map(k => {
+              const nome = k === 'cat' ? 'Categoria' : k === 'mese' ? 'Mese' : 'Conto'
+              const vals = filtri[k].map(v => k === 'mese' ? MESI_LABEL[v] : v).join(', ')
+              return (
+                <button key={k} type="button" onClick={() => { setFiltri(f => ({ ...f, [k]: [] })); setPage(1) }}
+                  className={`inline-flex items-center gap-1 max-w-[280px] rounded-full text-[11px] font-medium px-2 py-1 ${
+                    escludi[k] ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'
+                  }`}>
+                  <span className="truncate">{nome}: {escludi[k] ? 'tutti tranne ' : ''}{vals}</span>
+                  <IconClose size={11} className="shrink-0" />
                 </button>
-              ))}
+              )
+            })}
+            {qualcosaDaAzzerare && (
+              <button type="button" onClick={azzeraFiltri} className="text-xs font-medium text-gray-500 hover:text-gray-800 underline underline-offset-2">Azzera filtri</button>
+            )}
             <span className="ml-auto text-xs text-gray-400">{filtered.length} movimenti</span>
           </div>
 
@@ -995,7 +1074,7 @@ export default function DashboardPage() {
 
           {/* Dettaglio movimento (sola lettura) */}
           <Drawer
-            open={!!selectedMov} onClose={() => setSelectedMov(null)}
+            open={!!selectedMov} onClose={() => setSelectedMov(null)} variant="center"
             title="Dettaglio movimento" subtitle={selectedMov ? `${selectedMov.data_operazione} · ${selectedMov.mese} ${anno}` : undefined}
           >
             {selectedMov && (() => {
@@ -1007,7 +1086,7 @@ export default function DashboardPage() {
                 ['Riconciliato', m.categoria === 'INVESTIMENTI' ? (m.riconciliato ? 'Sì' : 'No') : undefined],
               ]
               return (
-                <div className="max-w-md">
+                <div>
                   <p className={`num-display text-3xl font-semibold ${isIn ? 'text-green-700' : 'text-red-600'}`}>
                     {isIn ? '+' : '−'} € {fmt(isIn ? m.entrate : m.uscite)}
                   </p>

@@ -9,6 +9,10 @@ import InfoSoglieModal from '@/components/InfoSoglieModal'
 import { useAnno } from '@/lib/AnnoContext'
 import { parseDataIt } from '@/lib/riconciliazione'
 import { HeatmapCell } from '@/components/charts/HeatmapCell'
+import KpiCard from '@/components/ui/KpiCard'
+import SegmentedControl from '@/components/ui/SegmentedControl'
+import Drawer from '@/components/ui/Drawer'
+import { IconSliders, IconClose } from '@/components/ui/Icons'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid
@@ -382,6 +386,8 @@ export default function DashboardPage() {
   const [filterType, setFilterType] = useState<'all' | 'in' | 'out'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [showFiltri, setShowFiltri] = useState(false)
+  const [selectedMov, setSelectedMov] = useState<Movimento | null>(null)
   useEffect(() => { setPage(1) }, [anno])
 
   // Sorting
@@ -643,6 +649,8 @@ export default function DashboardPage() {
   const totalOut = filtered.reduce((s, m) => s + m.uscite, 0)
   const saldo = totalIn - totalOut
   const cats = [...new Set(movimenti.map(m => m.categoria))].sort()
+  const filtriAttivi = [filterMese, filterCat, filterComponente].filter(Boolean).length
+  const flussiPct = (v: number) => ((totalIn + totalOut) > 0 ? ((v / (totalIn + totalOut)) * 100).toFixed(0) : '0')
 
   // Ripartizione Entrate/Uscite per componente (conto), stesso stile della card Liquidità
   const entratePerComponente = componenti.length > 0
@@ -815,124 +823,120 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-surface-200">
-        {(['movimenti', 'cashflow', 'portafoglio', 'analisi'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
-              ${tab === t ? 'border-brand-500 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {t === 'movimenti' ? 'Movimenti conto' : t === 'cashflow' ? 'Cash flow' : t === 'portafoglio' ? 'Portafoglio' : 'Analisi'}
-          </button>
-        ))}
+    <div className="max-w-[1680px] mx-auto">
+      {/* Sottomenu Gestione */}
+      <div className="mb-4 overflow-x-auto">
+        <SegmentedControl
+          ariaLabel="Sezioni di Gestione" value={tab} onChange={setTab}
+          options={[
+            { value: 'movimenti', label: 'Movimenti conto' },
+            { value: 'cashflow', label: 'Cash flow' },
+            { value: 'portafoglio', label: 'Portafoglio' },
+            { value: 'analisi', label: 'Analisi' },
+          ]}
+        />
       </div>
 
       {/* ===== MOVIMENTI ===== */}
       {tab === 'movimenti' && (
-        <>
-          {/* Metric cards + liquidità - stile Stitch (icona, valore, badge con metrica reale) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-            {[
-              {
-                label: 'Entrate', val: `€ ${fmt(totalIn)}`, color: 'text-green-700', icon: '↑', iconBg: 'bg-green-100 text-green-700',
-                badge: entratePerComponente.length > 1
-                  ? entratePerComponente.map(c => `${c.componente}: € ${fmt(c.val)}`).join(' · ')
-                  : `${(totalIn + totalOut) > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`,
-                badgeBg: 'bg-green-50 text-green-700',
-              },
-              {
-                label: 'Uscite', val: `€ ${fmt(totalOut)}`, color: 'text-red-600', icon: '↓', iconBg: 'bg-red-100 text-red-600',
-                badge: uscitePerComponente.length > 1
-                  ? uscitePerComponente.map(c => `${c.componente}: € ${fmt(c.val)}`).join(' · ')
-                  : `${(totalIn + totalOut) > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(0) : 0}% del totale flussi`,
-                badgeBg: 'bg-red-50 text-red-600',
-              },
-              {
-                label: 'Saldo', val: `€ ${fmt(saldo)}`, color: saldo >= 0 ? 'text-green-700' : 'text-red-600', icon: '●', iconBg: saldo >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
-                badge: `Saving rate ${totalIn > 0 ? ((saldo / totalIn) * 100).toFixed(0) : 0}%`, badgeBg: saldo >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600',
-              },
-              {
-                label: 'Movimenti', val: filtered.length.toString(), color: 'text-gray-900', icon: '≡', iconBg: 'bg-gray-100 text-gray-600',
-                badge: `${componenti.length || 1} cont${componenti.length === 1 ? 'o' : 'i'}`, badgeBg: 'bg-surface-100 text-gray-600',
-              },
-            ].map(c => (
-              <div key={c.label} className="card p-4 transition-transform hover:scale-[1.01]">
-                <div className="flex items-start justify-between mb-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
-                  <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
-                </div>
-                <p className={`num-display text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
-                <div className="mt-2.5">
-                  <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
-                </div>
-              </div>
-            ))}
+        <div className="flex flex-col gap-4 xl:h-[calc(100dvh-160px)]">
+          {/* KPI: seguono i filtri attivi */}
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              variant="compact" label="Entrate" color="#3f6b4f" tone="positive" delta={null}
+              value={`€ ${fmt(totalIn)}`}
+              badge={<span className="inline-flex rounded-full bg-green-50 text-green-700 text-[11px] font-semibold px-2 py-0.5">{flussiPct(totalIn)}% dei flussi</span>}
+              minis={entratePerComponente.length > 1 ? entratePerComponente.map(c => ({ label: c.componente, value: `€ ${fmt(c.val)}` })) : undefined}
+            />
+            <KpiCard
+              variant="compact" label="Uscite" color="#c0504d" tone="negative" delta={null}
+              value={`€ ${fmt(totalOut)}`}
+              badge={<span className="inline-flex rounded-full bg-red-50 text-red-700 text-[11px] font-semibold px-2 py-0.5">{flussiPct(totalOut)}% dei flussi</span>}
+              minis={uscitePerComponente.length > 1 ? uscitePerComponente.map(c => ({ label: c.componente, value: `€ ${fmt(c.val)}` })) : undefined}
+            />
+            <KpiCard
+              variant="compact" label="Saldo" color={saldo >= 0 ? '#3f6b4f' : '#c0504d'} tone={saldo >= 0 ? 'positive' : 'negative'} delta={null}
+              value={`${saldo < 0 ? '−' : ''}€ ${fmt(Math.abs(saldo))}`}
+              badge={<span className={`inline-flex rounded-full text-[11px] font-semibold px-2 py-0.5 ${saldo >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>Saving rate {totalIn > 0 ? ((saldo / totalIn) * 100).toFixed(0) : 0}%</span>}
+            />
+            <KpiCard
+              variant="compact" label={`Liquidità${ultimaLiquidita ? ` · ${MESI_LABEL[ultimaLiquidita.mese]}` : ''}`} color="#4a6fa1" delta={null}
+              value={ultimaLiquidita ? fmtK(ultimaLiquidita.total) : '–'}
+              badge={<span className="inline-flex rounded-full bg-surface-100 text-gray-500 text-[11px] font-medium px-2 py-0.5">Ultimo saldo</span>}
+              minis={ultimaLiquidita && ultimaLiquidita.conti.length > 1 ? ultimaLiquidita.conti.map(c => ({ label: c.conto, value: fmtK(c.saldo) })) : undefined}
+            />
+          </div>
 
-            {/* Liquidità card */}
-            <div className="card p-4 transition-transform hover:scale-[1.01] border-blue-100">
-              <div className="flex items-start justify-between mb-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Liquidità {ultimaLiquidita ? `(${MESI_LABEL[ultimaLiquidita.mese]})` : ''}
-                </p>
-                <span className="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold bg-blue-100 text-blue-700">€</span>
-              </div>
-              {ultimaLiquidita ? (
+          {/* Barra filtri: ricerca + tipo + filtri avanzati */}
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+              placeholder="Cerca descrizione…" className="input flex-1 min-w-[180px] sm:max-w-xs text-sm py-1.5" />
+            <SegmentedControl
+              ariaLabel="Tipo di movimento" value={filterType}
+              onChange={v => { setFilterType(v); setPage(1) }}
+              options={[{ value: 'all', label: 'Tutti' }, { value: 'in', label: 'Entrate' }, { value: 'out', label: 'Uscite' }]}
+            />
+            <div className="relative">
+              <button type="button" onClick={() => setShowFiltri(o => !o)}
+                className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs">
+                <IconSliders size={14} /> Filtri
+                {filtriAttivi > 0 && <span className="rounded-full bg-brand-600 text-white text-[10px] font-semibold px-1.5 py-px">{filtriAttivi}</span>}
+              </button>
+              {showFiltri && (
                 <>
-                  <p className="num-display text-xl font-bold tabular-nums text-blue-700">{fmtK(ultimaLiquidita.total)}</p>
-                  <div className="mt-2.5">
-                    {ultimaLiquidita.conti.length > 1 ? (
-                      <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                        {ultimaLiquidita.conti.map(c => `${c.conto}: ${fmtK(c.saldo)}`).join(' · ')}
-                      </span>
-                    ) : (
-                      <span className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Ultimo saldo registrato</span>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowFiltri(false)} />
+                  <div className="absolute left-0 top-full mt-2 z-50 w-64 card p-4 shadow-xl flex flex-col gap-3 panel-in">
+                    <label className="text-[11px] font-medium text-gray-500">Mese
+                      <select value={filterMese} onChange={e => { setFilterMese(e.target.value); setPage(1) }} className="input mt-1 text-xs py-1.5">
+                        <option value="">Tutti i mesi</option>
+                        {MESI.map(m => <option key={m} value={m}>{MESI_LABEL[m]}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-[11px] font-medium text-gray-500">Categoria
+                      <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1) }} className="input mt-1 text-xs py-1.5">
+                        <option value="">Tutte le categorie</option>
+                        {cats.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </label>
+                    {componenti.length > 0 && (
+                      <label className="text-[11px] font-medium text-gray-500">Conto
+                        <select value={filterComponente} onChange={e => { setFilterComponente(e.target.value); setPage(1) }} className="input mt-1 text-xs py-1.5">
+                          <option value="">Tutti i conti</option>
+                          {componenti.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                      </label>
                     )}
+                    <button type="button" disabled={filtriAttivi === 0}
+                      onClick={() => { setFilterMese(''); setFilterCat(''); setFilterComponente(''); setPage(1) }}
+                      className="text-xs font-medium text-brand-700 disabled:text-gray-300 text-left">Azzera filtri</button>
                   </div>
                 </>
-              ) : (
-                <p className="num-display text-xl font-bold tabular-nums text-gray-300">–</p>
               )}
             </div>
+            {/* Chip dei filtri attivi, rimovibili con un clic */}
+            {([[filterMese && MESI_LABEL[filterMese], () => setFilterMese('')], [filterCat, () => setFilterCat('')], [filterComponente, () => setFilterComponente('')]] as [string, () => void][])
+              .filter(([l]) => l).map(([l, clear]) => (
+                <button key={l} type="button" onClick={() => { clear(); setPage(1) }}
+                  className="inline-flex items-center gap-1 rounded-full bg-brand-50 text-brand-700 text-[11px] font-medium px-2 py-1 hover:bg-brand-100">
+                  {l} <IconClose size={11} />
+                </button>
+              ))}
+            <span className="ml-auto text-xs text-gray-400">{filtered.length} movimenti</span>
           </div>
 
-          {/* Filters */}
-          <div className="flex flex-wrap gap-2 mb-4 items-center">
-            {componenti.length > 0 && (
-              <select value={filterComponente} onChange={e => { setFilterComponente(e.target.value); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-36 text-xs py-1.5">
-                <option value="">Tutti</option>
-                {componenti.map(c => <option key={c}>{c}</option>)}
-              </select>
-            )}
-            <select value={filterMese} onChange={e => { setFilterMese(e.target.value); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-28 text-xs py-1.5">
-              <option value="">Tutti i mesi</option>
-              {MESI.map(m => <option key={m} value={m}>{MESI_LABEL[m]}</option>)}
-            </select>
-            <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-44 text-xs py-1.5">
-              <option value="">Tutte le categorie</option>
-              {cats.map(c => <option key={c}>{c}</option>)}
-            </select>
-            <select value={filterType} onChange={e => { setFilterType(e.target.value as 'all' | 'in' | 'out'); setPage(1) }} className="input w-[calc(50%-0.25rem)] sm:w-36 text-xs py-1.5">
-              <option value="all">Entrate + Uscite</option>
-              <option value="in">Solo entrate</option>
-              <option value="out">Solo uscite</option>
-            </select>
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-              placeholder="Cerca descrizione…" className="input flex-1 min-w-[calc(100%-0.5rem)] sm:min-w-32 text-xs py-1.5" />
-          </div>
-
-          {/* Table */}
-          <div className="card p-0 overflow-hidden">
-            <div className="overflow-x-auto">
+          {/* Tabella (desktop) / lista a card (smartphone) */}
+          <div className="card p-0 overflow-hidden flex flex-col xl:flex-1 min-h-0">
+            <div className="hidden sm:block overflow-auto flex-1 min-h-0">
               <table className="w-full min-w-[640px]">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr>
                     {([
                       { key: 'mese', label: 'Mese', w: 'w-16' },
                       { key: 'data_operazione', label: 'Data', w: 'w-24' },
                       { key: 'descrizione', label: 'Descrizione', w: '' },
-                      { key: 'importo', label: 'Importo', w: 'w-28' },
-                      { key: 'categoria', label: 'Categoria', w: 'w-36' },
-                      ...(componenti.length > 0 ? [{ key: 'componente', label: 'Comp.', w: 'w-24' }] : []),
+                      { key: 'importo', label: 'Importo', w: 'w-32' },
+                      { key: 'categoria', label: 'Categoria', w: 'w-40' },
+                      ...(componenti.length > 0 ? [{ key: 'componente', label: 'Conto', w: 'w-24' }] : []),
                     ] as { key: SortKey; label: string; w: string }[]).map(col => (
                       <th key={col.key} onClick={() => toggleSort(col.key)}
                         className={`table-th cursor-pointer select-none hover:bg-surface-100 ${col.w} ${col.key === 'importo' ? 'text-right' : ''}`}>
@@ -946,12 +950,12 @@ export default function DashboardPage() {
                     const isIn = m.entrate > 0
                     const amt = isIn ? m.entrate : m.uscite
                     return (
-                      <tr key={i} className="hover:bg-surface-50 transition-colors">
+                      <tr key={i} onClick={() => setSelectedMov(m)} className="cursor-pointer hover:bg-surface-50 transition-colors">
                         <td className="table-td text-gray-400 text-xs">{m.mese}</td>
                         <td className="table-td text-gray-400 text-xs">{m.data_operazione}</td>
-                        <td className="table-td max-w-xs"><span className="block truncate text-xs" title={m.descrizione}>{m.descrizione}</span></td>
-                        <td className={`table-td text-right text-xs font-medium tabular-nums ${isIn ? 'text-green-700' : 'text-red-600'}`}>
-                          {isIn ? '+' : '–'} € {fmt(amt)}
+                        <td className="table-td max-w-xs"><span className="block truncate text-sm" title={m.descrizione}>{m.descrizione}</span></td>
+                        <td className={`table-td text-right text-sm font-medium font-mono tabular-nums ${isIn ? 'text-green-700' : 'text-red-600'}`}>
+                          {isIn ? '+' : '−'} € {fmt(amt)}
                         </td>
                         <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{m.categoria}</span></td>
                         {componenti.length > 0 && <td className="table-td text-xs text-gray-400">{m.componente}</td>}
@@ -962,7 +966,24 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-between px-4 py-3 border-t border-surface-100">
+            <div className="sm:hidden divide-y divide-surface-100">
+              {pageData.map((m, i) => {
+                const isIn = m.entrate > 0
+                return (
+                  <button key={i} type="button" onClick={() => setSelectedMov(m)} className="w-full text-left px-4 py-3 flex items-start justify-between gap-3 active:bg-surface-50">
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{m.descrizione}</p>
+                      <p className="mt-1 text-[11px] text-gray-400">{m.data_operazione} · <span className="bg-surface-100 text-gray-600 px-1.5 py-px rounded-full">{m.categoria}</span></p>
+                    </div>
+                    <span className={`shrink-0 text-sm font-semibold font-mono tabular-nums ${isIn ? 'text-green-700' : 'text-red-600'}`}>
+                      {isIn ? '+' : '−'}€ {fmt(isIn ? m.entrate : m.uscite)}
+                    </span>
+                  </button>
+                )
+              })}
+              {pageData.length === 0 && <p className="text-center text-sm text-gray-400 py-8">Nessun risultato</p>}
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 border-t border-surface-100 shrink-0">
               <span className="text-xs text-gray-400">{sorted.length} righe</span>
               <div className="flex items-center gap-2">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="btn-secondary px-2 py-1 text-xs disabled:opacity-30">←</button>
@@ -971,7 +992,39 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        </>
+
+          {/* Dettaglio movimento (sola lettura) */}
+          <Drawer
+            open={!!selectedMov} onClose={() => setSelectedMov(null)}
+            title="Dettaglio movimento" subtitle={selectedMov ? `${selectedMov.data_operazione} · ${selectedMov.mese} ${anno}` : undefined}
+          >
+            {selectedMov && (() => {
+              const m = selectedMov
+              const isIn = m.entrate > 0
+              const righe: [string, string | undefined][] = [
+                ['Categoria', m.categoria], ['Sottocategoria', m.sottocategoria || undefined],
+                ['Conto', m.componente || undefined], ['ETF / strumento', m.nome_etf || undefined],
+                ['Riconciliato', m.categoria === 'INVESTIMENTI' ? (m.riconciliato ? 'Sì' : 'No') : undefined],
+              ]
+              return (
+                <div className="max-w-md">
+                  <p className={`num-display text-3xl font-semibold ${isIn ? 'text-green-700' : 'text-red-600'}`}>
+                    {isIn ? '+' : '−'} € {fmt(isIn ? m.entrate : m.uscite)}
+                  </p>
+                  <p className="mt-2 text-sm text-gray-700 leading-snug">{m.descrizione}</p>
+                  <dl className="mt-5 border-t border-surface-100">
+                    {righe.filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between gap-4 py-2.5 border-b border-surface-100">
+                        <dt className="text-xs text-gray-500">{k}</dt>
+                        <dd className="text-sm font-medium text-gray-800 text-right">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )
+            })()}
+          </Drawer>
+        </div>
       )}
 
       {/* ===== CASH FLOW ===== */}

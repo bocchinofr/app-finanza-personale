@@ -402,10 +402,15 @@ export default function PatrimonioPage() {
 
   return (
     <div className="max-w-[1680px] mx-auto flex flex-col gap-4 xl:h-[calc(100dvh-104px)]">
-      {/* Zona KPI: Patrimonio in evidenza + 4 KPI compatti 2×2 */}
-      <div className="grid gap-3 xl:grid-cols-[5fr_7fr] shrink-0">
+      {/* Griglia unica a 3 colonne uguali (desktop):
+          riga 1 = Patrimonio (2) + Plus/minus (1)
+          riga 2 = Liquidità · Capitale · Fondo (1+1+1)
+          riga 3 = Grafico (2) + colonna di sintesi (1)
+          Così i bordi di tutte le card coincidono. */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 xl:grid-rows-[auto_auto_minmax(0,1fr)] xl:flex-1 xl:min-h-[700px]">
         <KpiCard
           variant="featured"
+          className="sm:col-span-2 h-full"
           label="Patrimonio totale"
           value={fmtEuro(patrimonioTotale)}
           color="#3f6b4f"
@@ -438,9 +443,9 @@ export default function PatrimonioPage() {
           )}
           onClick={() => apriDettaglio()}
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <KpiCard
             variant="compact"
+            className="sm:col-span-2 xl:col-span-1"
             label="Plus/minus"
             value={eur(plusMinus)}
             color="#c65d3b"
@@ -470,17 +475,16 @@ export default function PatrimonioPage() {
           />
           <KpiCard
             variant="compact"
+            className="sm:col-span-2 xl:col-span-1"
             label="Fondo pensione"
             value={fmtEuro(fondoPensioneTotale)}
             color="#a67c3d"
             delta={deltaFondo}
             onClick={() => apriDettaglio(null, 'Fondo pensione')}
           />
-        </div>
-      </div>
 
-      {/* Grafico + info di sintesi: su desktop riempiono l'altezza rimasta */}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)] xl:flex-1 xl:min-h-[460px]">
+        {/* Grafico: 2 colonne, riempie l'altezza rimasta */}
+        <div className="sm:col-span-2 min-h-[420px] xl:min-h-0 [&>section]:h-full">
         <AndamentoPatrimonio
           anno={anno}
           data={chartData}
@@ -491,7 +495,10 @@ export default function PatrimonioPage() {
           onMese={mese => apriDettaglio(mese)}
           onApriDettaglio={() => apriDettaglio()}
         />
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-1 xl:grid-rows-[auto_auto_minmax(0,1fr)] min-h-0">
+        </div>
+
+        {/* Sintesi: 1 colonna, stessa altezza del grafico */}
+        <div className="sm:col-span-2 xl:col-span-1 grid gap-3 md:grid-cols-3 xl:grid-cols-1 xl:grid-rows-[auto_auto_minmax(0,1fr)] min-h-0">
           <KpiCard
             variant="compact"
             label={`Risparmio ${anno}`}

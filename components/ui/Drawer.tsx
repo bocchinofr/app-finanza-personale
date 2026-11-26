@@ -25,7 +25,7 @@ export default function Drawer({
   variant?: 'side' | 'center'
   /** clic su una zona vuota del pannello lo chiude (disattivare per pannelli con form lunghi) */
   closeOnBlankClick?: boolean
-  /** larghezza del pannello laterale: md (default) o xl (tabelle larghe) */
+  /** larghezza: md (default) o xl (tabelle larghe), sia per il pannello laterale sia per il popup centrato */
   size?: 'md' | 'xl'
 }) {
   const [mounted, setMounted] = useState(false)
@@ -57,7 +57,7 @@ export default function Drawer({
 
   const panelClass = variant === 'center'
     ? `max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[88vh] max-sm:rounded-t-2xl sheet-in
-       sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[calc(100%-2rem)] sm:max-w-md sm:max-h-[80vh] sm:rounded-2xl sm:border sm:border-surface-200 fade-in`
+       sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[calc(100%-2rem)] ${size === 'xl' ? 'sm:max-w-5xl sm:max-h-[85vh]' : 'sm:max-w-md sm:max-h-[80vh]'} sm:rounded-2xl sm:border sm:border-surface-200 fade-in`
     : `max-sm:inset-x-0 max-sm:bottom-0 max-sm:h-[88vh] max-sm:rounded-t-2xl sheet-in
        sm:top-0 sm:right-0 sm:h-full sm:w-full ${size === 'xl' ? 'sm:max-w-6xl' : 'sm:max-w-3xl'} sm:border-l sm:border-surface-200 drawer-in`
 

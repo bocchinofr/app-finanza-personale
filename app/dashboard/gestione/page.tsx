@@ -242,6 +242,7 @@ function SpeseCategoriaTooltip({ active, payload, label }: {
 type DraftSoglia = { massimo: number; mensile: number; attivo: boolean; accumulo: boolean }
 
 const PAGE_SIZE = 20
+const ANAG_TH = 'py-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-surface-50 border-b border-surface-200 leading-tight'
 type FiltroKey = 'mese' | 'cat' | 'conto'
 
 /** Gruppo di filtro a selezione multipla con modalità Includi / Escludi. */
@@ -424,6 +425,84 @@ function CfCatRow({ cat, vals, mesi, total, totaliColonna, nMesi, prec, palette,
   )
 }
 
+/** Intestazione della tabella di confronto con l'anno precedente. */
+function CfConfrontoHead({ prima, anno }: { prima: string; anno: number }) {
+  return (
+    <thead>
+      <tr>
+        <th className={`${CF_TH} text-left px-3 min-w-[11rem]`}>{prima}</th>
+        <th className={`${CF_TH} border-l border-surface-200`}><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
+        <th className={CF_TH}><span className="block">Totale</span><span className="block">{anno}</span></th>
+        <th className={CF_TH}><span className="block">Var.</span><span className="block">€</span></th>
+        <th className={CF_TH}><span className="block">Var.</span><span className="block">%</span></th>
+        <th className={`${CF_TH} border-l border-surface-200`}><span className="block">Media</span><span className="block">{anno - 1}</span></th>
+        <th className={CF_TH}><span className="block">Media</span><span className="block">{anno}</span></th>
+        <th className={CF_TH}><span className="block">Var.</span><span className="block">€</span></th>
+        <th className={CF_TH}><span className="block">Var.</span><span className="block">%</span></th>
+      </tr>
+    </thead>
+  )
+}
+
+/** Coppia di celle "variazione € / variazione %"; goodUp = se l'aumento è un fatto positivo (false per le uscite). */
+function VarPair({ att, prec, goodUp }: { att: number; prec: number | undefined; goodUp: boolean }) {
+  const ok = prec != null && prec !== 0
+  const d = ok ? att - (prec as number) : null
+  const p = ok ? ((d as number) / Math.abs(prec as number)) * 100 : null
+  const good = d == null || Math.abs(d) < 0.5 ? null : (d > 0) === goodUp
+  const cls = good == null ? 'text-gray-400' : good ? 'text-green-700' : 'text-red-600'
+  return (
+    <>
+      <td className={`px-2 py-2 text-right font-mono tabular-nums text-xs ${cls}`}>{d == null ? '–' : `${d >= 0 ? '+' : '−'}${fmtK(Math.abs(d))}`}</td>
+      <td className={`px-2 py-2 text-right font-mono tabular-nums text-xs font-semibold ${cls}`}>{p == null ? '–' : `${p >= 0 ? '↑' : '↓'} ${Math.abs(p).toFixed(0)}%`}</td>
+    </>
+  )
+}
+
+/** Riga di confronto: totale e media dell'anno precedente e in corso, con variazioni. */
+function CfConfrontoRow({ label, dot, textClass = 'text-gray-700', prec, totale, media, goodUp = true, strong = false }: {
+  label: string; dot?: string; textClass?: string; prec: PrecAgg; totale: number; media: number; goodUp?: boolean; strong?: boolean
+}) {
+  return (
+    <tr className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
+      <td className="px-3 py-2 whitespace-nowrap">
+        <span className={`inline-flex items-center gap-2 text-xs ${strong ? 'font-semibold' : 'font-medium'} ${textClass}`}>
+          {dot && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: dot }} />}{label}
+        </span>
+      </td>
+      <MediaCell value={prec?.totale} className="border-l border-surface-200" />
+      <td className={`px-2 py-2 text-right font-mono tabular-nums text-xs font-bold ${textClass}`}>{fmtK(totale)}</td>
+      <VarPair att={totale} prec={prec?.totale} goodUp={goodUp} />
+      <MediaCell value={prec?.media} className="border-l border-surface-200" />
+      <td className={`px-2 py-2 text-right font-mono tabular-nums text-xs font-bold ${textClass}`}>{fmtK(media)}</td>
+      <VarPair att={media} prec={prec?.media} goodUp={goodUp} />
+    </tr>
+  )
+}
+
+/** Riga percentuale di confronto (tasso di risparmio, quota investita): variazione in punti percentuali. */
+function CfConfrontoPctRow({ label, precTot, tot, precMedia, media }: {
+  label: string; precTot: number | null; tot: number | null; precMedia: number | null; media: number | null
+}) {
+  const pt = (a: number | null, b: number | null) => {
+    if (a == null || b == null) return <td colSpan={2} className="px-2 py-2 text-right font-mono text-xs text-gray-300">–</td>
+    const d = a - b
+    return <td colSpan={2} className={`px-2 py-2 text-right font-mono tabular-nums text-xs font-semibold ${Math.abs(d) < 0.5 ? 'text-gray-400' : d > 0 ? 'text-green-700' : 'text-red-600'}`}>{d >= 0 ? '↑' : '↓'} {Math.abs(d).toFixed(0)} pt</td>
+  }
+  const v = (x: number | null, bold = false) => <td className={`px-2 py-2 text-right font-mono tabular-nums text-xs ${bold ? 'font-bold text-gray-700' : 'text-gray-400'}`}>{x == null ? '–' : `${x.toFixed(0)}%`}</td>
+  return (
+    <tr className="border-b border-surface-100 last:border-b-0">
+      <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{label}</td>
+      <td className="px-2 py-2 text-right font-mono tabular-nums text-xs text-gray-400 border-l border-surface-200">{precTot == null ? '–' : `${precTot.toFixed(0)}%`}</td>
+      {v(tot, true)}
+      {pt(tot, precTot)}
+      <td className="px-2 py-2 text-right font-mono tabular-nums text-xs text-gray-400 border-l border-surface-200">{precMedia == null ? '–' : `${precMedia.toFixed(0)}%`}</td>
+      {v(media, true)}
+      {pt(media, precMedia)}
+    </tr>
+  )
+}
+
 /** Donut di distribuzione con totale al centro e legenda. */
 function DonutDistribuzione({ titolo, sottotitolo, data, shades, totale }: {
   titolo: string; sottotitolo: string; data: { name: string; value: number }[]; shades: string[]; totale: number
@@ -467,6 +546,7 @@ export default function DashboardPage() {
   const supabase = createClient()
   const [tab, setTab] = useState<'movimenti' | 'cashflow' | 'portafoglio' | 'analisi'>('movimenti')
   const [showHeatmap, setShowHeatmap] = useState(false)   // false = Riepilogo, true = Per categoria
+  const [cfConfronto, setCfConfronto] = useState(false)   // true = tabella di confronto con l'anno precedente
   const [cfGrafico, setCfGrafico] = useState<'andamento' | 'spese' | 'distribuzione'>('andamento')
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [liquidita, setLiquidita] = useState<Liquidita[]>([])
@@ -500,12 +580,10 @@ export default function DashboardPage() {
   // Sezioni apribili/richiudibili del tab Portafoglio (toggle indipendenti)
   // Asset inclusi nel Piano di accumulo: per loro la soglia "dal massimo" è gestita dalle tranche del piano
   const [idPiano, setIdPiano] = useState<Set<string>>(new Set())
-  const [openSection, setOpenSection] = useState({
-    riserva: false,
-    storico: false,
-    alert: false,
-  })
-  // Pallino sul bottone "Dettaglio alert" finché l'ultimo alert con dettaglio non è stato aperto
+  const [showStorico, setShowStorico] = useState(false)   // popup Storico prezzi
+  const [pannello, setPannello] = useState<'piano' | 'alert' | null>(null)   // pannello aperto sotto i KPI (uno alla volta)
+  const [alertInVista, setAlertInVista] = useState(false)
+  // Pillola "Nuovo" sul Dettaglio alert finché l'ultimo alert con dettaglio non è stato visto
   const [ultimoAlertTs, setUltimoAlertTs] = useState<string | null>(null)
   const [alertVisto, setAlertVisto] = useState<string | null>(null)
   useEffect(() => {
@@ -525,28 +603,19 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
-    if (openSection.alert && ultimoAlertTs) {
+    if (alertInVista && ultimoAlertTs) {
       try { localStorage.setItem('alertDettaglioVisto', ultimoAlertTs) } catch { /* ignora */ }
       setAlertVisto(ultimoAlertTs)
     }
-  }, [openSection.alert, ultimoAlertTs])
+  }, [alertInVista, ultimoAlertTs])
   const alertNuovo = !!ultimoAlertTs && ultimoAlertTs !== alertVisto
 
   // Link dalla mail/campanello: ?tab=portafoglio&sezione=alert
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     if (q.get('tab') === 'portafoglio') setTab('portafoglio')
-    if (q.get('sezione') === 'alert') setOpenSection({ riserva: false, storico: false, alert: true })
+    if (q.get('sezione') === 'alert') { setPannello('alert'); setTimeout(() => document.getElementById('alert-dettaglio')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 900) }
   }, [])
-  const closeSections = () => setOpenSection({ riserva: false, storico: false, alert: false })
-  // Aprendo un pannello si chiudono gli altri; ricliccando il pulsante si richiude
-  function toggleSection(key: keyof typeof openSection) {
-    setOpenSection(prev => {
-      const eraAperta = prev[key]
-      return { riserva: false, storico: false, alert: false, [key]: !eraAperta }
-    })
-  }
-
   // Valore attuale di ogni asset (fallback al valore di carico se manca la quotazione live)
   const assetValori = useMemo(() => {
     return portafoglio.map(a => {
@@ -1320,10 +1389,17 @@ export default function DashboardPage() {
               <div>
                 <p className="num-display text-sm font-semibold text-gray-900">Cash flow mensile</p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {showHeatmap ? 'Per categoria · colore più intenso = voce più pesante rispetto alla sua media' : 'Totali e tasso di risparmio'} · Var. = variazione rispetto al {anno - 1} (valore al passaggio del mouse)
+                  {cfConfronto
+                    ? `${anno - 1} a confronto con ${anno} · totali, medie mensili e variazioni`
+                    : `${showHeatmap ? 'Per categoria · colore più intenso = voce più pesante rispetto alla sua media' : 'Totali e tasso di risparmio'} · Var. = variazione rispetto al ${anno - 1} (valore al passaggio del mouse)`}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setCfConfronto(v => !v)} aria-pressed={cfConfronto}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    cfConfronto ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-surface-200 text-gray-600 hover:bg-surface-50'}`}>
+                  Confronto {anno - 1}
+                </button>
                 <SegmentedControl
                   ariaLabel="Vista della tabella" value={showHeatmap ? 'categorie' : 'riepilogo'}
                   onChange={v => setShowHeatmap(v === 'categorie')}
@@ -1333,6 +1409,37 @@ export default function DashboardPage() {
             </div>
             <div className="overflow-x-auto border-t border-surface-100">
               <table className="w-full text-xs border-collapse">
+                {cfConfronto ? (
+                  <>
+                    <CfConfrontoHead prima={showHeatmap ? 'Voce / categoria' : 'Voce'} anno={anno} />
+                    <tbody>
+                      {!showHeatmap ? (
+                        <>
+                          <CfConfrontoRow label="Totale entrate" dot="#3f6b4f" textClass="text-green-800" strong prec={storicoAnnoPrec['TOTALE_ENTRATE']} totale={ytdIn} media={mediaEntrateMensili} />
+                          <CfConfrontoRow label="Totale uscite" dot="#c0504d" textClass="text-red-800" strong goodUp={false} prec={storicoAnnoPrec['TOTALE_USCITE']} totale={ytdOut} media={mediaUsciteMensili} />
+                          {invTotals.length > 0 && (
+                            <CfConfrontoRow label="Totale investimenti" dot="#4a6fa1" textClass="text-blue-800" strong prec={storicoAnnoPrec['TOTALE_INVESTIMENTI']} totale={ytdInv} media={ytdInv / nMesi} />
+                          )}
+                          <CfConfrontoRow label="Risparmio netto" dot={ytdRisp >= 0 ? '#3f6b4f' : '#c0504d'} textClass={ytdRisp >= 0 ? 'text-green-800' : 'text-red-700'} strong prec={storicoAnnoPrec['RISPARMIO_NETTO']} totale={ytdRisp} media={ytdRisp / nMesi} />
+                          <CfConfrontoPctRow label="% risparmio" precTot={pctRisparmioPrecTotale} tot={savingRate} precMedia={pctRisparmioPrecMedia} media={pctRisparmioMediaMensile} />
+                          <CfConfrontoPctRow label="% risparmio investito" precTot={pctInvestitoPrecTotale} tot={ytdRisp > 0 ? (ytdInv / ytdRisp) * 100 : null} precMedia={pctInvestitoPrecMedia} media={pctInvestitoMediaMensile} />
+                        </>
+                      ) : (
+                        <>
+                          <CfSezione label="Entrate" color="#3f6b4f" colSpan={9} />
+                          {entrateTotals.map(({ cat, total }) => <CfConfrontoRow key={cat} label={cat} prec={storicoAnnoPrec[cat]} totale={total} media={total / nMesi} />)}
+                          <CfSezione label="Uscite" color="#c0504d" colSpan={9} />
+                          {usciteTotals.map(({ cat, total }) => <CfConfrontoRow key={cat} label={cat} goodUp={false} prec={storicoAnnoPrec[cat]} totale={total} media={total / nMesi} />)}
+                          {invTotals.length > 0 && <>
+                            <CfSezione label="Investimenti" color="#4a6fa1" colSpan={9} />
+                            {invTotals.map(({ cat, total }) => <CfConfrontoRow key={cat} label={cat} prec={storicoAnnoPrec[cat]} totale={total} media={total / nMesi} />)}
+                          </>}
+                        </>
+                      )}
+                    </tbody>
+                  </>
+                ) : (
+                  <>
                 <CfHead prima={showHeatmap ? 'Voce / categoria' : 'Voce'} mesi={mesiPresenti} />
                 <tbody>
                   {!showHeatmap ? (
@@ -1370,8 +1477,16 @@ export default function DashboardPage() {
                     </>
                   )}
                 </tbody>
+
+                  </>
+                )}
               </table>
             </div>
+            {cfConfronto && (
+              <p className="px-4 py-3 border-t border-surface-100 text-[11px] text-gray-400 leading-snug">
+                Il totale {anno} copre {periodoCf} ({nMesi} {nMesi === 1 ? 'mese' : 'mesi'}): per un confronto omogeneo guarda le medie mensili. Verde = variazione favorevole, rosso = sfavorevole (per le uscite un aumento è sfavorevole).
+              </p>
+            )}
           </div>
 
           {/* Grafici in un'unica card, uno alla volta */}
@@ -1520,33 +1635,11 @@ export default function DashboardPage() {
                       📅 Il mese di <strong>{MESI_LABEL[meseTarget]}</strong> {annoTarget !== anno ? annoTarget : ''} è concluso ma non ancora registrato: lo storico prezzi non sarà valorizzato correttamente finché non lo registri.
                     </span>
                     <button
-                      onClick={() => setOpenSection(prev => ({ ...prev, storico: true }))}
+                      onClick={() => setShowStorico(true)}
                       className="text-xs font-medium text-amber-700 underline shrink-0"
                     >
                       Vai a Storico prezzi →
                     </button>
-                  </div>
-                )
-              })()}
-
-              {/* Strumenti: pannelli laterali (Piano di accumulo, Storico prezzi, Alert) */}
-              {(() => {
-                const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
-                const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
-                const sectionBtns: { key: keyof typeof openSection; label: string; badge?: boolean }[] = [
-                  { key: 'riserva', label: 'Piano di accumulo' },
-                  { key: 'storico', label: 'Storico prezzi', badge: chiusuraMancante },
-                  { key: 'alert', label: 'Dettaglio alert', badge: alertNuovo },
-                ]
-                return (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {sectionBtns.map(b => (
-                      <button key={b.key} type="button" onClick={() => toggleSection(b.key)}
-                        className="relative btn-secondary px-3 py-1.5 text-xs">
-                        {b.label}
-                        {b.badge && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />}
-                      </button>
-                    ))}
                   </div>
                 )
               })()}
@@ -1575,6 +1668,269 @@ export default function DashboardPage() {
                   </div>
                 )
               })()}
+
+              {/* Pannelli (uno alla volta): Piano di accumulo e Dettaglio alert */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {([
+                  { key: 'piano', titolo: 'Piano di accumulo', sub: 'Riserva, asset e tranche per accumulare sui ribassi', nuovo: false },
+                  { key: 'alert', titolo: 'Dettaglio alert', sub: "Budget, asset e allocazione dell'ultimo alert scattato", nuovo: alertNuovo },
+                ] as { key: 'piano' | 'alert'; titolo: string; sub: string; nuovo: boolean }[]).map(v => {
+                  const aperto = pannello === v.key
+                  return (
+                    <button key={v.key} type="button" aria-expanded={aperto}
+                      onClick={() => setPannello(p => (p === v.key ? null : v.key))}
+                      className={`card flex items-center justify-between gap-3 px-4 py-3 text-left transition-all ${
+                        aperto ? 'ring-2 ring-brand-500 bg-brand-50/30' : 'hover:shadow-sm hover:border-brand-200'}`}>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="num-display text-sm font-semibold text-gray-900">{v.titolo}</span>
+                          {v.nuovo && <span className="rounded-full bg-red-50 text-red-700 text-[10px] font-semibold px-2 py-0.5">Nuovo</span>}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">{v.sub}</p>
+                      </div>
+                      <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-brand-700">
+                        {aperto ? 'Chiudi' : 'Apri'}
+                        <span aria-hidden className={`transition-transform ${aperto ? 'rotate-180' : ''}`}>▾</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              {pannello === 'piano' && (
+                <div className="panel-in">
+                <PianoAccumulo
+                  portafoglio={portafoglio}
+                  liquidita={liquidita}
+                  prezziAttuali={prezziAttuali}
+                  behaviorLabel={profilo?.behavior_label ?? null}
+                  pmcMaxAumento={profilo?.pmc_max_aumento_pct ?? null}
+                  bonusSottoPmc={profilo?.accumulo_bonus_pmc ?? null}
+                  moltMax={profilo?.accumulo_molt_max ?? null}
+                  onSaved={loadData}
+                  onSimula={(assetId, importo) => { setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
+                  onAggiornaPrezzi={fetchPrezziAttuali}
+                  loadingPrezzi={loadingPrezzi}
+                />
+                </div>
+              )}
+              {pannello === 'alert' && (
+                <div className="panel-in">
+                  <AlertDettaglioSezione compatto onVisto={() => setAlertInVista(true)} />
+                </div>
+              )}
+
+              {/* Banner: asset con data acquisto più avanti dei dati mensili caricati.
+                  Non è un errore — il capitale investito si aggiornerà da solo appena
+                  liquidità/movimenti raggiungono quel mese. */}
+              {(() => {
+                const mesiConDati = new Set([...movimenti.map(m => m.mese), ...liquidita.map(l => l.mese)])
+                const ultimoMeseConDati = MESI.filter(m => mesiConDati.has(m)).pop()
+                if (!ultimoMeseConDati) return null
+                const chiaveUltimo = anno * 12 + MESI.indexOf(ultimoMeseConDati)
+                const assetInAnticipo = portafoglio.filter(a => {
+                  const d = parseDataIt(a.data_acquisto)
+                  if (!d) return false
+                  const chiaveAcquisto = d.getFullYear() * 12 + d.getMonth()
+                  return chiaveAcquisto > chiaveUltimo
+                })
+                if (assetInAnticipo.length === 0) return null
+                return (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                    <strong>{assetInAnticipo.length} asset</strong> {assetInAnticipo.length === 1 ? 'ha' : 'hanno'} una data di acquisto ({assetInAnticipo.map(a => a.nome || a.asset).join(', ')}) successiva
+                    all&apos;ultimo mese con dati di liquidità/movimenti caricati ({ultimoMeseConDati}). Il capitale investito nel grafico &quot;Andamento patrimonio&quot; si aggiornerà
+                    automaticamente non appena sincronizzi i mesi successivi.
+                  </div>
+                )
+              })()}
+
+              {/* Tabella asset con gestione soglie integrata */}
+              <div className="card p-0 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
+                  <div className="flex items-center gap-3">
+                    <p className="num-display text-sm font-semibold text-gray-900">Anagrafica portafoglio</p>
+                    <InfoSoglieModal />
+                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
+                      {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
+                    </button>
+                    {Object.keys(prezziAttuali).length > 0 && (
+                      <span className="text-xs text-green-600">✓ {Object.keys(prezziAttuali).length} aggiornati</span>
+                    )}
+                    {(() => {
+                      const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
+                      const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
+                      return (
+                        <button onClick={() => setShowStorico(true)} className="relative btn-secondary text-xs px-2.5 py-1" title="Prezzi mensili e chiusura del mese">
+                          Storico prezzi
+                          {chiusuraMancante && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />}
+                        </button>
+                      )
+                    })()}
+                  </div>
+                  {!showSoglieForm ? (
+                    <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
+                      ✎ Modifica soglie
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setShowSoglieForm(false)} className="text-xs text-gray-400 font-medium">
+                        Annulla
+                      </button>
+                      <button onClick={async () => { await saveSoglie(); setShowSoglieForm(false) }} disabled={savingSoglie} className="btn-primary text-xs">
+                        {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {showSoglieForm && (
+                  <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
+                    <p className="text-[10px] text-gray-400 w-full">
+                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Sono solo notifiche: gli importi da investire sui ribassi si configurano nel Piano di accumulo (bottone sopra i KPI). Per gli asset nel piano la soglia dal massimo è sostituita dalle sue tranche (colonna Max % = Piano); resta la soglia mensile, che è solo un avviso.
+                    </p>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMax}
+                        onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMese}
+                        onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
+                    </div>
+                    <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
+                  </div>
+                )}
+
+                <div className="border-t border-surface-100 mt-3 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr>
+                        <th className={`${ANAG_TH} text-left pl-4`}>Asset</th>
+                        <th className={`${ANAG_TH} text-right`}>Qtà</th>
+                        <th className={`${ANAG_TH} text-center`}>Da massimo</th>
+                        <th className={`${ANAG_TH} text-center`}>Var. mese</th>
+                        <th className={`${ANAG_TH} text-right`}>Carico</th>
+                        <th className={`${ANAG_TH} text-right`}>Attuale</th>
+                        <th className={`${ANAG_TH} text-right`}>+/–</th>
+                        <th className={`${ANAG_TH} text-center`}>Classe</th>
+                        <th className={`${ANAG_TH} text-center w-14 !bg-amber-50/60`} title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
+                        <th className={`${ANAG_TH} text-center w-14 pr-4 !bg-amber-50/60`} title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portafoglio.map((a, i) => {
+                        const { quantita: qtaAttuale, prezzoCarico } = statoAttuale(a)
+                        const quote = a.ticker ? prezziAttuali[a.ticker] : undefined
+                        const prezzoAtt = quote ? quote.price : null
+                        const valCarico = prezzoCarico * qtaAttuale
+                        const valAtt = prezzoAtt ? prezzoAtt * qtaAttuale : null
+                        const pm = valAtt ? valAtt - valCarico : null
+                        const breachAsset = soglie.filter(x => x.in_breach && x.portafoglio_id === a.id)
+                        const inBreach = breachAsset.length > 0
+                        const pmPct = pm && valCarico > 0 ? (pm / valCarico * 100).toFixed(1) : null
+                        const highDev = quote?.changeFromHigh ?? null
+                        const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
+                        const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
+                        const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
+                        const dSoglia = a.id ? draftSoglie[a.id] : undefined
+                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
+                        const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
+                        return (
+                          <tr key={i} className={`border-b border-surface-100 last:border-b-0 transition-colors ${inBreach ? 'bg-red-50/70 shadow-[inset_3px_0_0_0_#dc2626]' : 'hover:bg-surface-50'}`}>
+                            <td className="pl-4 pr-2 py-2.5 w-[28%] max-w-0">
+                              <p
+                                className={`text-xs font-medium text-gray-800 cursor-pointer hover:text-brand-600 ${expandedAssetRow === i ? 'whitespace-normal break-words' : 'truncate'}`}
+                                title={a.nome || a.descrizione}
+                                onClick={() => setExpandedAssetRow(expandedAssetRow === i ? null : i)}
+                              >
+                                {a.nome || a.descrizione}
+                              </p>
+                              <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400 min-w-0">
+                                <span className="shrink-0 rounded-full bg-surface-100 text-gray-600 px-1.5 py-px text-[10px]">{a.asset}</span>
+                                {(a.ticker || a.isin) && <span className="font-mono truncate" title={[a.ticker, a.isin].filter(Boolean).join(' · ')}>{[a.ticker, a.isin].filter(Boolean).join(' · ')}</span>}
+                                {inBreach && <span title={breachAsset.map(x => `${x.tipo === 'mensile' ? 'nel mese' : 'dal massimo'} (soglia ${x.soglia_pct}%)`).join(', ')} className="shrink-0 text-[10px] font-medium text-red-700 bg-red-100 px-1.5 py-px rounded-full">soglia</span>}
+                              </p>
+                            </td>
+                            <td className="px-2 py-2.5 text-right tabular-nums whitespace-nowrap">{qtaAttuale.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
+                            <td className="px-2 py-2.5 text-center">
+                              {quote?.changeFromHigh != null ? (
+                                <span
+                                  className="inline-block min-w-12 px-1.5 py-0.5 rounded-md text-[11px] font-semibold tabular-nums"
+                                  style={{ backgroundColor: highBg, color: highText }}
+                                  title="Variazione dal massimo a 52 settimane"
+                                >
+                                  {quote.changeFromHigh.toFixed(1)}%
+                                </span>
+                              ) : <span className="text-gray-300">–</span>}
+                            </td>
+                            <td className="px-2 py-2.5 text-center">
+                              {quote?.changeFromMonth != null ? (
+                                <span
+                                  className={`inline-block px-1.5 py-0.5 rounded-md text-[11px] font-medium tabular-nums whitespace-nowrap ${quote.changeFromMonth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}
+                                  title="Variazione rispetto a circa 30 giorni fa"
+                                >
+                                  {quote.changeFromMonth >= 0 ? '▲' : '▼'} {Math.abs(quote.changeFromMonth).toFixed(1)}%
+                                </span>
+                              ) : <span className="text-gray-300">–</span>}
+                            </td>
+                            <td className="px-2 py-2.5 text-right font-medium tabular-nums whitespace-nowrap">{fmtK(valCarico)}</td>
+                            <td className="px-2 py-2.5 text-right font-medium tabular-nums whitespace-nowrap">
+                              {valAtt ? fmtK(valAtt) : <span className="text-gray-300">–</span>}
+                            </td>
+                            <td className={`px-2 py-2.5 text-right font-medium tabular-nums whitespace-nowrap ${pm ? (pm >= 0 ? 'text-green-700' : 'text-red-600') : ''}`}>
+                              {pm ? (
+                                <>
+                                  {pm >= 0 ? '+' : ''}{fmtK(pm)}
+                                  <span className="block text-[10px] font-normal opacity-80">{pmPct}%</span>
+                                </>
+                              ) : <span className="text-gray-300">–</span>}
+                            </td>
+                            <td className="px-2 py-2.5 text-center">
+                              {a.classe_rischio ? (
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${CLASSE_BADGE[a.classe_rischio]}`}>
+                                  {CLASSE_LABEL[a.classe_rischio]}
+                                </span>
+                              ) : <span className="text-gray-300">–</span>}
+                              {a.svincolato && <span className="block mt-0.5 text-[10px] font-medium text-brand-700">svincolato</span>}
+                            </td>
+                            <td className="px-1 py-2.5 text-center bg-amber-50/40">
+                              {a.id && idPiano.has(a.id) ? (
+                                <span className="inline-block px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-100 text-[10px] font-medium whitespace-nowrap" title="La soglia dal massimo è gestita dalle tranche del Piano di accumulo">Piano</span>
+                              ) : showSoglieForm && a.id ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <input type="number" min={0} step={0.5}
+                                    value={dSoglia?.massimo ?? globalSogliaMax}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), massimo: Number(e.target.value) } }))}
+                                    className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                                  <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), attivo: e.target.checked } }))} />
+                                </div>
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMaxSaved && sMaxSaved.attivo ? `${sMaxSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="pl-1 pr-4 py-2.5 text-center bg-amber-50/40">
+                              {showSoglieForm && a.id ? (
+                                <input type="number" min={0} step={0.5}
+                                  value={dSoglia?.mensile ?? globalSogliaMese}
+                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), mensile: Number(e.target.value) } }))}
+                                  className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
 
               {/* Grafici allocazione portafoglio — i 3 sulla stessa riga */}
               {assetValori.length > 0 && (
@@ -1641,232 +1997,11 @@ export default function DashboardPage() {
               )}
 
 
-              {/* Banner: asset con data acquisto più avanti dei dati mensili caricati.
-                  Non è un errore — il capitale investito si aggiornerà da solo appena
-                  liquidità/movimenti raggiungono quel mese. */}
-              {(() => {
-                const mesiConDati = new Set([...movimenti.map(m => m.mese), ...liquidita.map(l => l.mese)])
-                const ultimoMeseConDati = MESI.filter(m => mesiConDati.has(m)).pop()
-                if (!ultimoMeseConDati) return null
-                const chiaveUltimo = anno * 12 + MESI.indexOf(ultimoMeseConDati)
-                const assetInAnticipo = portafoglio.filter(a => {
-                  const d = parseDataIt(a.data_acquisto)
-                  if (!d) return false
-                  const chiaveAcquisto = d.getFullYear() * 12 + d.getMonth()
-                  return chiaveAcquisto > chiaveUltimo
-                })
-                if (assetInAnticipo.length === 0) return null
-                return (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                    <strong>{assetInAnticipo.length} asset</strong> {assetInAnticipo.length === 1 ? 'ha' : 'hanno'} una data di acquisto ({assetInAnticipo.map(a => a.nome || a.asset).join(', ')}) successiva
-                    all&apos;ultimo mese con dati di liquidità/movimenti caricati ({ultimoMeseConDati}). Il capitale investito nel grafico &quot;Andamento patrimonio&quot; si aggiornerà
-                    automaticamente non appena sincronizzi i mesi successivi.
-                  </div>
-                )
-              })()}
 
-              {/* Tabella asset con gestione soglie integrata */}
-              <div className="card p-0 overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
-                  <div className="flex items-center gap-3">
-                    <p className="num-display text-sm font-semibold text-gray-900">Anagrafica portafoglio</p>
-                    <InfoSoglieModal />
-                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
-                      {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
-                    </button>
-                    {Object.keys(prezziAttuali).length > 0 && (
-                      <span className="text-xs text-green-600">✓ {Object.keys(prezziAttuali).length} aggiornati</span>
-                    )}
-                  </div>
-                  {!showSoglieForm ? (
-                    <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
-                      ✎ Modifica soglie
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setShowSoglieForm(false)} className="text-xs text-gray-400 font-medium">
-                        Annulla
-                      </button>
-                      <button onClick={async () => { await saveSoglie(); setShowSoglieForm(false) }} disabled={savingSoglie} className="btn-primary text-xs">
-                        {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {showSoglieForm && (
-                  <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
-                    <p className="text-[10px] text-gray-400 w-full">
-                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Sono solo notifiche: gli importi da investire sui ribassi si configurano nel Piano di accumulo (bottone sopra i KPI). Per gli asset nel piano la soglia dal massimo è sostituita dalle sue tranche (colonna Max % = Piano); resta la soglia mensile, che è solo un avviso.
-                    </p>
-                    <div>
-                      <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
-                      <input type="number" min={0} step={0.5} value={globalSogliaMax}
-                        onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
-                      <input type="number" min={0} step={0.5} value={globalSogliaMese}
-                        onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
-                    </div>
-                    <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto border-t border-surface-100 mt-3">
-                  <table className="w-full min-w-[640px]">
-                    <thead>
-                      <tr>
-                        <th className="table-th">Asset</th>
-                        <th className="table-th">Nome / Ticker</th>
-                        <th className="table-th w-20 text-right">Qtà</th>
-                        <th className="table-th w-24 text-center">Da massimo</th>
-                        <th className="table-th w-24 text-center">Var. mese</th>
-                        <th className="table-th w-28 text-right">Valore carico</th>
-                        <th className="table-th w-28 text-right">Valore att.</th>
-                        <th className="table-th w-24 text-right">+/–</th>
-                        <th className="table-th w-28 text-center">Classe</th>
-                        <th className="table-th w-24 text-center">Svincolato</th>
-                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
-                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {portafoglio.map((a, i) => {
-                        const { quantita: qtaAttuale, prezzoCarico } = statoAttuale(a)
-                        const quote = a.ticker ? prezziAttuali[a.ticker] : undefined
-                        const prezzoAtt = quote ? quote.price : null
-                        const valCarico = prezzoCarico * qtaAttuale
-                        const valAtt = prezzoAtt ? prezzoAtt * qtaAttuale : null
-                        const pm = valAtt ? valAtt - valCarico : null
-                        const breachAsset = soglie.filter(x => x.in_breach && x.portafoglio_id === a.id)
-                        const inBreach = breachAsset.length > 0
-                        const pmPct = pm && valCarico > 0 ? (pm / valCarico * 100).toFixed(1) : null
-                        const highDev = quote?.changeFromHigh ?? null
-                        const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
-                        const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
-                        const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
-                        const dSoglia = a.id ? draftSoglie[a.id] : undefined
-                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
-                        const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
-                        return (
-                          <tr key={i} className={`transition-colors ${inBreach ? 'bg-red-50/70 shadow-[inset_3px_0_0_0_#dc2626]' : 'hover:bg-surface-50'}`}>
-                            <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span>{inBreach && <span title={breachAsset.map(x => `${x.tipo === 'mensile' ? 'nel mese' : 'dal massimo'} (soglia ${x.soglia_pct}%)`).join(', ')} className="ml-1.5 text-[10px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full">soglia</span>}</td>
-                            <td className="table-td">
-                              <p
-                                className={`text-xs font-medium text-gray-700 cursor-pointer hover:text-brand-600 ${expandedAssetRow === i ? 'whitespace-normal break-words' : 'truncate max-w-36'}`}
-                                title={a.nome || a.descrizione}
-                                onClick={() => setExpandedAssetRow(expandedAssetRow === i ? null : i)}
-                              >
-                                {a.nome || a.descrizione}
-                              </p>
-                              {(a.ticker || a.isin) && <p className="text-[11px] text-gray-400 font-mono">{[a.ticker, a.isin].filter(Boolean).join(' · ')}</p>}
-                            </td>
-                            <td className="table-td text-right text-xs tabular-nums">{qtaAttuale.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
-                            <td className="table-td text-center">
-                              {quote?.changeFromHigh != null ? (
-                                <span
-                                  className="inline-block min-w-16 px-2 py-1 rounded-md text-xs font-semibold tabular-nums transition-transform hover:scale-105"
-                                  style={{ backgroundColor: highBg, color: highText }}
-                                  title="Variazione dal massimo a 52 settimane"
-                                >
-                                  {quote.changeFromHigh.toFixed(1)}%
-                                </span>
-                              ) : <span className="text-gray-300 text-xs">–</span>}
-                            </td>
-                            <td className="table-td text-center">
-                              {quote?.changeFromMonth != null ? (
-                                <span
-                                  className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs font-medium tabular-nums ${quote.changeFromMonth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}
-                                  title="Variazione rispetto a circa 30 giorni fa"
-                                >
-                                  {quote.changeFromMonth >= 0 ? '▲' : '▼'} {Math.abs(quote.changeFromMonth).toFixed(1)}%
-                                </span>
-                              ) : <span className="text-gray-300 text-xs">–</span>}
-                            </td>
-                            <td className="table-td text-right text-xs font-medium tabular-nums">{fmtK(valCarico)}</td>
-                            <td className="table-td text-right text-xs font-medium tabular-nums">
-                              {valAtt ? fmtK(valAtt) : <span className="text-gray-300">–</span>}
-                            </td>
-                            <td className={`table-td text-right text-xs font-medium tabular-nums ${pm ? (pm >= 0 ? 'text-green-700' : 'text-red-600') : ''}`}>
-                              {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
-                            </td>
-                            <td className="table-td text-center px-1">
-                              {a.classe_rischio ? (
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${CLASSE_BADGE[a.classe_rischio]}`}>
-                                  {CLASSE_LABEL[a.classe_rischio]}
-                                </span>
-                              ) : <span className="text-gray-300 text-xs">–</span>}
-                            </td>
-                            <td className="table-td text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
-                              }`}>
-                                {a.svincolato ? 'Sì' : 'No'}
-                              </span>
-                            </td>
-                            <td className="table-td text-center px-1 bg-amber-50/40">
-                              {a.id && idPiano.has(a.id) ? (
-                                <span className="inline-block px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-100 text-[10px] font-medium whitespace-nowrap" title="La soglia dal massimo è gestita dalle tranche del Piano di accumulo">Piano</span>
-                              ) : showSoglieForm && a.id ? (
-                                <div className="flex items-center justify-center gap-1">
-                                  <input type="number" min={0} step={0.5}
-                                    value={dSoglia?.massimo ?? globalSogliaMax}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), massimo: Number(e.target.value) } }))}
-                                    className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
-                                  <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), attivo: e.target.checked } }))} />
-                                </div>
-                              ) : (
-                                <span className="text-xs tabular-nums text-gray-500">
-                                  {sMaxSaved && sMaxSaved.attivo ? `${sMaxSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
-                                </span>
-                              )}
-                            </td>
-                            <td className="table-td text-center px-1 bg-amber-50/40">
-                              {showSoglieForm && a.id ? (
-                                <input type="number" min={0} step={0.5}
-                                  value={dSoglia?.mensile ?? globalSogliaMese}
-                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), mensile: Number(e.target.value) } }))}
-                                  className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
-                              ) : (
-                                <span className="text-xs tabular-nums text-gray-500">
-                                  {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Pannelli laterali */}
-              <Drawer open={openSection.riserva} onClose={closeSections} size="xl" closeOnBlankClick={false}
-                title="Piano di accumulo" subtitle="Riserva, soglie e importi">
-              {/* Sezione aperta (riserva o simulatore) */}
-              {openSection.riserva && (
-                <PianoAccumulo
-                  portafoglio={portafoglio}
-                  liquidita={liquidita}
-                  prezziAttuali={prezziAttuali}
-                  behaviorLabel={profilo?.behavior_label ?? null}
-                  pmcMaxAumento={profilo?.pmc_max_aumento_pct ?? null}
-                  bonusSottoPmc={profilo?.accumulo_bonus_pmc ?? null}
-                  moltMax={profilo?.accumulo_molt_max ?? null}
-                  onSaved={loadData}
-                  onSimula={(assetId, importo) => { closeSections(); setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
-                  onAggiornaPrezzi={fetchPrezziAttuali}
-                  loadingPrezzi={loadingPrezzi}
-                />
-              )}
-
-              </Drawer>
-              <Drawer open={openSection.storico} onClose={closeSections} size="xl"
+              {/* Storico prezzi: popup (si usa una volta al mese) */}
+              <Drawer open={showStorico} onClose={() => setShowStorico(false)} variant="center" size="xl"
                 title={`Storico prezzi ${anno}`} subtitle="Prezzi mensili e chiusura del mese">
-              {openSection.storico && <div className="overflow-x-auto">
+              {showStorico && <div className="overflow-x-auto">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                   <p className="text-xs text-gray-400 pt-1">
                     Prezzi a fine mese · colore = variazione % rispetto al mese precedente
@@ -1985,11 +2120,6 @@ export default function DashboardPage() {
               </div>}
 
               </Drawer>
-              <Drawer open={openSection.alert} onClose={closeSections}
-                title="Dettaglio alert" subtitle="Ultime notifiche con dettaglio">
-                {openSection.alert && <AlertDettaglioSezione />}
-              </Drawer>
-
             </>
           )}
         </div>

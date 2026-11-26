@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Notifica } from '@/types'
 import AlertDettaglioCard from '@/components/AlertDettaglioCard'
@@ -8,10 +8,13 @@ const fmt = (iso: string) =>
   new Date(iso).toLocaleString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 // Dettaglio degli ultimi alert scattati: stessi numeri della mail (calcolati al momento del check).
-export default function AlertDettaglioSezione() {
+// `nuovo` mostra la pillola "Nuovo"; `onVisto` scatta quando la sezione è visibile a schermo;
+// `compatto` nasconde il titolo (già presente nel pulsante del pannello che la contiene).
+export default function AlertDettaglioSezione({ nuovo = false, onVisto, compatto = false }: { nuovo?: boolean; onVisto?: () => void; compatto?: boolean }) {
   const supabase = createClient()
   const [righe, setRighe] = useState<Notifica[] | null>(null)
   const [idx, setIdx] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     (async () => {
@@ -33,26 +36,43 @@ export default function AlertDettaglioSezione() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (righe === null) return <div className="card text-xs text-gray-400">Caricamento…</div>
-  if (righe.length === 0) {
-    return <div className="card text-xs text-gray-500">Nessun alert da mostrare. Il dettaglio compare quando scatta una soglia con accumulo attivo.</div>
-  }
-  const n = righe[Math.min(idx, righe.length - 1)]
+  // Segna l'alert come visto quando la sezione entra in vista
+  useEffect(() => {
+    if (!onVisto || !rootRef.current) return
+    const obs = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) { onVisto(); obs.disconnect() } }, { threshold: 0.4 })
+    obs.observe(rootRef.current)
+    return () => obs.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [righe])
+
+  const n = righe && righe.length > 0 ? righe[Math.min(idx, righe.length - 1)] : null
+
   return (
-    <div className="space-y-4" id="alert-dettaglio">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+    <section ref={rootRef} id="alert-dettaglio" className="flex flex-col gap-4 scroll-mt-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-gray-800">Dettaglio alert</p>
-          <p className="text-[11px] text-gray-400">Calcolato al momento dello scatto, gli stessi numeri della mail.</p>
+          {!compatto && (
+            <div className="flex items-center gap-2">
+              <h2 className="num-display text-base font-semibold text-gray-900">Dettaglio alert</h2>
+              {nuovo && <span className="rounded-full bg-red-50 text-red-700 text-[10px] font-semibold px-2 py-0.5">Nuovo</span>}
+            </div>
+          )}
+          <p className={`text-xs text-gray-400 ${compatto ? '' : 'mt-0.5'}`}>Calcolato al momento dello scatto: gli stessi numeri della mail.</p>
         </div>
-        <select
-          value={idx} onChange={e => setIdx(Number(e.target.value))}
-          className="text-xs border border-surface-200 rounded-lg px-2 py-1 bg-white text-gray-700"
-        >
-          {righe.map((r, i) => <option key={r.id} value={i}>{fmt(r.created_at)}{i === 0 ? ' · ultimo' : ''}</option>)}
-        </select>
+        {righe && righe.length > 1 && (
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            Alert del
+            <select value={idx} onChange={e => setIdx(Number(e.target.value))} className="input text-xs py-1.5 w-auto">
+              {righe.map((r, i) => <option key={r.id} value={i}>{fmt(r.created_at)}{i === 0 ? ' · ultimo' : ''}</option>)}
+            </select>
+          </label>
+        )}
       </div>
-      {n.dettaglio && <AlertDettaglioCard dettaglio={n.dettaglio} />}
-    </div>
+      {righe === null && <div className="card text-xs text-gray-400">Caricamento…</div>}
+      {righe !== null && righe.length === 0 && (
+        <div className="card text-xs text-gray-500">Nessun alert da mostrare. Il dettaglio compare quando scatta una soglia con accumulo attivo.</div>
+      )}
+      {n?.dettaglio && <AlertDettaglioCard dettaglio={n.dettaglio} />}
+    </section>
   )
 }

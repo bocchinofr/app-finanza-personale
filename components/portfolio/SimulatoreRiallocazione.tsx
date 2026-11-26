@@ -8,8 +8,12 @@ import {
 import {
   COLORI_CLASSE, fmtEuro, fmtEuroDelta, fmtPct, fmtPp, fmtPrezzo, fmtQta,
 } from '@/lib/portfolioFormat'
+import KpiCard from '@/components/ui/KpiCard'
+import SegmentedControl from '@/components/ui/SegmentedControl'
 import AllocazioneDonut from './AllocazioneDonut'
 import SimulatoreInfoBox from './SimulatoreInfoBox'
+
+const TH = 'py-2 px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-surface-50 border-b border-surface-200 leading-tight'
 
 interface Props {
   strumentiReali: StrumentoSim[]
@@ -56,11 +60,11 @@ function TabellaConfronto({
       <table className="w-full min-w-[380px]">
         <thead>
           <tr>
-            <th className="table-th">{intestazione}</th>
-            <th className="table-th text-right">Prima</th>
-            <th className="table-th text-right">Dopo</th>
-            <th className="table-th text-right">Δ</th>
-            <th className="table-th w-20" />
+            <th className={`${TH}`}>{intestazione}</th>
+            <th className={`${TH} text-right`}>Prima</th>
+            <th className={`${TH} text-right`}>Dopo</th>
+            <th className={`${TH} text-right`}>Δ</th>
+            <th className={`${TH} w-20`} />
           </tr>
         </thead>
         <tbody>
@@ -217,7 +221,7 @@ export default function SimulatoreRiallocazione({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold text-gray-900">Simulatore di riallocazione</h3>
+        <h3 className="num-display text-sm font-semibold text-gray-900">Simulatore di riallocazione</h3>
         <SimulatoreInfoBox />
         <span className="text-[11px] text-gray-400">Il portafoglio reale non cambia.</span>
       </div>
@@ -340,35 +344,28 @@ export default function SimulatoreRiallocazione({
             </div>
           ) : (
             <>
-              {/* Barra riassuntiva */}
-              <div className="card !p-0 grid grid-cols-2 sm:grid-cols-4 divide-x divide-surface-100">
+              {/* KPI riassuntivi */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-start">
                 {[
-                  { l: 'Patrimonio', v: fmtEuro(dopo.patrimonio), d: dopo.patrimonio - prima.patrimonio, inv: false },
-                  { l: 'Liquidità', v: fmtEuro(dopo.liquidita), d: dopo.liquidita - prima.liquidita, inv: false },
-                  { l: 'Tasse + costi', v: fmtEuro(spesaTotale), d: 0, inv: true },
-                  { l: 'Netto da vendite', v: fmtEuro(totali.nettoReinvestibile), d: 0, inv: false },
+                  { l: 'Patrimonio', v: fmtEuro(dopo.patrimonio), d: dopo.patrimonio - prima.patrimonio, c: '#6b7280' },
+                  { l: 'Liquidità', v: fmtEuro(dopo.liquidita), d: dopo.liquidita - prima.liquidita, c: '#4a6fa1' },
+                  { l: 'Tasse + costi', v: fmtEuro(spesaTotale), d: 0, c: '#c0504d' },
+                  { l: 'Netto da vendite', v: fmtEuro(totali.nettoReinvestibile), d: 0, c: '#3f6b4f' },
                 ].map(k => (
-                  <div key={k.l} className="px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">{k.l}</p>
-                    <p className="num-display text-base font-bold tabular-nums text-gray-900 leading-tight">{k.v}</p>
-                    {Math.abs(k.d) > 0.5 && (
-                      <p className={`text-[11px] font-mono tabular-nums ${k.d > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                        {fmtEuroDelta(k.d)}
-                      </p>
-                    )}
-                  </div>
+                  <KpiCard key={k.l} variant="compact" label={k.l} color={k.c} delta={null} value={k.v}
+                    badge={Math.abs(k.d) > 0.5
+                      ? <span className={`inline-flex rounded-full text-[11px] font-semibold px-2 py-0.5 ${k.d > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>{fmtEuroDelta(k.d)}</span>
+                      : undefined} />
                 ))}
               </div>
 
               {/* Schede */}
               <div className="card !p-0 overflow-hidden">
-                <div className="flex border-b border-surface-100 text-[13px]">
-                  {([['riepilogo', 'Riepilogo'], ['fiscale', 'Fiscalità'], ['esposizioni', 'Esposizioni']] as const).map(([k, l]) => (
-                    <button
-                      key={k} onClick={() => setTabRis(k)}
-                      className={`px-4 py-2.5 border-b-2 -mb-px transition-colors ${tabRis === k ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                    >{l}</button>
-                  ))}
+                <div className="px-3 py-2.5 border-b border-surface-100">
+                  <SegmentedControl
+                    ariaLabel="Risultati della simulazione" value={tabRis} onChange={setTabRis}
+                    options={[{ value: 'riepilogo', label: 'Riepilogo' }, { value: 'fiscale', label: 'Fiscalità' }, { value: 'esposizioni', label: 'Esposizioni' }]}
+                  />
                 </div>
 
                 <div className="p-3">
@@ -408,11 +405,11 @@ export default function SimulatoreRiallocazione({
                         <table className="w-full min-w-[460px]">
                           <thead>
                             <tr>
-                              <th className="table-th">Operazione</th>
-                              <th className="table-th text-right">Valore</th>
-                              <th className="table-th text-right">Plus</th>
-                              <th className="table-th text-right">Imposta</th>
-                              <th className="table-th text-right">Netto</th>
+                              <th className={`${TH}`}>Operazione</th>
+                              <th className={`${TH} text-right`}>Valore</th>
+                              <th className={`${TH} text-right`}>Plus</th>
+                              <th className={`${TH} text-right`}>Imposta</th>
+                              <th className={`${TH} text-right`}>Netto</th>
                             </tr>
                           </thead>
                           <tbody>

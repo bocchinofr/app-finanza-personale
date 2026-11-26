@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import KpiCard from '@/components/ui/KpiCard'
+import Drawer from '@/components/ui/Drawer'
 import { avvisoImportoTesto, type DettaglioAlert, type DettaglioAsset, type Alloc } from '@/lib/alertDettaglio'
 
 const nf = (n: number, d = 1) => n.toLocaleString('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -37,41 +38,27 @@ function Margine({ v }: { v: number }) {
   return v >= 0 ? <>−{nf(v)}%</> : <span className="text-red-600">in perdita</span>
 }
 
-/* ───────── Avvisi da leggere prima di investire (chiudibili) ───────── */
-function Avvisi({ asset }: { asset: DettaglioAsset[] }) {
-  const [aperto, setAperto] = useState(true)
-  const righe = asset.filter(a => a.avviso && a.importo != null).map(a => ({ a, t: avvisoImportoTesto(a.avviso!) }))
-  if (righe.length === 0) return null
-  const forte = righe.some(r => r.t.forte)
-  if (!aperto) {
-    return (
-      <button type="button" onClick={() => setAperto(true)}
-        className={`self-start rounded-full px-3 py-1 text-xs font-medium ${forte ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}>
-        ⚠ Mostra avvisi ({righe.length})
-      </button>
-    )
-  }
+/* ───────── Popup avviso di un asset ───────── */
+function PopupAvviso({ asset, onClose }: { asset: DettaglioAsset | null; onClose: () => void }) {
+  const t = asset?.avviso ? avvisoImportoTesto(asset.avviso) : null
   return (
-    <div role="alert" className={`relative rounded-xl border p-4 pr-10 ${forte ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-      <button type="button" onClick={() => setAperto(false)} aria-label="Chiudi avvisi"
-        className={`absolute right-2.5 top-2.5 h-6 w-6 rounded-full text-sm leading-none ${forte ? 'text-red-700 hover:bg-red-100' : 'text-amber-700 hover:bg-amber-100'}`}>✕</button>
-      <p className={`text-sm font-semibold ${forte ? 'text-red-800' : 'text-amber-800'}`}>
-        ⚠ {righe.length === 1 ? 'Un accumulo da verificare' : `${righe.length} accumuli da verificare`} prima di investire
-      </p>
-      <ul className="mt-2 space-y-2">
-        {righe.map(({ a, t }) => (
-          <li key={a.id} className={`text-xs leading-snug ${forte ? 'text-red-800' : 'text-amber-800'}`}>
-            <span className="font-semibold">{a.nome}</span> · {t.titolo}
-            <ul className="mt-0.5 list-disc pl-4 opacity-90">{t.righe.map((r, i) => <li key={i}>{r}</li>)}</ul>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Drawer open={!!asset} onClose={onClose} variant="center" title={asset ? `Da verificare · ${asset.nome}` : ''} subtitle={t?.titolo}>
+      {asset && t && (
+        <div>
+          <p className={`text-sm font-semibold ${t.forte ? 'text-red-800' : 'text-amber-800'}`}>
+            ⚠ Importo previsto: {eur(asset.importo ?? 0)}
+          </p>
+          <ul className={`mt-3 space-y-2 list-disc pl-5 text-sm leading-snug ${t.forte ? 'text-red-800' : 'text-amber-800'}`}>
+            {t.righe.map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </div>
+      )}
+    </Drawer>
   )
 }
 
 /* ───────── Tabella parametri asset ───────── */
-function TabellaAsset({ asset }: { asset: DettaglioAsset[] }) {
+function TabellaAsset({ asset, onAvviso }: { asset: DettaglioAsset[]; onAvviso: (a: DettaglioAsset) => void }) {
   return (
     <section className="card p-0 overflow-hidden">
       <div className="px-4 pt-4 pb-3">
@@ -95,13 +82,24 @@ function TabellaAsset({ asset }: { asset: DettaglioAsset[] }) {
               return (
                 <tr key={d.id} className={`border-b border-surface-100 last:border-b-0 ${verifica ? 'bg-amber-50/50 shadow-[inset_3px_0_0_0_#d97706]' : 'hover:bg-surface-50'} transition-colors`}>
                   <td className={`${TD} px-4`}>
-                    <p className="font-medium text-gray-900 truncate max-w-[220px]" title={d.nome}>{d.nome}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="font-medium text-gray-900 truncate max-w-[260px]" title={d.nome}>{d.nome}</p>
+                      {verifica && (() => {
+                        const forte = avvisoImportoTesto(d.avviso!).forte
+                        return (
+                          <button type="button" onClick={() => onAvviso(d)} title="Apri il dettaglio dell'avviso"
+                            className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${forte ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
+                            ⚠ Da verificare
+                          </button>
+                        )
+                      })()}
+                    </div>
                     {d.accumulo && d.quote != null && <p className={NOTA}>≈ {nf(d.quote, 2)} quote a {prezzo(d.prezzo)}</p>}
                   </td>
                   <td className={`${TD} text-right`}>
                     {d.accumulo
                       ? <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-100 px-2 py-0.5 font-semibold">
-                          {verifica && <span title="Da verificare">⚠</span>}{eur(d.importo ?? 0)}
+                          {eur(d.importo ?? 0)}
                         </span>
                       : <span className="text-gray-300">–</span>}
                   </td>
@@ -211,11 +209,12 @@ function CardHolding({ d }: { d: DettaglioAlert }) {
 
 /* ───────── Layout ─────────
    1. KPI di sintesi
-   2. fondi prelevati + avvisi (chiudibili)
-   3. allocazione | top holding
-   4. tabella parametri asset a tutta larghezza                          */
+   2. fondi prelevati
+   3. tabella parametri asset (⚠ sulla riga → popup con l'avviso)
+   4. allocazione | top holding                                           */
 export default function AlertDettaglioCard({ dettaglio }: { dettaglio: DettaglioAlert }) {
   const d = dettaglio
+  const [avvisoAperto, setAvvisoAperto] = useState<DettaglioAsset | null>(null)
   const inAccumulo = d.asset.filter(a => a.accumulo)
   const totImporto = inAccumulo.reduce((s, a) => s + (a.importo ?? 0), 0)
   const daVerificare = d.asset.filter(a => a.avviso && a.importo != null).length
@@ -237,7 +236,7 @@ export default function AlertDettaglioCard({ dettaglio }: { dettaglio: Dettaglio
           badge={pill(`${d.asset.length - inAccumulo.length} senza accumulo`, 'bg-surface-100 text-gray-600')} />
         <KpiCard variant="compact" label="Da verificare" color={daVerificare > 0 ? '#d97706' : '#9ca3af'}
           tone={daVerificare > 0 ? 'warning' : 'neutral'} delta={null} value={String(daVerificare)}
-          badge={pill(daVerificare > 0 ? 'Leggi gli avvisi sotto' : 'Nessun avviso', daVerificare > 0 ? 'bg-amber-50 text-amber-700' : 'bg-surface-100 text-gray-600')} />
+          badge={pill(daVerificare > 0 ? 'Tocca ⚠ nella tabella' : 'Nessun avviso', daVerificare > 0 ? 'bg-amber-50 text-amber-700' : 'bg-surface-100 text-gray-600')} />
       </div>
 
       {d.finanziamento && (
@@ -254,7 +253,7 @@ export default function AlertDettaglioCard({ dettaglio }: { dettaglio: Dettaglio
         </div>
       )}
 
-      <Avvisi key={d.generatoAt} asset={d.asset} />
+      <TabellaAsset asset={d.asset} onAvviso={setAvvisoAperto} />
 
       {(d.allocazione || d.holdings) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -263,7 +262,7 @@ export default function AlertDettaglioCard({ dettaglio }: { dettaglio: Dettaglio
         </div>
       )}
 
-      <TabellaAsset asset={d.asset} />
+      <PopupAvviso asset={avvisoAperto} onClose={() => setAvvisoAperto(null)} />
     </div>
   )
 }

@@ -10,6 +10,8 @@ import { StrumentoSim } from '@/lib/portfolioSimulation'
 import {
   COLORI_CLASSE, fmtData, fmtEuro, fmtPct, fmtPctSegno, fmtPrezzo, fmtQta,
 } from '@/lib/portfolioFormat'
+import KpiCard from '@/components/ui/KpiCard'
+import SegmentedControl from '@/components/ui/SegmentedControl'
 import AnalisiPortafoglioInfoBox from './AnalisiPortafoglioInfoBox'
 import AllocazioneDonut from './AllocazioneDonut'
 import ComposizioneEditor from './ComposizioneEditor'
@@ -24,6 +26,7 @@ interface Props {
   onPrefillConsumed?: () => void
 }
 
+const TH = 'py-2 px-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-surface-50 border-b border-surface-200 leading-tight'
 const COLORI_ETF = ['#3f6b4f', '#4a6fa1', '#c28b3c', '#8a6aa8', '#b5543f', '#5c8752', '#7a8794']
 
 interface RigaAsset {
@@ -228,15 +231,13 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-base font-semibold text-gray-900">Analisi portafoglio</h2>
+        <h2 className="num-display text-base font-semibold text-gray-900">Analisi portafoglio</h2>
         <AnalisiPortafoglioInfoBox />
-        <div className="ml-auto inline-flex rounded-lg border border-surface-200 bg-white p-0.5 text-[13px]">
-          {([['situazione', 'Situazione attuale'], ['simulatore', 'Simulatore']] as const).map(([k, l]) => (
-            <button
-              key={k} onClick={() => setVista(k)}
-              className={`px-3 py-1.5 rounded-md transition-colors ${vista === k ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}
-            >{l}</button>
-          ))}
+        <div className="ml-auto">
+          <SegmentedControl
+            ariaLabel="Vista dell'analisi" value={vista} onChange={setVista}
+            options={[{ value: 'situazione', label: 'Situazione attuale' }, { value: 'simulatore', label: 'Simulatore' }]}
+          />
         </div>
       </div>
 
@@ -260,47 +261,44 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
         />
       ) : (
         <>
-          {/* KPI compatti */}
-          <div className="card !p-0 grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-surface-100">
-            {[
-              { l: 'Patrimonio finanziario', v: fmtEuro(patrimonio), s: 'portafoglio + liquidità', t: '' },
-              {
-                l: 'Portafoglio titoli', v: fmtEuro(totPortafoglio),
-                s: totInvestito > 0 ? `${fmtPctSegno((plusTot / totInvestito) * 100)} su ${fmtEuro(totInvestito)}` : '',
-                t: plusTot >= 0 ? 'text-green-800' : 'text-red-700',
-              },
-              {
-                l: 'Componente azionaria', v: fmtEuro(valAzionario),
-                s: patrimonio > 0 ? `${fmtPct((valAzionario / patrimonio) * 100)} del patrimonio` : '', t: '',
-              },
-              {
-                l: 'Copertura look-through', v: valAzionario > 0 ? fmtPct(copertAzionario, 0) : '–', s: 'azionario con dati inseriti',
-                t: copertAzionario >= 99 ? 'text-green-800' : copertAzionario > 0 ? 'text-amber-700' : 'text-gray-400',
-              },
-            ].map(k => (
-              <div key={k.l} className="px-4 py-3">
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">{k.l}</p>
-                <p className={`num-display text-lg font-bold tabular-nums ${k.t || 'text-gray-900'}`}>{k.v}</p>
-                {k.s && <p className="text-[11px] text-gray-400 font-mono tabular-nums">{k.s}</p>}
+          {/* KPI */}
+          {(() => {
+            const pill = (txt: string, cls: string) => <span className={`inline-flex rounded-full text-[11px] font-semibold px-2 py-0.5 ${cls}`}>{txt}</span>
+            return (
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-start">
+                <KpiCard variant="compact" label="Patrimonio finanziario" color="#6b7280" delta={null} value={fmtEuro(patrimonio)}
+                  badge={pill('portafoglio + liquidità', 'bg-surface-100 text-gray-600')} />
+                <KpiCard variant="compact" label="Portafoglio titoli" color="#4a6fa1"
+                  tone={plusTot >= 0 ? 'positive' : 'negative'} delta={null} value={fmtEuro(totPortafoglio)}
+                  badge={totInvestito > 0
+                    ? pill(`${fmtPctSegno((plusTot / totInvestito) * 100)} su ${fmtEuro(totInvestito)}`, plusTot >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600')
+                    : undefined} />
+                <KpiCard variant="compact" label="Componente azionaria" color="#3f6b4f" delta={null} value={fmtEuro(valAzionario)}
+                  badge={patrimonio > 0 ? pill(`${fmtPct((valAzionario / patrimonio) * 100)} del patrimonio`, 'bg-green-50 text-green-700') : undefined} />
+                <KpiCard variant="compact" label="Copertura look-through"
+                  color={copertAzionario >= 99 ? '#3f6b4f' : copertAzionario > 0 ? '#d97706' : '#9ca3af'}
+                  tone={copertAzionario >= 99 ? 'positive' : copertAzionario > 0 ? 'warning' : 'neutral'} delta={null}
+                  value={valAzionario > 0 ? fmtPct(copertAzionario, 0) : '–'}
+                  badge={pill('azionario con dati inseriti', 'bg-surface-100 text-gray-600')} />
               </div>
-            ))}
-          </div>
+            )
+          })()}
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
             {/* ===== Colonna principale: strumenti + società ===== */}
             <div className="xl:col-span-2 space-y-4 min-w-0">
               <div className="card !p-0 overflow-hidden">
-                <p className="text-[13px] font-semibold text-gray-800 px-4 pt-3 pb-1.5">Allocazione per strumento</p>
-                <div className="overflow-x-auto">
+                <p className="num-display text-sm font-semibold text-gray-900 px-4 pt-4 pb-3">Allocazione per strumento</p>
+                <div className="overflow-x-auto border-t border-surface-100">
                   <table className="w-full min-w-[600px]">
                     <thead>
                       <tr>
-                        <th className="table-th">Strumento</th>
-                        <th className="table-th text-right">Qtà · PMC</th>
-                        <th className="table-th text-right">Valore</th>
-                        <th className="table-th text-right">+/–</th>
-                        <th className="table-th text-right">% patr. · azion.</th>
-                        <th className="table-th text-center">Dati</th>
+                        <th className={`${TH}`}>Strumento</th>
+                        <th className={`${TH} text-right`}>Qtà · PMC</th>
+                        <th className={`${TH} text-right`}>Valore</th>
+                        <th className={`${TH} text-right`}>+/–</th>
+                        <th className={`${TH} text-right`}>% patr. · azion.</th>
+                        <th className={`${TH} text-center`}>Dati</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -360,8 +358,8 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
               </div>
 
               <div className="card !p-0 overflow-hidden">
-                <div className="px-4 pt-3 pb-1.5">
-                  <p className="text-[13px] font-semibold text-gray-800">Esposizione effettiva alle società</p>
+                <div className="px-4 pt-4 pb-3">
+                  <p className="num-display text-sm font-semibold text-gray-900">Esposizione effettiva alle società</p>
                   <p className="text-[11px] text-gray-400">
                     Dettagliato {fmtEuro(lt.euroSocietaDettagliate)}
                     {valAzionario > 0 && <> ({fmtPct((lt.euroSocietaDettagliate / valAzionario) * 100)} dell&apos;azionario)</>}; il resto è non dettagliato.
@@ -372,15 +370,15 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                   <p className="text-[13px] text-gray-400 px-4 pb-4">Inserisci la composizione di almeno un ETF azionario per vedere l&apos;esposizione.</p>
                 ) : (
                   <>
-                    <div className={`overflow-x-auto ${socEspanse ? 'max-h-[26rem] overflow-y-auto' : ''}`}>
+                    <div className={`overflow-x-auto border-t border-surface-100 ${socEspanse ? 'max-h-[26rem] overflow-y-auto' : ''}`}>
                       <table className="w-full min-w-[520px]">
                         <thead className={socEspanse ? 'sticky top-0 bg-white z-10' : ''}>
                           <tr>
-                            <th className="table-th">Società</th>
-                            <th className="table-th text-right">Esposizione</th>
-                            <th className="table-th text-right">% patr.</th>
-                            <th className="table-th text-right">% azion.</th>
-                            <th className="table-th w-32">Per ETF</th>
+                            <th className={`${TH}`}>Società</th>
+                            <th className={`${TH} text-right`}>Esposizione</th>
+                            <th className={`${TH} text-right`}>% patr.</th>
+                            <th className={`${TH} text-right`}>% azion.</th>
+                            <th className={`${TH} w-32`}>Per ETF</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -429,7 +427,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
             {/* ===== Colonna laterale: torta + settori/paesi ===== */}
             <div className="space-y-4 min-w-0">
               <div className="card !p-4">
-                <p className="text-[13px] font-semibold text-gray-800 mb-1">Allocazione per asset class</p>
+                <p className="num-display text-sm font-semibold text-gray-900 mb-1">Allocazione per asset class</p>
                 <AllocazioneDonut fette={fetteClasse} centro={fmtEuro(patrimonio)} sub="patrimonio" altezza={160} />
                 <div className="mt-2 space-y-1">
                   {fetteClasse.map(f => (
@@ -445,15 +443,11 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
 
               <div className="card !p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-[13px] font-semibold text-gray-800">Esposizione per {vistaEsp === 'settori' ? 'settore' : 'paese'}</p>
-                  <div className="inline-flex rounded-lg border border-surface-200 p-0.5 text-[13px]">
-                    {(['settori', 'paesi'] as const).map(v => (
-                      <button
-                        key={v} onClick={() => setVistaEsp(v)}
-                        className={`px-2.5 py-1 rounded-md capitalize ${vistaEsp === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}
-                      >{v}</button>
-                    ))}
-                  </div>
+                  <p className="num-display text-sm font-semibold text-gray-900">Esposizione per {vistaEsp === 'settori' ? 'settore' : 'paese'}</p>
+                  <SegmentedControl
+                    ariaLabel="Settori o paesi" value={vistaEsp} onChange={setVistaEsp}
+                    options={[{ value: 'settori', label: 'Settori' }, { value: 'paesi', label: 'Paesi' }]}
+                  />
                 </div>
                 <p className="text-[11px] text-gray-400 mb-2">% sulla componente azionaria complessiva</p>
                 {(() => {

@@ -13,11 +13,15 @@ type Supabase = ReturnType<typeof createClient>
 // Stesso filtro legacy della pagina Patrimonio (asset taggati come fondo pensione nel vecchio approccio)
 const CATEGORIA_FONDO_PENSIONE_LEGACY = 'Fondo Pensione'
 const PAGINA = 1000
-const COLONNE_STORICO = 'anno, fonte, patrimonio_totale, fondo_pensione, capitale_investito, liquidita, entrate, uscite'
+const COLONNE_STORICO_BASE = 'anno, fonte, patrimonio_totale, fondo_pensione, capitale_investito, liquidita, entrate, uscite'
+// plus_minus richiede la migrazione add_plus_minus_storico_annuale.sql: se manca si ripiega sulle colonne base
+const COLONNE_STORICO = `${COLONNE_STORICO_BASE}, plus_minus`
 
 export type MovimentoLight = Pick<Movimento, 'anno' | 'mese' | 'categoria' | 'entrate' | 'uscite' | 'portafoglio_id'>
 type LiquiditaLight = Pick<Liquidita, 'anno' | 'mese' | 'saldo'>
-type FondoLight = Pick<FondoPensione, 'anno' | 'mese' | 'saldo'>
+type FondoLight = Pick<FondoPensione, 'anno' | 'mese' | 'saldo'> & { interessi?: number }
+/** Riga di portafoglio_storico (snapshot "Registra chiusura mese"). */
+export type SnapshotLight = { anno: number; mese: string; plus_minus: number | null }
 
 /** Riga di storico_annuale: totali inseriti a mano per anni senza dati dettagliati. */
 export interface StoricoManuale {
@@ -29,6 +33,7 @@ export interface StoricoManuale {
   liquidita: number
   entrate: number
   uscite: number
+  plus_minus: number | null
 }
 
 export type Colonna = 'patrimonio' | 'fondo' | 'capitale' | 'liquidita' | 'entrate' | 'uscite'
@@ -41,6 +46,7 @@ export interface RigaAnnuale {
   fonte: 'manuale' | 'salvato' | null // come è finita in archivio
   inArchivio: boolean // esiste una riga in storico_annuale per quest'anno (anche se si mostra il calcolato)
   valori: Record<Colonna, number>
+  plusMinus: number | null // plus/minus a fine anno: investimenti (snapshot) + interessi fondo; null se senza snapshot
   variazioni: Record<Colonna, number | null> // % vs anno precedente
 }
 
@@ -79,7 +85,8 @@ export function costruisciRighe(
   movimenti: MovimentoLight[],
   assetInvestiti: AssetPortafoglio[],
   manuali: StoricoManuale[],
-  annoCorrente: number
+  annoCorrente: number,
+  snapshot: SnapshotLight[] = []
 ): RigaAnnuale[] {
   // Anni con dati dettagliati. Per gli anni passati (< annoCorrente) vince sempre storico_annuale;
   // l'anno in corso resta calcolato (la riga manuale vale solo se non ci sono dati dettagliati).
@@ -141,6 +148,19 @@ export function costruisciRighe(
       .reduce((s, m) => s + (m[campo] ?? 0), 0)
   }
 
+  // Plus/minus a fine anno = somma plus_minus degli snapshot dell'ultimo mese registrato
+  // + interessi del fondo pensione di quel mese (stessa logica del KPI Plus/minus).
+  function plusMinusAnno(anno: number, fineMeseIdx: number): number | null {
+    const dellAnno = snapshot.filter(r => r.anno === anno && idxMese(r.mese) >= 0 && idxMese(r.mese) <= fineMeseIdx)
+    if (dellAnno.length === 0) return null
+    const ultimo = Math.max(...dellAnno.map(r => idxMese(r.mese)))
+    const invest = dellAnno.filter(r => idxMese(r.mese) === ultimo).reduce((s, r) => s + (r.plus_minus ?? 0), 0)
+    const interessi = fondo
+      .filter(f => f.anno === anno && idxMese(f.mese) === ultimo)
+      .reduce((s, f) => s + (f.interessi ?? 0), 0)
+    return invest + interessi
+  }
+
   const righe: RigaAnnuale[] = []
   for (const anno of anni) {
     const inArch = manuali.find(m => m.anno === anno)
@@ -190,6 +210,7 @@ export function costruisciRighe(
       manuale: !!man,
       fonte: man ? man.fonte : null,
       inArchivio: !!inArch,
+      plusMinus: man ? man.plus_minus : plusMinusAnno(anno, ultimoIdx),
       valori,
       variazioni: {
         patrimonio: varPct(valori.patrimonio, prec ? prec.valori.patrimonio : null),
@@ -215,7 +236,15 @@ function rigaStorico(r: Record<string, unknown>): StoricoManuale {
     liquidita: Number(r.liquidita) || 0,
     entrate: Number(r.entrate) || 0,
     uscite: Number(r.uscite) || 0,
+    plus_minus: r.plus_minus == null ? null : Number(r.plus_minus),
   }
+}
+
+async function leggiStorico(supabase: Supabase, userId: string) {
+  const r = await supabase.from('storico_annuale').select(COLONNE_STORICO).eq('user_id', userId)
+  if (!r.error) return r
+  // Colonna plus_minus non ancora migrata: riprova senza
+  return supabase.from('storico_annuale').select(COLONNE_STORICO_BASE).eq('user_id', userId)
 }
 
 /** Carica tutti i dati e costruisce le righe. Con ignoraStorico si ottiene il solo calcolato. */
@@ -224,18 +253,22 @@ export async function caricaRigheAnnuali(
   userId: string,
   opzioni: { ignoraStorico?: boolean } = {}
 ): Promise<RigaAnnuale[]> {
-  const [liquidita, fondo, movimenti, portRes, storRes] = await Promise.all([
+  const [liquidita, fondo, movimenti, portRes, storRes, snapshot] = await Promise.all([
     fetchTutte<LiquiditaLight>((da, a) =>
       supabase.from('liquidita').select('anno, mese, saldo').eq('user_id', userId).range(da, a)),
     fetchTutte<FondoLight>((da, a) =>
-      supabase.from('fondo_pensione').select('anno, mese, saldo').eq('user_id', userId).range(da, a)),
+      supabase.from('fondo_pensione').select('anno, mese, saldo, interessi').eq('user_id', userId).range(da, a)),
     fetchTutte<MovimentoLight>((da, a) =>
       supabase.from('movimenti').select('anno, mese, categoria, entrate, uscite, portafoglio_id')
         .eq('user_id', userId).range(da, a)),
     supabase.from('portafoglio').select('*').eq('user_id', userId),
     opzioni.ignoraStorico
       ? Promise.resolve({ data: [] as Record<string, unknown>[], error: null })
-      : supabase.from('storico_annuale').select(COLONNE_STORICO).eq('user_id', userId),
+      : leggiStorico(supabase, userId),
+    // Snapshot per il plus/minus: se la lettura fallisce la colonna resta N/D
+    fetchTutte<SnapshotLight>((da, a) =>
+      supabase.from('portafoglio_storico').select('anno, mese, plus_minus').eq('user_id', userId).range(da, a))
+      .catch(() => [] as SnapshotLight[]),
   ])
   if (portRes.error) throw new Error(portRes.error.message)
 
@@ -245,7 +278,7 @@ export async function caricaRigheAnnuali(
   // Se la tabella non esiste o la query fallisce, la vista resta quella calcolata
   const manuali = storRes.error ? [] : ((storRes.data ?? []) as unknown as Record<string, unknown>[]).map(rigaStorico)
 
-  return costruisciRighe(liquidita, fondo, movimenti, assetInvestiti, manuali, new Date().getFullYear())
+  return costruisciRighe(liquidita, fondo, movimenti, assetInvestiti, manuali, new Date().getFullYear(), snapshot)
 }
 
 /** Congela in storico_annuale i totali calcolati di un anno (sovrascrive la riga esistente). */
@@ -253,7 +286,7 @@ export async function congelaAnno(supabase: Supabase, userId: string, anno: numb
   const righe = await caricaRigheAnnuali(supabase, userId, { ignoraStorico: true })
   const r = righe.find(x => x.anno === anno)
   if (!r) throw new Error(`Nessun dato del ${anno} da salvare.`)
-  const { error } = await supabase.from('storico_annuale').upsert({
+  const base = {
     user_id: userId,
     anno,
     fonte: 'salvato',
@@ -263,7 +296,11 @@ export async function congelaAnno(supabase: Supabase, userId: string, anno: numb
     liquidita: r.valori.liquidita,
     entrate: r.valori.entrate,
     uscite: r.valori.uscite,
-  }, { onConflict: 'user_id,anno' })
+  }
+  let { error } = await supabase.from('storico_annuale')
+    .upsert({ ...base, plus_minus: r.plusMinus }, { onConflict: 'user_id,anno' })
+  // Colonna plus_minus non ancora migrata: salva comunque i totali
+  if (error) ({ error } = await supabase.from('storico_annuale').upsert(base, { onConflict: 'user_id,anno' }))
   if (error) throw new Error(error.message)
 }
 

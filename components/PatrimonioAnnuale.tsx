@@ -18,14 +18,27 @@ function fmtEuro(n: number) {
   return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 }
 
-const COLONNE: { chiave: Colonna; titolo: string; corto: string; invertiColore?: boolean; evidenzia?: boolean }[] = [
+const COLONNE: { chiave: Colonna | 'plusminus'; titolo: string; corto: string; invertiColore?: boolean; evidenzia?: boolean }[] = [
   { chiave: 'patrimonio', titolo: 'Patrimonio totale', corto: 'Patrimonio', evidenzia: true },
   { chiave: 'fondo', titolo: 'Fondo pensione', corto: 'Fondo' },
   { chiave: 'capitale', titolo: 'Capitale investito', corto: 'Capitale' },
+  { chiave: 'plusminus', titolo: 'Plus/minus a fine anno (investimenti + interessi fondo pensione)', corto: 'Plus/minus' },
   { chiave: 'liquidita', titolo: 'Liquidità', corto: 'Liquidità' },
   { chiave: 'entrate', titolo: 'Entrate', corto: 'Entrate' },
   { chiave: 'uscite', titolo: 'Uscite', corto: 'Uscite', invertiColore: true },
 ]
+
+// Plus/minus: valore a fine anno, verde se positivo, rosso se negativo (nessuna variazione %)
+function CellaPlusMinus({ valore }: { valore: number | null }) {
+  const tono = valore == null ? 'text-gray-300' : valore >= 0 ? 'text-green-700' : 'text-red-700'
+  return (
+    <td className="px-1.5 py-2 text-right align-top border-b border-surface-200/50">
+      <p className={`font-mono tabular-nums whitespace-nowrap font-medium ${tono}`}>
+        {valore == null ? '–' : `${valore >= 0 ? '+' : ''}${fmtEuro(valore)}`}
+      </p>
+    </td>
+  )
+}
 
 function Cella({
   valore, variazione, invertiColore, evidenzia,
@@ -155,7 +168,9 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
                     </button>
                   )}
                 </td>
-                {COLONNE.map(c => (
+                {COLONNE.map(c => c.chiave === 'plusminus' ? (
+                  <CellaPlusMinus key={c.chiave} valore={r.plusMinus} />
+                ) : (
                   <Cella
                     key={c.chiave}
                     valore={r.valori[c.chiave]}
@@ -173,7 +188,7 @@ export default function PatrimonioAnnuale({ embedded = false }: { embedded?: boo
       {!embedded && (
         <div className="mt-3">
           <InfoBox title="Come leggere la vista annuale">
-            <p>Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, ultimo mese con dati). Entrate e uscite sono i totali dell&apos;anno; per l&apos;anno in corso la variazione % è sullo stesso periodo dell&apos;anno prima.</p>
+            <p>Patrimonio, fondo, capitale e liquidità sono valori di fine anno (per l&apos;anno in corso, ultimo mese con dati). Il plus/minus è quello dell&apos;ultima chiusura mese registrata nell&apos;anno più gli interessi del fondo; senza chiusura registrata resta “–”. Entrate e uscite sono i totali dell&apos;anno; per l&apos;anno in corso la variazione % è sullo stesso periodo dell&apos;anno prima.</p>
             <p>Con &ldquo;Salva anno&rdquo; i totali di un anno vengono congelati (badge &ldquo;salvato&rdquo;). Le righe &ldquo;manuali&rdquo; sono totali inseriti a mano per anni senza dati dettagliati.</p>
           </InfoBox>
         </div>

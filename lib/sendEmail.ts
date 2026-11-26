@@ -92,8 +92,8 @@ function dettaglioGlobaleHtml(d: DettaglioAlert): string {
   if (d.holdings) {
     const li = (v: { nome: string; pct: number }[]) => v.map(x => `${x.nome} ${x.pct.toFixed(1)}%`).join(' · ')
     blocchi.push(`<div style="font-weight:600;margin-top:12px;">Top 3 holding (sul valore azionario)</div>
-      <div style="font-size:12px;"><span style="color:#888;">Prima:</span> ${li(d.holdings.prima)}</div>
-      <div style="font-size:12px;"><span style="color:#888;">Dopo:</span> <strong>${li(d.holdings.dopo)}</strong></div>
+      <div style="font-size:12px;"><span style="color:#888;">Prima:</span> ${li(d.holdings.prima.slice(0, 3))}</div>
+      <div style="font-size:12px;"><span style="color:#888;">Dopo:</span> <strong>${li(d.holdings.dopo.slice(0, 3))}</strong></div>
       <div style="font-size:11px;color:#aaa;">Copertura dati composizione: ${d.holdings.coperturaPct.toFixed(0)}% del valore azionario.</div>`)
   }
   if (d.budget) {

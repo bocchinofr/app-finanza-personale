@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import KpiCard from '@/components/ui/KpiCard'
 import { avvisoImportoTesto, type DettaglioAlert, type DettaglioAsset, type Alloc } from '@/lib/alertDettaglio'
 
@@ -36,13 +37,24 @@ function Margine({ v }: { v: number }) {
   return v >= 0 ? <>−{nf(v)}%</> : <span className="text-red-600">in perdita</span>
 }
 
-/* ───────── Avvisi da leggere prima di investire ───────── */
+/* ───────── Avvisi da leggere prima di investire (chiudibili) ───────── */
 function Avvisi({ asset }: { asset: DettaglioAsset[] }) {
+  const [aperto, setAperto] = useState(true)
   const righe = asset.filter(a => a.avviso && a.importo != null).map(a => ({ a, t: avvisoImportoTesto(a.avviso!) }))
   if (righe.length === 0) return null
   const forte = righe.some(r => r.t.forte)
+  if (!aperto) {
+    return (
+      <button type="button" onClick={() => setAperto(true)}
+        className={`self-start rounded-full px-3 py-1 text-xs font-medium ${forte ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}>
+        ⚠ Mostra avvisi ({righe.length})
+      </button>
+    )
+  }
   return (
-    <div role="alert" className={`rounded-xl border p-4 ${forte ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+    <div role="alert" className={`relative rounded-xl border p-4 pr-10 ${forte ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+      <button type="button" onClick={() => setAperto(false)} aria-label="Chiudi avvisi"
+        className={`absolute right-2.5 top-2.5 h-6 w-6 rounded-full text-sm leading-none ${forte ? 'text-red-700 hover:bg-red-100' : 'text-amber-700 hover:bg-amber-100'}`}>✕</button>
       <p className={`text-sm font-semibold ${forte ? 'text-red-800' : 'text-amber-800'}`}>
         ⚠ {righe.length === 1 ? 'Un accumulo da verificare' : `${righe.length} accumuli da verificare`} prima di investire
       </p>
@@ -153,15 +165,26 @@ function CardAllocazione({ d }: { d: DettaglioAlert }) {
   )
 }
 
-/* ───────── Top 3 holding ───────── */
+/* ───────── Top holding (3, estendibile a 10) ───────── */
 function CardHolding({ d }: { d: DettaglioAlert }) {
   const h = d.holdings!
-  const max = Math.max(...h.prima.map(v => v.pct), ...h.dopo.map(v => v.pct), 1)
+  const [esteso, setEsteso] = useState(false)
+  const puoEstendere = h.dopo.length > 3
+  const righe = esteso ? h.dopo.slice(0, 10) : h.dopo.slice(0, 3)
+  const max = Math.max(...h.prima.map(v => v.pct), ...righe.map(v => v.pct), 1)
   return (
     <section className="card">
-      <Titolo sub="Peso sul valore azionario, guardando dentro gli ETF.">Top 3 holding</Titolo>
+      <div className="flex items-start justify-between gap-3">
+        <Titolo sub="Peso sul valore azionario, guardando dentro gli ETF.">{`Top ${righe.length} holding`}</Titolo>
+        {puoEstendere && (
+          <button type="button" onClick={() => setEsteso(v => !v)}
+            className="shrink-0 rounded-full border border-surface-200 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-surface-50">
+            {esteso ? 'Solo top 3' : `Mostra top ${Math.min(h.dopo.length, 10)}`}
+          </button>
+        )}
+      </div>
       <div className="space-y-3">
-        {h.dopo.map((v, i) => {
+        {righe.map((v, i) => {
           const prima = h.prima.find(x => x.nome === v.nome)?.pct ?? h.prima[i]?.pct ?? 0
           const delta = v.pct - prima
           return (
@@ -181,15 +204,16 @@ function CardHolding({ d }: { d: DettaglioAlert }) {
           )
         })}
       </div>
-      <p className={`${NOTA} mt-3`}>Copertura dati: {nf(h.coperturaPct, 0)}% del valore azionario.</p>
+      <p className={`${NOTA} mt-3`}>Copertura dati: {nf(h.coperturaPct, 0)}% del valore azionario.{!puoEstendere && ' Per vedere fino a 10 holding serve un alert generato dopo questo aggiornamento.'}</p>
     </section>
   )
 }
 
 /* ───────── Layout ─────────
-   1. KPI di sintesi (budget, importo, asset in accumulo, da verificare)
-   2. eventuali avvisi
-   3. tabella asset (2/3) | allocazione + top holding (1/3)              */
+   1. KPI di sintesi
+   2. fondi prelevati + avvisi (chiudibili)
+   3. allocazione | top holding
+   4. tabella parametri asset a tutta larghezza                          */
 export default function AlertDettaglioCard({ dettaglio }: { dettaglio: DettaglioAlert }) {
   const d = dettaglio
   const inAccumulo = d.asset.filter(a => a.accumulo)
@@ -201,14 +225,14 @@ export default function AlertDettaglioCard({ dettaglio }: { dettaglio: Dettaglio
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-start">
         {b && (
           <KpiCard variant="compact" label="Budget residuo" color="#4a6fa1" delta={null} value={eur(b.residuo)}
             badge={pill(`${nf(usatoPct, 0)}% della riserva impegnato`, 'bg-blue-50 text-blue-700')}
-            minis={[{ label: 'Riserva', value: eur(b.riserva) }, { label: 'Usati ora', value: eur(b.usato) }]} />
+            minis={[{ label: 'Riserva', value: eur(b.riserva) }]} />
         )}
         <KpiCard variant="compact" label="Da investire ora" color="#3f6b4f" tone="positive" delta={null} value={eur(totImporto)}
-          badge={pill(`${inAccumulo.length} ${inAccumulo.length === 1 ? 'asset' : 'asset'} in accumulo`, 'bg-green-50 text-green-700')} />
+          badge={pill(`${inAccumulo.length} asset in accumulo`, 'bg-green-50 text-green-700')} />
         <KpiCard variant="compact" label="Asset analizzati" color="#6b7280" delta={null} value={String(d.asset.length)}
           badge={pill(`${d.asset.length - inAccumulo.length} senza accumulo`, 'bg-surface-100 text-gray-600')} />
         <KpiCard variant="compact" label="Da verificare" color={daVerificare > 0 ? '#d97706' : '#9ca3af'}
@@ -217,20 +241,29 @@ export default function AlertDettaglioCard({ dettaglio }: { dettaglio: Dettaglio
       </div>
 
       {d.finanziamento && (
-        <p className={NOTA}>
-          Fondi prelevati in proporzione dalla riserva: {eur(d.finanziamento.daLiquidita)} da liquidità, {eur(d.finanziamento.daAssetSvincolati)} da asset svincolati.
-        </p>
+        <div className="rounded-xl bg-surface-50 ring-1 ring-surface-200 px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1.5">
+          <p className="text-sm font-semibold text-gray-800">Fondi prelevati dalla riserva <span className="font-normal text-gray-400">· in proporzione</span></p>
+          <p className="text-sm text-gray-700 flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-brand-600" />
+            <span className="font-bold tabular-nums text-gray-900">{eur(d.finanziamento.daLiquidita)}</span> da liquidità
+          </p>
+          <p className="text-sm text-gray-700 flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-accent2-500" />
+            <span className="font-bold tabular-nums text-gray-900">{eur(d.finanziamento.daAssetSvincolati)}</span> da asset svincolati
+          </p>
+        </div>
       )}
 
-      <Avvisi asset={d.asset} />
+      <Avvisi key={d.generatoAt} asset={d.asset} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-        <div className="xl:col-span-2"><TabellaAsset asset={d.asset} /></div>
-        <div className="flex flex-col gap-4">
+      {(d.allocazione || d.holdings) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {d.allocazione && <CardAllocazione d={d} />}
-          {d.holdings && <CardHolding d={d} />}
+          {d.holdings && <CardHolding key={d.generatoAt} d={d} />}
         </div>
-      </div>
+      )}
+
+      <TabellaAsset asset={d.asset} />
     </div>
   )
 }

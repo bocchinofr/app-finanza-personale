@@ -660,6 +660,7 @@ export default function DashboardPage() {
 
   // Filters
   const [expandedAssetRow, setExpandedAssetRow] = useState<number | null>(null)
+  const [storicoNomeEsteso, setStoricoNomeEsteso] = useState<string | null>(null)
   // Filtri multi-selezione: per ogni gruppo si può includere o escludere i valori scelti
   const [filtri, setFiltri] = useState<Record<FiltroKey, string[]>>({ mese: [], cat: [], conto: [] })
   const [escludi, setEscludi] = useState<Record<FiltroKey, boolean>>({ mese: false, cat: false, conto: false })
@@ -1679,16 +1680,18 @@ export default function DashboardPage() {
                   return (
                     <button key={v.key} type="button" aria-expanded={aperto}
                       onClick={() => setPannello(p => (p === v.key ? null : v.key))}
-                      className={`card flex items-center justify-between gap-3 px-4 py-3 text-left transition-all ${
-                        aperto ? 'ring-2 ring-brand-500 bg-brand-50/30' : 'hover:shadow-sm hover:border-brand-200'}`}>
+                      className={`flex items-center justify-between gap-3 rounded-2xl border-2 px-5 py-3.5 text-left transition-all active:scale-[0.99] ${
+                        aperto
+                          ? 'bg-accent2-600 border-accent2-600 text-white shadow-md'
+                          : 'bg-accent2-50 border-accent2-100 text-accent2-700 hover:bg-accent2-100 hover:shadow-sm'}`}>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="num-display text-sm font-semibold text-gray-900">{v.titolo}</span>
-                          {v.nuovo && <span className="rounded-full bg-red-50 text-red-700 text-[10px] font-semibold px-2 py-0.5">Nuovo</span>}
+                          <span className="num-display text-sm font-semibold">{v.titolo}</span>
+                          {v.nuovo && <span className="rounded-full bg-red-500 text-white text-[10px] font-semibold px-2 py-0.5">Nuovo</span>}
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">{v.sub}</p>
+                        <p className={`text-xs mt-0.5 truncate ${aperto ? 'text-white/80' : 'text-accent2-700/80'}`}>{v.sub}</p>
                       </div>
-                      <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-brand-700">
+                      <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${aperto ? 'bg-white/20 text-white' : 'bg-white text-accent2-700 shadow-sm'}`}>
                         {aperto ? 'Chiudi' : 'Apri'}
                         <span aria-hidden className={`transition-transform ${aperto ? 'rotate-180' : ''}`}>▾</span>
                       </span>
@@ -1749,7 +1752,7 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-3">
                     <p className="num-display text-sm font-semibold text-gray-900">Anagrafica portafoglio</p>
                     <InfoSoglieModal />
-                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
+                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-primary text-xs px-3 py-1.5">
                       {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
                     </button>
                     {Object.keys(prezziAttuali).length > 0 && (
@@ -1759,7 +1762,7 @@ export default function DashboardPage() {
                       const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
                       const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
                       return (
-                        <button onClick={() => setShowStorico(true)} className="relative btn-secondary text-xs px-2.5 py-1" title="Prezzi mensili e chiusura del mese">
+                        <button onClick={() => setShowStorico(true)} className="relative inline-flex items-center rounded-lg border border-accent2-100 bg-accent2-50 px-3 py-1.5 text-xs font-semibold text-accent2-700 hover:bg-accent2-100 transition-colors" title="Prezzi mensili e chiusura del mese">
                           Storico prezzi
                           {chiusuraMancante && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />}
                         </button>
@@ -2068,7 +2071,7 @@ export default function DashboardPage() {
                     <table className="min-w-full text-xs border-collapse">
                       <thead>
                         <tr>
-                          <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white">
+                          <th className="text-left px-3 py-2 text-gray-400 font-semibold uppercase tracking-wide sticky left-0 bg-white z-10">
                             Asset
                           </th>
                           {MESI.map(m => (
@@ -2085,8 +2088,21 @@ export default function DashboardPage() {
                           const rowVar = variazioniPerAsset.get(a.id) ?? {}
                           return (
                             <tr key={a.id}>
-                              <td className="px-3 py-1.5 text-gray-700 font-medium sticky left-0 bg-white whitespace-nowrap border-b border-surface-200/50">
-                                {a.nome || a.ticker}
+                              <td className="px-3 py-1.5 sticky left-0 z-10 bg-white align-top border-b border-surface-200/50">
+                                <div className={storicoNomeEsteso === a.id ? 'w-56' : 'w-36'}>
+                                  <p
+                                    className={`text-gray-700 font-medium cursor-pointer hover:text-brand-600 ${storicoNomeEsteso === a.id ? 'whitespace-normal break-words' : 'truncate'}`}
+                                    title={storicoNomeEsteso === a.id ? 'Clicca per ridurre' : (a.nome || a.ticker)}
+                                    onClick={() => setStoricoNomeEsteso(storicoNomeEsteso === a.id ? null : a.id!)}
+                                  >
+                                    {a.nome || a.ticker}
+                                  </p>
+                                  {(a.ticker || a.isin) && (
+                                    <p className="text-[10px] font-mono text-gray-400 truncate" title={[a.ticker, a.isin].filter(Boolean).join(' · ')}>
+                                      {[a.ticker, a.isin].filter(Boolean).join(' · ')}
+                                    </p>
+                                  )}
+                                </div>
                               </td>
                               {MESI.map(m => {
                                 const prezzo = prezzi[m]

@@ -81,7 +81,7 @@ function topHoldings(posizioni: PosizioneAlertInput[], composizioni: Composizion
   const valAz = etf.reduce((s, e) => s + e.valore, 0)
   const lt = calcolaLookthrough(etf, composizioni)
   return {
-    voci: lt.societa.slice(0, 3).map(s => ({ nome: s.nome, pct: pct(s.euro, valAz) })),
+    voci: lt.societa.slice(0, 10).map(s => ({ nome: s.nome, pct: pct(s.euro, valAz) })),
     copertura: pct(lt.valoreConDati, valAz),
   }
 }

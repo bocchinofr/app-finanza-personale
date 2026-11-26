@@ -219,91 +219,95 @@ export default function SimulatoreRiallocazione({
   }))
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="num-display text-sm font-semibold text-gray-900">Simulatore di riallocazione</h3>
         <SimulatoreInfoBox />
-        <span className="text-[11px] text-gray-400">Il portafoglio reale non cambia.</span>
+        <span className="text-[11px] text-gray-400">Simulatore di riallocazione · il portafoglio reale non cambia.</span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-start">
-        {/* ===== Colonna sinistra: operazioni (fissa durante lo scroll) ===== */}
-        <div className="card !p-3 space-y-2 lg:col-span-2 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button onClick={() => aggiungi('vendi')} className="btn-secondary !px-2.5 !py-1 text-[13px]">− Vendi</button>
-            <button onClick={() => aggiungi('acquista')} className="btn-secondary !px-2.5 !py-1 text-[13px]">+ Acquista</button>
-            <button onClick={onNuovo} className="btn-secondary !px-2.5 !py-1 text-[13px]">+ Nuovo</button>
-            {haOp && <button onClick={() => setOps([])} className="ml-auto text-[11px] text-gray-400 hover:text-rose-600">Azzera</button>}
-          </div>
-
-          {ops.length === 0 && (
-            <p className="text-[13px] text-gray-400 py-1">Aggiungi una vendita o un acquisto per vedere l&apos;effetto.</p>
-          )}
-
-          {ops.map(o => {
-            const d = dettPerId.get(o.id)
-            const elenco = o.tipo === 'vendi' ? strumenti.filter(s => s.qta > 0) : strumenti
-            const modi = o.tipo === 'vendi' ? MODI_VENDITA : MODI_ACQUISTO
-            return (
-              <div key={o.id} className={`rounded-lg border-l-2 border border-surface-200 bg-surface-50/60 p-2 ${o.tipo === 'vendi' ? '!border-l-rose-400' : '!border-l-emerald-500'}`}>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[11px] font-bold w-6 text-center ${o.tipo === 'vendi' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                    {o.tipo === 'vendi' ? 'V' : 'A'}
-                  </span>
-                  <select className="input !py-1 text-[13px] flex-1 min-w-0" value={o.strumentoId} onChange={e => aggiorna(o.id, { strumentoId: e.target.value })}>
-                    {elenco.map(s => <option key={s.id} value={s.id}>{s.nome}{s.nuovo ? ' (nuovo)' : ''}</option>)}
-                  </select>
-                  <button onClick={() => rimuovi(o.id)} className="text-gray-300 hover:text-rose-600 px-1 leading-none" aria-label="Rimuovi operazione">✕</button>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pl-[30px]">
-                  <select
-                    className="input !py-1 !w-auto text-[13px]" value={o.modo}
-                    onChange={e => aggiorna(o.id, { modo: e.target.value as ModoOperazione, valore: e.target.value === 'percentuale' ? 100 : 0 })}
-                  >
-                    {modi.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                  </select>
-                  {o.modo !== 'tutto' && (
-                    <input
-                      type="number" step="any" className="input !py-1 !w-20 text-[13px] font-mono"
-                      value={o.valore === 0 ? '' : o.valore} placeholder="0"
-                      onChange={e => aggiorna(o.id, { valore: Number(e.target.value) || 0 })}
-                    />
-                  )}
-                  {o.tipo === 'vendi' && (
-                    <label className="flex items-center gap-1 text-[11px] text-gray-400" title="Aliquota sulla plusvalenza">
-                      tasse %
-                      <input
-                        type="number" step="any" className="input !py-1 !w-14 text-[13px] font-mono" value={o.aliquota}
-                        onChange={e => aggiorna(o.id, { aliquota: Number(e.target.value) || 0 })}
-                      />
-                    </label>
-                  )}
-                  <label className="flex items-center gap-1 text-[11px] text-gray-400" title="Costi di transazione">
-                    costi €
-                    <input
-                      type="number" step="any" className="input !py-1 !w-14 text-[13px] font-mono" value={o.costi === 0 ? '' : o.costi} placeholder="0"
-                      onChange={e => aggiorna(o.id, { costi: Number(e.target.value) || 0 })}
-                    />
-                  </label>
-                </div>
-                {d && d.avvisi.length > 0 && (
-                  <p className="text-[11px] text-amber-700 mt-1 pl-[30px]">{d.avvisi.join(' · ')}</p>
-                )}
-              </div>
-            )
-          })}
-
-          <div className="flex items-center gap-2 pt-1 border-t border-surface-100 text-[11px] text-gray-500">
-            <span>Variazione liquidità €</span>
+      <div className="space-y-4">
+        {/* ===== Operazioni: barra azioni + box per operazione ===== */}
+        <div className="card !p-3 flex flex-wrap items-center gap-2">
+          <button onClick={() => aggiungi('vendi')} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[13px] font-semibold text-rose-700 hover:bg-rose-100 transition-colors">− Vendi</button>
+          <button onClick={() => aggiungi('acquista')} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[13px] font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors">+ Acquista</button>
+          <button onClick={onNuovo} className="btn-secondary !px-3 !py-1.5 text-[13px]">+ Nuovo strumento</button>
+          <label className="ml-auto flex items-center gap-2 text-[11px] text-gray-500" title="Versamento (+) o prelievo (−) di liquidità da includere nella simulazione">
+            Variazione liquidità €
             <input
-              type="number" step="any" className="input !py-1 !w-20 text-[13px] font-mono ml-auto"
+              type="number" step="any" className="input !py-1 !w-24 text-[13px] font-mono"
               value={liqExtra === 0 ? '' : liqExtra} placeholder="0"
               onChange={e => setLiqExtra(Number(e.target.value) || 0)}
             />
-          </div>
+          </label>
+          {haOp && <button onClick={() => setOps([])} className="text-[12px] font-medium text-gray-400 hover:text-rose-600">Azzera</button>}
+        </div>
 
-          {libreria.length > 0 && (
-            <div className="border-t border-surface-100 pt-1.5">
+        {ops.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-surface-200 px-4 py-6 text-center text-[13px] text-gray-400">
+            Aggiungi una vendita o un acquisto per vedere l&apos;effetto sul portafoglio.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {ops.map(o => {
+              const d = dettPerId.get(o.id)
+              const elenco = o.tipo === 'vendi' ? strumenti.filter(s => s.qta > 0) : strumenti
+              const modi = o.tipo === 'vendi' ? MODI_VENDITA : MODI_ACQUISTO
+              return (
+                <div key={o.id} className={`rounded-xl border border-surface-200 border-t-4 bg-white p-3 shadow-sm ${o.tipo === 'vendi' ? '!border-t-rose-400' : '!border-t-emerald-500'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${o.tipo === 'vendi' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                      {o.tipo === 'vendi' ? 'Vendita' : 'Acquisto'}
+                    </span>
+                    <select className="input !py-1 text-[13px] flex-1 min-w-0" value={o.strumentoId} onChange={e => aggiorna(o.id, { strumentoId: e.target.value })}>
+                      {elenco.map(s => <option key={s.id} value={s.id}>{s.nome}{s.nuovo ? ' (nuovo)' : ''}</option>)}
+                    </select>
+                    <button onClick={() => rimuovi(o.id)} className="text-gray-300 hover:text-rose-600 px-1 leading-none" aria-label="Rimuovi operazione">✕</button>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <label className="text-[11px] font-medium text-gray-500">Modalità
+                      <select
+                        className="input mt-1 !py-1 text-[13px]" value={o.modo}
+                        onChange={e => aggiorna(o.id, { modo: e.target.value as ModoOperazione, valore: e.target.value === 'percentuale' ? 100 : 0 })}
+                      >
+                        {modi.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </label>
+                    {o.modo !== 'tutto' && (
+                      <label className="text-[11px] font-medium text-gray-500">Valore
+                        <input
+                          type="number" step="any" className="input mt-1 !py-1 text-[13px] font-mono"
+                          value={o.valore === 0 ? '' : o.valore} placeholder="0"
+                          onChange={e => aggiorna(o.id, { valore: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                    )}
+                    {o.tipo === 'vendi' && (
+                      <label className="text-[11px] font-medium text-gray-500" title="Aliquota sulla plusvalenza">Tasse %
+                        <input
+                          type="number" step="any" className="input mt-1 !py-1 text-[13px] font-mono" value={o.aliquota}
+                          onChange={e => aggiorna(o.id, { aliquota: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                    )}
+                    <label className="text-[11px] font-medium text-gray-500" title="Costi di transazione">Costi €
+                      <input
+                        type="number" step="any" className="input mt-1 !py-1 text-[13px] font-mono" value={o.costi === 0 ? '' : o.costi} placeholder="0"
+                        onChange={e => aggiorna(o.id, { costi: Number(e.target.value) || 0 })}
+                      />
+                    </label>
+                  </div>
+                  {d && d.avvisi.length > 0 && (
+                    <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-700">{d.avvisi.join(' · ')}</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {libreria.length > 0 && (
+          <div className="card !p-3">
+            <div>
               <button onClick={() => setLibAperta(v => !v)} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800 w-full">
                 <span>{libAperta ? '▾' : '▸'}</span> Libreria strumenti nuovi ({libreria.length})
               </button>
@@ -329,11 +333,11 @@ export default function SimulatoreRiallocazione({
                 </div>
               )}
             </div>
-          )}
-        </div>
+            </div>
+        )}
 
         {/* ===== Colonna destra: risultati a schede ===== */}
-        <div className="lg:col-span-3 space-y-3 min-w-0">
+        <div className="space-y-4 min-w-0 panel-in">
           {sim.avvisi.map(a => (
             <div key={a} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[13px] text-amber-800">{a}</div>
           ))}

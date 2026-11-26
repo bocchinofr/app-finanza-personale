@@ -12,6 +12,7 @@ import {
 } from '@/lib/portfolioFormat'
 import KpiCard from '@/components/ui/KpiCard'
 import SegmentedControl from '@/components/ui/SegmentedControl'
+import Drawer from '@/components/ui/Drawer'
 import AnalisiPortafoglioInfoBox from './AnalisiPortafoglioInfoBox'
 import AllocazioneDonut from './AllocazioneDonut'
 import ComposizioneEditor from './ComposizioneEditor'
@@ -79,8 +80,8 @@ function BarreVoci({
 export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidita, prefill, onPrefillConsumed }: Props) {
   const supabase = createClient()
   const [vista, setVista] = useState<'situazione' | 'simulatore'>('situazione')
-  const [vistaEsp, setVistaEsp] = useState<'settori' | 'paesi'>('settori')
-  const [socEspanse, setSocEspanse] = useState(false)
+  const [vistaComp, setVistaComp] = useState<'classe' | 'settori' | 'paesi'>('classe')
+  const [societaPopup, setSocietaPopup] = useState(false)
   const [composizioni, setComposizioni] = useState<ComposizioneEtf[]>([])
   const [loading, setLoading] = useState(true)
   const [errore, setErrore] = useState('')
@@ -231,14 +232,11 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="num-display text-base font-semibold text-gray-900">Analisi portafoglio</h2>
-        <AnalisiPortafoglioInfoBox />
-        <div className="ml-auto">
-          <SegmentedControl
-            ariaLabel="Vista dell'analisi" value={vista} onChange={setVista}
-            options={[{ value: 'situazione', label: 'Situazione attuale' }, { value: 'simulatore', label: 'Simulatore' }]}
-          />
-        </div>
+        <SegmentedControl
+          ariaLabel="Vista dell'analisi" value={vista} onChange={setVista}
+          options={[{ value: 'situazione', label: 'Situazione attuale' }, { value: 'simulatore', label: 'Simulatore' }]}
+        />
+        {vista === 'situazione' && <AnalisiPortafoglioInfoBox />}
       </div>
 
       {errore && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-[13px] text-red-700">{errore}</div>}
@@ -285,15 +283,15 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
           })()}
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-            {/* ===== Colonna principale: strumenti + società ===== */}
-            <div className="xl:col-span-2 space-y-4 min-w-0">
+            {/* ===== Allocazione per strumento ===== */}
+            <div className="xl:col-span-2 min-w-0">
               <div className="card !p-0 overflow-hidden">
                 <p className="num-display text-sm font-semibold text-gray-900 px-4 pt-4 pb-3">Allocazione per strumento</p>
                 <div className="overflow-x-auto border-t border-surface-100">
-                  <table className="w-full min-w-[600px]">
+                  <table className="w-full min-w-[520px]">
                     <thead>
                       <tr>
-                        <th className={`${TH}`}>Strumento</th>
+                        <th className={`${TH} pl-4`}>Asset</th>
                         <th className={`${TH} text-right`}>Qtà · PMC</th>
                         <th className={`${TH} text-right`}>Valore</th>
                         <th className={`${TH} text-right`}>+/–</th>
@@ -309,16 +307,18 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                         const colore = r.asset.id ? coloreEtf.get(r.asset.id) : undefined
                         return (
                           <tr key={r.asset.id ?? r.asset.asset}>
-                            <td className="table-td !py-1.5">
-                              <div className="flex items-center gap-2">
+                            <td className="table-td !py-1.5 pl-4 w-[26%] max-w-0">
+                              <div className="flex items-center gap-2 min-w-0">
                                 <span
                                   className="w-3 h-3 rounded-sm shrink-0"
                                   style={{ backgroundColor: colore ?? 'transparent', border: colore ? 'none' : '1px dashed #c3c9b0' }}
                                   title={colore ? 'Colore usato nei grafici per ETF' : 'Non scomposto'}
                                 />
                                 <div className="min-w-0">
-                                  <p className="text-[13px] font-medium text-gray-900 truncate">{r.asset.nome || r.asset.asset}</p>
-                                  <p className="text-[11px] text-gray-400 font-mono">{r.asset.ticker || '–'} · {r.asset.isin || '–'}</p>
+                                  <p className="text-[13px] font-semibold text-gray-900 truncate" title={[r.asset.nome, r.asset.isin].filter(Boolean).join(' · ')}>
+                                    {r.asset.ticker || r.asset.nome || r.asset.asset}
+                                  </p>
+                                  {r.asset.ticker && <p className="text-[11px] text-gray-400 truncate" title={r.asset.isin || undefined}>{r.asset.nome || r.asset.asset}</p>}
                                 </div>
                               </div>
                             </td>
@@ -356,23 +356,102 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                   </table>
                 </div>
               </div>
+            </div>
+
+            {/* ===== Colonna laterale: composizione (3 viste) + società ===== */}
+            <div className="space-y-4 min-w-0">
+              <div className="card !p-4">
+                <SegmentedControl
+                  ariaLabel="Composizione del patrimonio" value={vistaComp} onChange={setVistaComp}
+                  options={[{ value: 'classe', label: 'Asset class' }, { value: 'settori', label: 'Settori' }, { value: 'paesi', label: 'Paesi' }]}
+                />
+                {vistaComp === 'classe' ? (
+                  <div className="mt-3">
+                    <p className="text-[11px] text-gray-400">Patrimonio per asset class</p>
+                    <AllocazioneDonut fette={fetteClasse} centro={fmtEuro(patrimonio)} sub="patrimonio" altezza={160} />
+                    <div className="mt-2 space-y-1">
+                      {fetteClasse.map(f => (
+                        <div key={f.nome} className="flex items-center gap-2 text-[13px]">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: f.colore }} />
+                          <span className="text-gray-600 flex-1">{f.nome}</span>
+                          <span className="font-mono tabular-nums text-gray-900">{fmtEuro(f.valore)}</span>
+                          <span className="font-mono tabular-nums text-gray-400 w-12 text-right">{patrimonio > 0 ? fmtPct((f.valore / patrimonio) * 100) : '–'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <p className="text-[11px] text-gray-400 mb-2">% sulla componente azionaria complessiva</p>
+                    {(() => {
+                      const nr = vistaComp === 'settori' ? lt.nonRiconosciuti.settori : lt.nonRiconosciuti.paesi
+                      return nr.length > 0 ? (
+                        <p className="text-[11px] text-amber-700 mb-2">
+                          Nomi non unificati (possibili voci doppie): {nr.join(', ')}. Correggili da <strong>Dati</strong>.
+                        </p>
+                      ) : null
+                    })()}
+                    <BarreVoci
+                      voci={vistaComp === 'settori' ? lt.settori : lt.paesi}
+                      baseAzionario={valAzionario}
+                      totaleDettagliato={vistaComp === 'settori' ? lt.euroSettoriDettagliati : lt.euroPaesiDettagliati}
+                    />
+                  </div>
+                )}
+              </div>
 
               <div className="card !p-0 overflow-hidden">
-                <div className="px-4 pt-4 pb-3">
-                  <p className="num-display text-sm font-semibold text-gray-900">Esposizione effettiva alle società</p>
-                  <p className="text-[11px] text-gray-400">
-                    Dettagliato {fmtEuro(lt.euroSocietaDettagliate)}
-                    {valAzionario > 0 && <> ({fmtPct((lt.euroSocietaDettagliate / valAzionario) * 100)} dell&apos;azionario)</>}; il resto è non dettagliato.
-                    {' '}I colori nella barra corrispondono agli ETF della tabella sopra.
-                  </p>
+                <div className="px-4 pt-4 pb-2 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="num-display text-sm font-semibold text-gray-900">Esposizione alle società</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Dettagliato {fmtEuro(lt.euroSocietaDettagliate)}
+                      {valAzionario > 0 && <> ({fmtPct((lt.euroSocietaDettagliate / valAzionario) * 100)} dell&apos;azionario)</>}
+                    </p>
+                  </div>
+                  {lt.societa.length > 0 && (
+                    <button type="button" onClick={() => setSocietaPopup(true)}
+                      className="shrink-0 rounded-lg border border-accent2-100 bg-accent2-50 px-2.5 py-1 text-[11px] font-semibold text-accent2-700 hover:bg-accent2-100 transition-colors">
+                      Vedi tutte ({lt.societa.length})
+                    </button>
+                  )}
                 </div>
                 {lt.societa.length === 0 ? (
-                  <p className="text-[13px] text-gray-400 px-4 pb-4">Inserisci la composizione di almeno un ETF azionario per vedere l&apos;esposizione.</p>
+                  <p className="text-[13px] text-gray-400 px-4 pb-4">Inserisci la composizione di almeno un ETF azionario per vedere l&apos;esposizione effettiva.</p>
                 ) : (
-                  <>
-                    <div className={`overflow-x-auto border-t border-surface-100 ${socEspanse ? 'max-h-[26rem] overflow-y-auto' : ''}`}>
+                  <ul className="divide-y divide-surface-100 border-t border-surface-100">
+                    {lt.societa.slice(0, 10).map((s, i) => (
+                      <li key={s.chiave} className="px-4 py-2">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-[13px] font-medium text-gray-900">
+                            <span className="text-gray-400 text-[11px] tabular-nums inline-block w-5">{i + 1}</span>{s.nome}
+                            {s.nEtf > 1 && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-accent2-50 text-accent2-700">{s.nEtf} ETF</span>}
+                          </span>
+                          <span className="shrink-0 text-[13px] font-mono tabular-nums font-medium text-gray-900">
+                            {fmtEuro(s.euro)}
+                            <span className="ml-1.5 text-[11px] font-normal text-gray-400">{valAzionario > 0 ? fmtPct((s.euro / valAzionario) * 100) : ''}</span>
+                          </span>
+                        </div>
+                        <div className="mt-1 ml-5 flex h-1.5 rounded-full overflow-hidden bg-surface-100">
+                          {s.contributi.map(c => (
+                            <div key={c.etfId} style={{ width: `${(c.euro / s.euro) * 100}%`, backgroundColor: coloreEtf.get(c.etfId) ?? '#9ca3af' }} title={`${c.etfNome}: ${fmtEuro(c.euro)}`} />
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Popup: elenco completo delle società */}
+          <Drawer open={societaPopup} onClose={() => setSocietaPopup(false)} variant="center" size="xl"
+            title="Esposizione effettiva alle società"
+            subtitle={`${lt.societa.length} società · i colori nelle barre corrispondono agli ETF della tabella Allocazione per strumento`}>
+            <div className="overflow-x-auto -mx-1">
                       <table className="w-full min-w-[520px]">
-                        <thead className={socEspanse ? 'sticky top-0 bg-white z-10' : ''}>
+                        <thead className="sticky top-0 z-10">
                           <tr>
                             <th className={`${TH}`}>Società</th>
                             <th className={`${TH} text-right`}>Esposizione</th>
@@ -382,7 +461,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                           </tr>
                         </thead>
                         <tbody>
-                          {(socEspanse ? lt.societa : lt.societa.slice(0, 10)).map((s, i) => (
+                          {lt.societa.map((s, i) => (
                             <tr key={s.chiave}>
                               <td className="table-td !py-1.5 text-[13px] font-medium text-gray-900">
                                 <span className="text-gray-400 mr-1.5 text-[11px] tabular-nums inline-block w-5">{i + 1}</span>{s.nome}
@@ -410,62 +489,8 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                           ))}
                         </tbody>
                       </table>
-                    </div>
-                    {lt.societa.length > 10 && (
-                      <button
-                        onClick={() => setSocEspanse(v => !v)}
-                        className="w-full text-[13px] text-brand-700 hover:bg-surface-50 border-t border-surface-100 py-2 transition-colors"
-                      >
-                        {socEspanse ? 'Mostra solo le prime 10' : `Mostra altre ${lt.societa.length - 10} società`}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
-
-            {/* ===== Colonna laterale: torta + settori/paesi ===== */}
-            <div className="space-y-4 min-w-0">
-              <div className="card !p-4">
-                <p className="num-display text-sm font-semibold text-gray-900 mb-1">Allocazione per asset class</p>
-                <AllocazioneDonut fette={fetteClasse} centro={fmtEuro(patrimonio)} sub="patrimonio" altezza={160} />
-                <div className="mt-2 space-y-1">
-                  {fetteClasse.map(f => (
-                    <div key={f.nome} className="flex items-center gap-2 text-[13px]">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: f.colore }} />
-                      <span className="text-gray-600 flex-1">{f.nome}</span>
-                      <span className="font-mono tabular-nums text-gray-900">{fmtEuro(f.valore)}</span>
-                      <span className="font-mono tabular-nums text-gray-400 w-12 text-right">{patrimonio > 0 ? fmtPct((f.valore / patrimonio) * 100) : '–'}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="card !p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="num-display text-sm font-semibold text-gray-900">Esposizione per {vistaEsp === 'settori' ? 'settore' : 'paese'}</p>
-                  <SegmentedControl
-                    ariaLabel="Settori o paesi" value={vistaEsp} onChange={setVistaEsp}
-                    options={[{ value: 'settori', label: 'Settori' }, { value: 'paesi', label: 'Paesi' }]}
-                  />
-                </div>
-                <p className="text-[11px] text-gray-400 mb-2">% sulla componente azionaria complessiva</p>
-                {(() => {
-                  const nr = vistaEsp === 'settori' ? lt.nonRiconosciuti.settori : lt.nonRiconosciuti.paesi
-                  return nr.length > 0 ? (
-                    <p className="text-[11px] text-amber-700 mb-2">
-                      Nomi non unificati (possibili voci doppie): {nr.join(', ')}. Correggili da <strong>Dati</strong>.
-                    </p>
-                  ) : null
-                })()}
-                <BarreVoci
-                  voci={vistaEsp === 'settori' ? lt.settori : lt.paesi}
-                  baseAzionario={valAzionario}
-                  totaleDettagliato={vistaEsp === 'settori' ? lt.euroSettoriDettagliati : lt.euroPaesiDettagliati}
-                />
-              </div>
-            </div>
-          </div>
+          </Drawer>
         </>
       )}
 

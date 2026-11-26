@@ -202,10 +202,10 @@ function PctCell({ value, className = '' }: { value: number | null | undefined; 
 
 // Variazione % del valore attuale rispetto allo stesso valore dell'anno precedente.
 // Neutra come le altre celle di sintesi: solo una freccia a indicare la direzione.
-function VarCell({ attuale, precedente, className = '' }: { attuale: number; precedente: number | undefined; className?: string }) {
+function VarCell({ attuale, precedente, className = '', anno }: { attuale: number; precedente: number | undefined; className?: string; anno?: number }) {
   const pct = precedente ? ((attuale - precedente) / Math.abs(precedente)) * 100 : null
   return (
-    <td className={`text-center p-0.5 ${className}`}>
+    <td className={`text-center p-0.5 ${className}`} title={precedente != null && anno ? `${anno - 1}: ${fmtK(precedente)}` : undefined}>
       {/* Colore testo di queste celle "secondarie": cambia qui text-gray-500 */}
       <div className={`py-0.5 text-[11px] font-mono tabular-nums ${pct == null ? 'text-gray-300' : 'text-gray-400'}`}>
         {pct == null ? '–' : `${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct).toFixed(0)}%`}
@@ -309,32 +309,38 @@ const CF_TONE = {
 }
 type PrecAgg = { media: number; totale: number } | undefined
 
-/** Intestazione condivisa da riepilogo e dettaglio; le colonne di confronto con l'anno precedente sono opzionali. */
-function CfHead({ prima, mesi, anno, confronto }: { prima: string; mesi: string[]; anno: number; confronto: boolean }) {
+/** Variazione in punti percentuali (righe % del riepilogo); il valore dell'anno prima è nel tooltip. */
+function PtCell({ attuale, precedente, anno, className = '' }: { attuale: number | null; precedente: number | null; anno: number; className?: string }) {
+  const d = attuale != null && precedente != null ? attuale - precedente : null
+  return (
+    <td className={`text-center p-0.5 ${className}`} title={precedente != null ? `${anno - 1}: ${precedente.toFixed(0)}%` : undefined}>
+      <div className={`py-0.5 text-[11px] font-mono tabular-nums ${d == null ? 'text-gray-300' : 'text-gray-400'}`}>
+        {d == null ? '–' : `${d >= 0 ? '↑' : '↓'} ${Math.abs(d).toFixed(0)} pt`}
+      </div>
+    </td>
+  )
+}
+
+/** Intestazione condivisa da riepilogo e dettaglio. */
+function CfHead({ prima, mesi }: { prima: string; mesi: string[] }) {
   return (
     <thead>
       <tr>
         <th className={`${CF_TH} sticky left-0 z-10 text-left px-3 min-w-[11rem]`}>{prima}</th>
-        {confronto && <>
-          <th className={`${CF_TH} min-w-[52px]`}><span className="block">Media</span><span className="block">{anno - 1}</span></th>
-          <th className={`${CF_TH} min-w-[52px] border-r border-surface-200`}><span className="block">Totale</span><span className="block">{anno - 1}</span></th>
-        </>}
         {mesi.map(m => <th key={m} className={`${CF_TH} min-w-[62px]`}>{MESI_LABEL[m]}</th>)}
         <th className={`${CF_TH} min-w-[84px] text-right px-3 !bg-surface-100 text-gray-600 border-l border-surface-200`}>Totale</th>
-        <th className={`${CF_TH} min-w-[52px]`}>Media</th>
-        {confronto && <>
-          <th className={`${CF_TH} min-w-[52px] border-l border-surface-200`}><span className="block">Var.</span><span className="block">media</span></th>
-          <th className={`${CF_TH} min-w-[52px]`}><span className="block">Var.</span><span className="block">totale</span></th>
-        </>}
+        <th className={`${CF_TH} min-w-[56px]`}>Media</th>
+        <th className={`${CF_TH} min-w-[56px] border-l border-surface-200`}><span className="block">Var.</span><span className="block">media</span></th>
+        <th className={`${CF_TH} min-w-[56px]`}><span className="block">Var.</span><span className="block">totale</span></th>
       </tr>
     </thead>
   )
 }
 
 /** Riga di totale (entrate / uscite / investimenti / risparmio) del riepilogo mensile. */
-function CfTotRow({ label, tone, prec, valori, totale, media, confronto }: {
+function CfTotRow({ label, tone, prec, valori, totale, media, anno }: {
   label: string; tone: 'green' | 'red' | 'blue' | 'risp'; prec: PrecAgg
-  valori: number[]; totale: number; media: number; confronto: boolean
+  valori: number[]; totale: number; media: number; anno: number
 }) {
   const t = tone === 'risp' ? (totale >= 0 ? CF_TONE.green : CF_TONE.red) : CF_TONE[tone]
   return (
@@ -344,10 +350,6 @@ function CfTotRow({ label, tone, prec, valori, totale, media, confronto }: {
           <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: t.dot }} />{label}
         </span>
       </td>
-      {confronto && <>
-        <MediaCell value={prec?.media} />
-        <MediaCell value={prec?.totale} className="border-r border-surface-200" />
-      </>}
       {valori.map((v, i) => (
         <td key={i} className={`px-1.5 py-2 text-center font-mono tabular-nums text-xs ${
           tone === 'risp' ? (v >= 0 ? 'text-green-800 font-semibold' : 'text-red-700 font-semibold') : `${t.text} font-medium`}`}>
@@ -359,26 +361,20 @@ function CfTotRow({ label, tone, prec, valori, totale, media, confronto }: {
         {fmtK(totale)}
       </td>
       <MediaCell value={media} />
-      {confronto && <>
-        <VarCell attuale={media} precedente={prec?.media} className="border-l border-surface-200" />
-        <VarCell attuale={totale} precedente={prec?.totale} />
-      </>}
+      <VarCell attuale={media} precedente={prec?.media} anno={anno} className="border-l border-surface-200" />
+      <VarCell attuale={totale} precedente={prec?.totale} anno={anno} />
     </tr>
   )
 }
 
 /** Riga percentuale (tasso di risparmio, quota investita). */
-function CfPctRow({ label, precMedia, precTot, valori, totale, media, confronto, colora }: {
+function CfPctRow({ label, precMedia, precTot, valori, totale, media, colora, anno }: {
   label: string; precMedia: number | null; precTot: number | null; valori: (number | null)[]
-  totale: number | null; media: number | null; confronto: boolean; colora: boolean
+  totale: number | null; media: number | null; colora: boolean; anno: number
 }) {
   return (
     <tr className="border-b border-surface-100 last:border-b-0">
       <td className="sticky left-0 z-10 bg-white px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{label}</td>
-      {confronto && <>
-        <PctCell value={precMedia} />
-        <PctCell value={precTot} className="border-r border-surface-200" />
-      </>}
       {valori.map((v, i) => (
         <td key={i} className={`px-1.5 py-2 text-center font-mono tabular-nums text-xs ${
           v == null ? 'text-gray-300' : colora ? (v >= 0 ? 'text-green-700' : 'text-red-700') : 'text-gray-600'}`}>
@@ -390,7 +386,8 @@ function CfPctRow({ label, precMedia, precTot, valori, totale, media, confronto,
         {totale == null ? '–' : `${totale.toFixed(0)}%`}
       </td>
       <PctCell value={media} />
-      {confronto && <><td className="border-l border-surface-200" /><td /></>}
+      <PtCell attuale={media} precedente={precMedia} anno={anno} className="border-l border-surface-200" />
+      <PtCell attuale={totale} precedente={precTot} anno={anno} />
     </tr>
   )
 }
@@ -409,26 +406,20 @@ function CfSezione({ label, color, colSpan }: { label: string; color: string; co
 }
 
 /** Riga di categoria con heatmap sui mesi. */
-function CfCatRow({ cat, vals, mesi, total, totaliColonna, nMesi, prec, palette, confronto }: {
+function CfCatRow({ cat, vals, mesi, total, totaliColonna, nMesi, prec, palette, anno }: {
   cat: string; vals: Record<string, number>; mesi: string[]; total: number; totaliColonna: number[]
-  nMesi: number; prec: PrecAgg; palette: 'green' | 'red' | 'blue'; confronto: boolean
+  nMesi: number; prec: PrecAgg; palette: 'green' | 'red' | 'blue'; anno: number
 }) {
   const rowValues = mesi.map(m => vals[m] ?? 0)
   const media = total / nMesi
   return (
     <tr className="group border-b border-surface-100 hover:bg-surface-50 transition-colors">
       <td className="sticky left-0 z-10 bg-white group-hover:bg-surface-50 transition-colors py-1 px-3 text-xs text-gray-600 whitespace-nowrap">{cat}</td>
-      {confronto && <>
-        <MediaCell value={prec?.media} />
-        <MediaCell value={prec?.totale} className="border-r border-surface-200" />
-      </>}
       {mesi.map(m => <HeatCell key={m} value={vals[m] ?? 0} values={rowValues} palette={palette} format={fmtK} />)}
       <HeatCell value={total} values={totaliColonna} palette={palette} format={fmtK} total />
       <MediaCell value={media} />
-      {confronto && <>
-        <VarCell attuale={media} precedente={prec?.media} className="border-l border-surface-200" />
-        <VarCell attuale={total} precedente={prec?.totale} />
-      </>}
+      <VarCell attuale={media} precedente={prec?.media} anno={anno} className="border-l border-surface-200" />
+      <VarCell attuale={total} precedente={prec?.totale} anno={anno} />
     </tr>
   )
 }
@@ -476,10 +467,7 @@ export default function DashboardPage() {
   const supabase = createClient()
   const [tab, setTab] = useState<'movimenti' | 'cashflow' | 'portafoglio' | 'analisi'>('movimenti')
   const [showHeatmap, setShowHeatmap] = useState(false)   // false = Riepilogo, true = Per categoria
-  const [mostraConfronto, setMostraConfronto] = useState(true)
   const [cfGrafico, setCfGrafico] = useState<'andamento' | 'spese' | 'distribuzione'>('andamento')
-  // Su schermi stretti le colonne di confronto con l'anno precedente partono nascoste (meno scroll orizzontale)
-  useEffect(() => { if (window.innerWidth < 1280) setMostraConfronto(false) }, [])
   const [movimenti, setMovimenti] = useState<Movimento[]>([])
   const [liquidita, setLiquidita] = useState<Liquidita[]>([])
   const [portafoglio, setPortafoglio] = useState<AssetPortafoglio[]>([])
@@ -515,7 +503,6 @@ export default function DashboardPage() {
   const [openSection, setOpenSection] = useState({
     riserva: false,
     storico: false,
-    anagrafica: false,
     alert: false,
   })
   // Pallino sul bottone "Dettaglio alert" finché l'ultimo alert con dettaglio non è stato aperto
@@ -549,13 +536,14 @@ export default function DashboardPage() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     if (q.get('tab') === 'portafoglio') setTab('portafoglio')
-    if (q.get('sezione') === 'alert') setOpenSection({ riserva: false, storico: false, anagrafica: false, alert: true })
+    if (q.get('sezione') === 'alert') setOpenSection({ riserva: false, storico: false, alert: true })
   }, [])
-  // Accordion: aprendo una sezione si chiudono le altre; ricliccando si richiude
+  const closeSections = () => setOpenSection({ riserva: false, storico: false, alert: false })
+  // Aprendo un pannello si chiudono gli altri; ricliccando il pulsante si richiude
   function toggleSection(key: keyof typeof openSection) {
     setOpenSection(prev => {
       const eraAperta = prev[key]
-      return { riserva: false, storico: false, anagrafica: false, alert: false, [key]: !eraAperta }
+      return { riserva: false, storico: false, alert: false, [key]: !eraAperta }
     })
   }
 
@@ -989,7 +977,7 @@ export default function DashboardPage() {
   const periodoCf = mesiPresenti.length > 1
     ? `${MESI_LABEL[mesiPresenti[0]]}–${MESI_LABEL[mesiPresenti[mesiPresenti.length - 1]]}`
     : mesiPresenti.length === 1 ? MESI_LABEL[mesiPresenti[0]] : '–'
-  const cfColSpan = mesiPresenti.length + 3 + (mostraConfronto ? 4 : 0)
+  const cfColSpan = mesiPresenti.length + 5
   // Mini dettaglio "variazione media mensile vs anno precedente" (goodUp = se l'aumento è positivo)
   const miniVar = (att: number, prec: number | undefined, goodUp: boolean): MiniDef[] => {
     if (!prec) return []
@@ -1332,15 +1320,10 @@ export default function DashboardPage() {
               <div>
                 <p className="num-display text-sm font-semibold text-gray-900">Cash flow mensile</p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {showHeatmap ? 'Per categoria · colore più intenso = voce più pesante rispetto alla sua media' : 'Totali e tasso di risparmio'}
+                  {showHeatmap ? 'Per categoria · colore più intenso = voce più pesante rispetto alla sua media' : 'Totali e tasso di risparmio'} · Var. = variazione rispetto al {anno - 1} (valore al passaggio del mouse)
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => setMostraConfronto(v => !v)} aria-pressed={mostraConfronto}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    mostraConfronto ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-white border-surface-200 text-gray-500 hover:bg-surface-50'}`}>
-                  Confronto {anno - 1}
-                </button>
                 <SegmentedControl
                   ariaLabel="Vista della tabella" value={showHeatmap ? 'categorie' : 'riepilogo'}
                   onChange={v => setShowHeatmap(v === 'categorie')}
@@ -1350,38 +1333,38 @@ export default function DashboardPage() {
             </div>
             <div className="overflow-x-auto border-t border-surface-100">
               <table className="w-full text-xs border-collapse">
-                <CfHead prima={showHeatmap ? 'Voce / categoria' : 'Voce'} mesi={mesiPresenti} anno={anno} confronto={mostraConfronto} />
+                <CfHead prima={showHeatmap ? 'Voce / categoria' : 'Voce'} mesi={mesiPresenti} />
                 <tbody>
                   {!showHeatmap ? (
                     <>
-                      <CfTotRow label="Totale entrate" tone="green" prec={storicoAnnoPrec['TOTALE_ENTRATE']} valori={cfTotIn} totale={ytdIn} media={mediaEntrateMensili} confronto={mostraConfronto} />
-                      <CfTotRow label="Totale uscite" tone="red" prec={storicoAnnoPrec['TOTALE_USCITE']} valori={cfTotOut} totale={ytdOut} media={mediaUsciteMensili} confronto={mostraConfronto} />
+                      <CfTotRow label="Totale entrate" tone="green" prec={storicoAnnoPrec['TOTALE_ENTRATE']} valori={cfTotIn} totale={ytdIn} media={mediaEntrateMensili} anno={anno} />
+                      <CfTotRow label="Totale uscite" tone="red" prec={storicoAnnoPrec['TOTALE_USCITE']} valori={cfTotOut} totale={ytdOut} media={mediaUsciteMensili} anno={anno} />
                       {invTotals.length > 0 && (
-                        <CfTotRow label="Totale investimenti" tone="blue" prec={storicoAnnoPrec['TOTALE_INVESTIMENTI']} valori={cfTotInv} totale={ytdInv} media={ytdInv / nMesi} confronto={mostraConfronto} />
+                        <CfTotRow label="Totale investimenti" tone="blue" prec={storicoAnnoPrec['TOTALE_INVESTIMENTI']} valori={cfTotInv} totale={ytdInv} media={ytdInv / nMesi} anno={anno} />
                       )}
-                      <CfTotRow label="Risparmio netto" tone="risp" prec={storicoAnnoPrec['RISPARMIO_NETTO']} valori={cfRisparmio} totale={ytdRisp} media={ytdRisp / nMesi} confronto={mostraConfronto} />
+                      <CfTotRow label="Risparmio netto" tone="risp" prec={storicoAnnoPrec['RISPARMIO_NETTO']} valori={cfRisparmio} totale={ytdRisp} media={ytdRisp / nMesi} anno={anno} />
                       <CfPctRow label="% risparmio del mese" precMedia={pctRisparmioPrecMedia} precTot={pctRisparmioPrecTotale}
-                        valori={pctRisparmioMensile} totale={savingRate} media={pctRisparmioMediaMensile} confronto={mostraConfronto} colora />
+                        valori={pctRisparmioMensile} totale={savingRate} media={pctRisparmioMediaMensile} anno={anno} colora />
                       <CfPctRow label="% risparmio investito" precMedia={pctInvestitoPrecMedia} precTot={pctInvestitoPrecTotale}
-                        valori={pctInvestitoMensile} totale={ytdRisp > 0 ? (ytdInv / ytdRisp) * 100 : null} media={pctInvestitoMediaMensile} confronto={mostraConfronto} colora={false} />
+                        valori={pctInvestitoMensile} totale={ytdRisp > 0 ? (ytdInv / ytdRisp) * 100 : null} media={pctInvestitoMediaMensile} anno={anno} colora={false} />
                     </>
                   ) : (
                     <>
                       <CfSezione label="Entrate" color="#3f6b4f" colSpan={cfColSpan} />
                       {entrateTotals.map(({ cat, total }) => (
                         <CfCatRow key={cat} cat={cat} vals={cfEntrate[cat]} mesi={mesiPresenti} total={total} totaliColonna={entrateTotals.map(e => e.total)}
-                          nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="green" confronto={mostraConfronto} />
+                          nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="green" anno={anno} />
                       ))}
                       <CfSezione label="Uscite" color="#c0504d" colSpan={cfColSpan} />
                       {usciteTotals.map(({ cat, total }) => (
                         <CfCatRow key={cat} cat={cat} vals={cfUscite[cat]} mesi={mesiPresenti} total={total} totaliColonna={usciteTotals.map(u => u.total)}
-                          nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="red" confronto={mostraConfronto} />
+                          nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="red" anno={anno} />
                       ))}
                       {invTotals.length > 0 && <>
                         <CfSezione label="Investimenti" color="#4a6fa1" colSpan={cfColSpan} />
                         {invTotals.map(({ cat, total }) => (
                           <CfCatRow key={cat} cat={cat} vals={cfInv[cat]} mesi={mesiPresenti} total={total} totaliColonna={invTotals.map(v => v.total)}
-                            nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="blue" confronto={mostraConfronto} />
+                            nMesi={nMesi} prec={storicoAnnoPrec[cat]} palette="blue" anno={anno} />
                         ))}
                       </>}
                     </>
@@ -1467,11 +1450,11 @@ export default function DashboardPage() {
 
       {/* ===== PORTAFOGLIO ===== */}
       {tab === 'portafoglio' && (
-        <>
+        <div className="flex flex-col gap-4">
           {movimentiDaRiconciliare > 0 && (
             <a
               href="/dashboard/riconciliazione"
-              className="mb-4 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
+              className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors"
             >
               <span className="text-sm text-amber-800">
                 <strong>{movimentiDaRiconciliare}</strong> movimento/i ETF da riconciliare con il portafoglio
@@ -1493,7 +1476,7 @@ export default function DashboardPage() {
                 const breaches = soglie.filter(s => s.in_breach)
                 if (breaches.length === 0 || bannerDismissed) return null
                 return (
-                  <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 relative">
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4 relative">
                     <button
                       onClick={() => setBannerDismissed(true)}
                       aria-label="Chiudi avviso"
@@ -1525,7 +1508,7 @@ export default function DashboardPage() {
                 const registrato = annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget)
                 if (registrato || bannerChiusuraDismissed) return null
                 return (
-                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 relative flex items-center justify-between gap-3 flex-wrap">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 relative flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setBannerChiusuraDismissed(true)}
                       aria-label="Chiudi avviso"
@@ -1546,48 +1529,323 @@ export default function DashboardPage() {
                 )
               })()}
 
-              {/* Sezioni apribili — card compatte con accento laterale (non pillole colorate,
-                  per non confondersi con i tab sopra o il menu laterale) */}
+              {/* Strumenti: pannelli laterali (Piano di accumulo, Storico prezzi, Alert) */}
               {(() => {
                 const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
                 const chiusuraMancante = !(annoTarget === anno && portafoglioStorico.some(r => r.mese === meseTarget))
-                const sectionBtns: { key: keyof typeof openSection; label: string; sub: string; icon: string; badge?: boolean }[] = [
-                  { key: 'alert', label: 'Dettaglio alert', sub: 'PMC, allocazione, budget', icon: '🔔', badge: alertNuovo },
-                  { key: 'riserva', label: 'Piano di accumulo', sub: 'Riserva, soglie, importi', icon: '🛡️' },
-                  { key: 'storico', label: 'Storico prezzi', sub: 'e chiusura mese', icon: '📈', badge: chiusuraMancante },
-                  { key: 'anagrafica', label: 'Anagrafica', sub: 'Asset e prezzi', icon: '📋' },
+                const sectionBtns: { key: keyof typeof openSection; label: string; badge?: boolean }[] = [
+                  { key: 'riserva', label: 'Piano di accumulo' },
+                  { key: 'storico', label: 'Storico prezzi', badge: chiusuraMancante },
+                  { key: 'alert', label: 'Dettaglio alert', badge: alertNuovo },
                 ]
                 return (
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6 lg:sticky lg:top-0 lg:z-20 lg:py-2 lg:-mx-2 lg:px-2 lg:bg-surface-50/90 lg:backdrop-blur">
+                  <div className="flex flex-wrap items-center gap-2">
                     {sectionBtns.map(b => (
-                      <button
-                        key={b.key}
-                        onClick={() => toggleSection(b.key)}
-                        className={`relative flex items-center gap-2.5 text-left px-3 py-2.5 rounded-lg bg-white border-l-4 shadow-sm transition-colors ${
-                          openSection[b.key]
-                            ? 'border-l-brand-600 ring-1 ring-brand-100'
-                            : 'border-l-surface-200 hover:border-l-brand-300'
-                        }`}
-                      >
-                        <span className="text-lg shrink-0">{b.icon}</span>
-                        <span className="min-w-0">
-                          <span className="block text-xs font-semibold text-gray-800 truncate">{b.label}</span>
-                          <span className="block text-[10px] text-gray-400 truncate">{b.sub}</span>
-                        </span>
-                        <span className={`ml-auto text-xs shrink-0 transition-transform ${openSection[b.key] ? 'text-brand-600 rotate-180' : 'text-gray-300'}`}>▾</span>
-                        {b.badge && !openSection[b.key] && (
-                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />
-                        )}
+                      <button key={b.key} type="button" onClick={() => toggleSection(b.key)}
+                        className="relative btn-secondary px-3 py-1.5 text-xs">
+                        {b.label}
+                        {b.badge && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />}
                       </button>
                     ))}
                   </div>
                 )
               })()}
 
-              {/* Pannello della sezione aperta: subito sopra i KPI */}
-              <div className="mb-6 empty:hidden panel-in" key={Object.entries(openSection).find(([, v]) => v)?.[0] ?? 'none'}>
-              {openSection.alert && <AlertDettaglioSezione />}
+              {/* KPI */}
+              {(() => {
+                const hasPrezzi = Object.keys(prezziAttuali).length > 0
+                const pctPlusMinus = valoreCaricoTotale > 0 ? (plusminus / valoreCaricoTotale) * 100 : 0
+                const pill = (txt: string, cls: string) => <span className={`inline-flex rounded-full text-[11px] font-semibold px-2 py-0.5 ${cls}`}>{txt}</span>
+                return (
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+                    <KpiCard variant="compact" label="Valore di carico" color="#4a6fa1" delta={null}
+                      value={fmtK(valoreCaricoTotale)} badge={pill(`${portafoglio.length} asset`, 'bg-blue-50 text-blue-700')} />
+                    <KpiCard variant="compact" label="Valore attuale" color="#3f6b4f" delta={null}
+                      value={hasPrezzi ? fmtK(valoreAttualeTotale) : '–'}
+                      badge={pill(hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% vs carico` : 'In attesa di quotazioni', 'bg-surface-100 text-gray-600')} />
+                    <KpiCard variant="compact" label="Plus/Minus latente"
+                      color={!hasPrezzi ? '#9ca3af' : plusminus >= 0 ? '#3f6b4f' : '#c0504d'}
+                      tone={!hasPrezzi ? 'neutral' : plusminus >= 0 ? 'positive' : 'negative'} delta={null}
+                      value={hasPrezzi ? fmtK(plusminus) : '–'}
+                      badge={pill(hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% sul capitale` : 'Nessuna quotazione',
+                        !hasPrezzi ? 'bg-surface-100 text-gray-600' : plusminus >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600')} />
+                    <KpiCard variant="compact" label="Asset" color="#6b7280" delta={null}
+                      value={portafoglio.length.toString()} badge={pill(`${assetClasses.length || 1} asset class`, 'bg-surface-100 text-gray-600')}
+                      minis={allocazioneClasse.length > 1 ? allocazioneClasse.map(d => ({ label: d.name, value: fmtK(d.value) })) : undefined} />
+                  </div>
+                )
+              })()}
 
+              {/* Grafici allocazione portafoglio — i 3 sulla stessa riga */}
+              {assetValori.length > 0 && (
+                <div className="card p-4">
+                  <p className="num-display text-sm font-semibold text-gray-900 mb-3">Allocazione portafoglio</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per classe di rischio</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie
+                            data={allocazioneClasse}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={50}
+                            outerRadius={80}
+                            paddingAngle={2}
+                          >
+                            {allocazioneClasse.map((d, i) => (
+                              <Cell key={i} fill={d.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => fmtK(v)} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
+                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
+                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
+                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
+                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                          <Bar dataKey="peso" radius={[0, 4, 4, 0]}>
+                            {pesoAsset.map((d, i) => (
+                              <Cell key={i} fill={CLASSE_COLOR[d.classe]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Per categoria</p>
+                      {!usaValoreMonetario && (
+                        <p className="text-[10px] text-gray-400 mb-1">Conteggio per numero di asset</p>
+                      )}
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="45%"
+                            outerRadius={65} innerRadius={32}
+                            label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
+                            {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip formatter={(v: number) => usaValoreMonetario ? fmtK(v) : `${v} asset`} />
+                          <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
+              {/* Banner: asset con data acquisto più avanti dei dati mensili caricati.
+                  Non è un errore — il capitale investito si aggiornerà da solo appena
+                  liquidità/movimenti raggiungono quel mese. */}
+              {(() => {
+                const mesiConDati = new Set([...movimenti.map(m => m.mese), ...liquidita.map(l => l.mese)])
+                const ultimoMeseConDati = MESI.filter(m => mesiConDati.has(m)).pop()
+                if (!ultimoMeseConDati) return null
+                const chiaveUltimo = anno * 12 + MESI.indexOf(ultimoMeseConDati)
+                const assetInAnticipo = portafoglio.filter(a => {
+                  const d = parseDataIt(a.data_acquisto)
+                  if (!d) return false
+                  const chiaveAcquisto = d.getFullYear() * 12 + d.getMonth()
+                  return chiaveAcquisto > chiaveUltimo
+                })
+                if (assetInAnticipo.length === 0) return null
+                return (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                    <strong>{assetInAnticipo.length} asset</strong> {assetInAnticipo.length === 1 ? 'ha' : 'hanno'} una data di acquisto ({assetInAnticipo.map(a => a.nome || a.asset).join(', ')}) successiva
+                    all&apos;ultimo mese con dati di liquidità/movimenti caricati ({ultimoMeseConDati}). Il capitale investito nel grafico &quot;Andamento patrimonio&quot; si aggiornerà
+                    automaticamente non appena sincronizzi i mesi successivi.
+                  </div>
+                )
+              })()}
+
+              {/* Tabella asset con gestione soglie integrata */}
+              <div className="card p-0 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
+                  <div className="flex items-center gap-3">
+                    <p className="num-display text-sm font-semibold text-gray-900">Anagrafica portafoglio</p>
+                    <InfoSoglieModal />
+                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
+                      {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
+                    </button>
+                    {Object.keys(prezziAttuali).length > 0 && (
+                      <span className="text-xs text-green-600">✓ {Object.keys(prezziAttuali).length} aggiornati</span>
+                    )}
+                  </div>
+                  {!showSoglieForm ? (
+                    <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
+                      ✎ Modifica soglie
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setShowSoglieForm(false)} className="text-xs text-gray-400 font-medium">
+                        Annulla
+                      </button>
+                      <button onClick={async () => { await saveSoglie(); setShowSoglieForm(false) }} disabled={savingSoglie} className="btn-primary text-xs">
+                        {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {showSoglieForm && (
+                  <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
+                    <p className="text-[10px] text-gray-400 w-full">
+                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Sono solo notifiche: gli importi da investire sui ribassi si configurano nel Piano di accumulo (bottone sopra i KPI). Per gli asset nel piano la soglia dal massimo è sostituita dalle sue tranche (colonna Max % = Piano); resta la soglia mensile, che è solo un avviso.
+                    </p>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMax}
+                        onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
+                      <input type="number" min={0} step={0.5} value={globalSogliaMese}
+                        onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
+                    </div>
+                    <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto border-t border-surface-100 mt-3">
+                  <table className="w-full min-w-[640px]">
+                    <thead>
+                      <tr>
+                        <th className="table-th">Asset</th>
+                        <th className="table-th">Nome / Ticker</th>
+                        <th className="table-th w-20 text-right">Qtà</th>
+                        <th className="table-th w-24 text-center">Da massimo</th>
+                        <th className="table-th w-24 text-center">Var. mese</th>
+                        <th className="table-th w-28 text-right">Valore carico</th>
+                        <th className="table-th w-28 text-right">Valore att.</th>
+                        <th className="table-th w-24 text-right">+/–</th>
+                        <th className="table-th w-28 text-center">Classe</th>
+                        <th className="table-th w-24 text-center">Svincolato</th>
+                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
+                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portafoglio.map((a, i) => {
+                        const { quantita: qtaAttuale, prezzoCarico } = statoAttuale(a)
+                        const quote = a.ticker ? prezziAttuali[a.ticker] : undefined
+                        const prezzoAtt = quote ? quote.price : null
+                        const valCarico = prezzoCarico * qtaAttuale
+                        const valAtt = prezzoAtt ? prezzoAtt * qtaAttuale : null
+                        const pm = valAtt ? valAtt - valCarico : null
+                        const breachAsset = soglie.filter(x => x.in_breach && x.portafoglio_id === a.id)
+                        const inBreach = breachAsset.length > 0
+                        const pmPct = pm && valCarico > 0 ? (pm / valCarico * 100).toFixed(1) : null
+                        const highDev = quote?.changeFromHigh ?? null
+                        const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
+                        const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
+                        const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
+                        const dSoglia = a.id ? draftSoglie[a.id] : undefined
+                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
+                        const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
+                        return (
+                          <tr key={i} className={`transition-colors ${inBreach ? 'bg-red-50/70 shadow-[inset_3px_0_0_0_#dc2626]' : 'hover:bg-surface-50'}`}>
+                            <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span>{inBreach && <span title={breachAsset.map(x => `${x.tipo === 'mensile' ? 'nel mese' : 'dal massimo'} (soglia ${x.soglia_pct}%)`).join(', ')} className="ml-1.5 text-[10px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full">soglia</span>}</td>
+                            <td className="table-td">
+                              <p
+                                className={`text-xs font-medium text-gray-700 cursor-pointer hover:text-brand-600 ${expandedAssetRow === i ? 'whitespace-normal break-words' : 'truncate max-w-36'}`}
+                                title={a.nome || a.descrizione}
+                                onClick={() => setExpandedAssetRow(expandedAssetRow === i ? null : i)}
+                              >
+                                {a.nome || a.descrizione}
+                              </p>
+                              {(a.ticker || a.isin) && <p className="text-[11px] text-gray-400 font-mono">{[a.ticker, a.isin].filter(Boolean).join(' · ')}</p>}
+                            </td>
+                            <td className="table-td text-right text-xs tabular-nums">{qtaAttuale.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
+                            <td className="table-td text-center">
+                              {quote?.changeFromHigh != null ? (
+                                <span
+                                  className="inline-block min-w-16 px-2 py-1 rounded-md text-xs font-semibold tabular-nums transition-transform hover:scale-105"
+                                  style={{ backgroundColor: highBg, color: highText }}
+                                  title="Variazione dal massimo a 52 settimane"
+                                >
+                                  {quote.changeFromHigh.toFixed(1)}%
+                                </span>
+                              ) : <span className="text-gray-300 text-xs">–</span>}
+                            </td>
+                            <td className="table-td text-center">
+                              {quote?.changeFromMonth != null ? (
+                                <span
+                                  className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs font-medium tabular-nums ${quote.changeFromMonth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}
+                                  title="Variazione rispetto a circa 30 giorni fa"
+                                >
+                                  {quote.changeFromMonth >= 0 ? '▲' : '▼'} {Math.abs(quote.changeFromMonth).toFixed(1)}%
+                                </span>
+                              ) : <span className="text-gray-300 text-xs">–</span>}
+                            </td>
+                            <td className="table-td text-right text-xs font-medium tabular-nums">{fmtK(valCarico)}</td>
+                            <td className="table-td text-right text-xs font-medium tabular-nums">
+                              {valAtt ? fmtK(valAtt) : <span className="text-gray-300">–</span>}
+                            </td>
+                            <td className={`table-td text-right text-xs font-medium tabular-nums ${pm ? (pm >= 0 ? 'text-green-700' : 'text-red-600') : ''}`}>
+                              {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
+                            </td>
+                            <td className="table-td text-center px-1">
+                              {a.classe_rischio ? (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${CLASSE_BADGE[a.classe_rischio]}`}>
+                                  {CLASSE_LABEL[a.classe_rischio]}
+                                </span>
+                              ) : <span className="text-gray-300 text-xs">–</span>}
+                            </td>
+                            <td className="table-td text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                {a.svincolato ? 'Sì' : 'No'}
+                              </span>
+                            </td>
+                            <td className="table-td text-center px-1 bg-amber-50/40">
+                              {a.id && idPiano.has(a.id) ? (
+                                <span className="inline-block px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-100 text-[10px] font-medium whitespace-nowrap" title="La soglia dal massimo è gestita dalle tranche del Piano di accumulo">Piano</span>
+                              ) : showSoglieForm && a.id ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <input type="number" min={0} step={0.5}
+                                    value={dSoglia?.massimo ?? globalSogliaMax}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), massimo: Number(e.target.value) } }))}
+                                    className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                                  <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
+                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), attivo: e.target.checked } }))} />
+                                </div>
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMaxSaved && sMaxSaved.attivo ? `${sMaxSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                            <td className="table-td text-center px-1 bg-amber-50/40">
+                              {showSoglieForm && a.id ? (
+                                <input type="number" min={0} step={0.5}
+                                  value={dSoglia?.mensile ?? globalSogliaMese}
+                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), mensile: Number(e.target.value) } }))}
+                                  className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
+                              ) : (
+                                <span className="text-xs tabular-nums text-gray-500">
+                                  {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Pannelli laterali */}
+              <Drawer open={openSection.riserva} onClose={closeSections} size="xl" closeOnBlankClick={false}
+                title="Piano di accumulo" subtitle="Riserva, soglie e importi">
               {/* Sezione aperta (riserva o simulatore) */}
               {openSection.riserva && (
                 <PianoAccumulo
@@ -1599,16 +1857,19 @@ export default function DashboardPage() {
                   bonusSottoPmc={profilo?.accumulo_bonus_pmc ?? null}
                   moltMax={profilo?.accumulo_molt_max ?? null}
                   onSaved={loadData}
-                  onSimula={(assetId, importo) => { setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
+                  onSimula={(assetId, importo) => { closeSections(); setSimPrefill({ nonce: Date.now(), strumentoId: assetId, importo }); setTab('analisi') }}
                   onAggiornaPrezzi={fetchPrezziAttuali}
                   loadingPrezzi={loadingPrezzi}
                 />
               )}
 
-              {openSection.storico && <div className="card overflow-x-auto mt-4">
+              </Drawer>
+              <Drawer open={openSection.storico} onClose={closeSections} size="xl"
+                title={`Storico prezzi ${anno}`} subtitle="Prezzi mensili e chiusura del mese">
+              {openSection.storico && <div className="overflow-x-auto">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-1">
-                    Storico prezzi mensili {anno}
+                  <p className="text-xs text-gray-400 pt-1">
+                    Prezzi a fine mese · colore = variazione % rispetto al mese precedente
                   </p>
                   {(() => {
                     const { mese: meseTarget, anno: annoTarget } = meseDaRegistrare()
@@ -1723,322 +1984,15 @@ export default function DashboardPage() {
                 })()}
               </div>}
 
-              {openSection.anagrafica && <>
-              {/* Banner: asset con data acquisto più avanti dei dati mensili caricati.
-                  Non è un errore — il capitale investito si aggiornerà da solo appena
-                  liquidità/movimenti raggiungono quel mese. */}
-              {(() => {
-                const mesiConDati = new Set([...movimenti.map(m => m.mese), ...liquidita.map(l => l.mese)])
-                const ultimoMeseConDati = MESI.filter(m => mesiConDati.has(m)).pop()
-                if (!ultimoMeseConDati) return null
-                const chiaveUltimo = anno * 12 + MESI.indexOf(ultimoMeseConDati)
-                const assetInAnticipo = portafoglio.filter(a => {
-                  const d = parseDataIt(a.data_acquisto)
-                  if (!d) return false
-                  const chiaveAcquisto = d.getFullYear() * 12 + d.getMonth()
-                  return chiaveAcquisto > chiaveUltimo
-                })
-                if (assetInAnticipo.length === 0) return null
-                return (
-                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                    <strong>{assetInAnticipo.length} asset</strong> {assetInAnticipo.length === 1 ? 'ha' : 'hanno'} una data di acquisto ({assetInAnticipo.map(a => a.nome || a.asset).join(', ')}) successiva
-                    all&apos;ultimo mese con dati di liquidità/movimenti caricati ({ultimoMeseConDati}). Il capitale investito nel grafico &quot;Andamento patrimonio&quot; si aggiornerà
-                    automaticamente non appena sincronizzi i mesi successivi.
-                  </div>
-                )
-              })()}
-
-              {/* Tabella asset con gestione soglie integrata */}
-              <div className="card p-0 overflow-hidden mt-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
-                  <div className="flex items-center gap-3">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Anagrafica portafoglio</p>
-                    <InfoSoglieModal />
-                    <button onClick={fetchPrezziAttuali} disabled={loadingPrezzi} className="btn-secondary text-xs px-2.5 py-1">
-                      {loadingPrezzi ? '⟳ Caricamento…' : '↻ Aggiorna prezzi'}
-                    </button>
-                    {Object.keys(prezziAttuali).length > 0 && (
-                      <span className="text-xs text-green-600">✓ {Object.keys(prezziAttuali).length} aggiornati</span>
-                    )}
-                  </div>
-                  {!showSoglieForm ? (
-                    <button onClick={() => setShowSoglieForm(true)} className="text-xs text-brand-600 font-medium">
-                      ✎ Modifica soglie
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setShowSoglieForm(false)} className="text-xs text-gray-400 font-medium">
-                        Annulla
-                      </button>
-                      <button onClick={async () => { await saveSoglie(); setShowSoglieForm(false) }} disabled={savingSoglie} className="btn-primary text-xs">
-                        {savingSoglie ? 'Salvataggio…' : 'Salva soglie'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {showSoglieForm && (
-                  <div className="mx-4 mt-3 flex flex-wrap items-end gap-3 p-3 bg-surface-50 rounded-lg">
-                    <p className="text-[10px] text-gray-400 w-full">
-                      Notifica in app quando lo scostamento dal massimo o dal mese scende sotto la soglia (es. 10% → notifica a -10% o peggio). Le percentuali si intendono sempre come ribasso. Sono solo notifiche: gli importi da investire sui ribassi si configurano nel Piano di accumulo (bottone sopra i KPI). Per gli asset nel piano la soglia dal massimo è sostituita dalle sue tranche (colonna Max % = Piano); resta la soglia mensile, che è solo un avviso.
-                    </p>
-                    <div>
-                      <label className="text-[10px] text-gray-400 block mb-1">Soglia da massimo (%)</label>
-                      <input type="number" min={0} step={0.5} value={globalSogliaMax}
-                        onChange={e => setGlobalSogliaMax(Number(e.target.value))} className="input w-24 text-sm" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-400 block mb-1">Soglia mensile (%)</label>
-                      <input type="number" min={0} step={0.5} value={globalSogliaMese}
-                        onChange={e => setGlobalSogliaMese(Number(e.target.value))} className="input w-24 text-sm" />
-                    </div>
-                    <button onClick={applicaSoglieATutti} className="btn-secondary text-xs">Applica a tutti gli asset</button>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto mt-3">
-                  <table className="w-full min-w-[640px]">
-                    <thead>
-                      <tr>
-                        <th className="table-th">Asset</th>
-                        <th className="table-th">Nome / Ticker</th>
-                        <th className="table-th">ISIN</th>
-                        <th className="table-th w-20 text-right">Qtà</th>
-                        <th className="table-th w-24 text-center">Da massimo</th>
-                        <th className="table-th w-24 text-center">Var. mese</th>
-                        <th className="table-th w-28 text-right">Valore carico</th>
-                        <th className="table-th w-28 text-right">Valore att.</th>
-                        <th className="table-th w-24 text-right">+/–</th>
-                        <th className="table-th w-28 text-center">Classe</th>
-                        <th className="table-th w-24 text-center">Svincolato</th>
-                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo storico — modificabile dall'app">Max %</th>
-                        <th className="table-th w-14 px-1 text-center bg-amber-50/60" title="Soglia di scostamento dal massimo mensile — modificabile dall'app">Mese %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {portafoglio.map((a, i) => {
-                        const { quantita: qtaAttuale, prezzoCarico } = statoAttuale(a)
-                        const quote = a.ticker ? prezziAttuali[a.ticker] : undefined
-                        const prezzoAtt = quote ? quote.price : null
-                        const valCarico = prezzoCarico * qtaAttuale
-                        const valAtt = prezzoAtt ? prezzoAtt * qtaAttuale : null
-                        const pm = valAtt ? valAtt - valCarico : null
-                        const breachAsset = soglie.filter(x => x.in_breach && x.portafoglio_id === a.id)
-                        const inBreach = breachAsset.length > 0
-                        const pmPct = pm && valCarico > 0 ? (pm / valCarico * 100).toFixed(1) : null
-                        const highDev = quote?.changeFromHigh ?? null
-                        const highT = highDev != null ? Math.min(Math.abs(highDev) / HIGH_DEVIATION_SCALE_MAX, 1) : 0
-                        const highBg = highDev != null ? interpolateColor(HEAT_COLORS.amber.light, HEAT_COLORS.amber.dark, highT) : undefined
-                        const highText = highDev != null ? (highT > 0.5 ? HEAT_COLORS.amber.textDark : HEAT_COLORS.amber.textLight) : undefined
-                        const dSoglia = a.id ? draftSoglie[a.id] : undefined
-                        const sMaxSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'storico') : undefined
-                        const sMeseSaved = a.id ? soglie.find(s => s.portafoglio_id === a.id && s.tipo === 'mensile') : undefined
-                        return (
-                          <tr key={i} className={`transition-colors ${inBreach ? 'bg-red-50/70 shadow-[inset_3px_0_0_0_#dc2626]' : 'hover:bg-surface-50'}`}>
-                            <td className="table-td"><span className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{a.asset}</span>{inBreach && <span title={breachAsset.map(x => `${x.tipo === 'mensile' ? 'nel mese' : 'dal massimo'} (soglia ${x.soglia_pct}%)`).join(', ')} className="ml-1.5 text-[10px] font-medium text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full">soglia</span>}</td>
-                            <td className="table-td">
-                              <p
-                                className={`text-xs font-medium text-gray-700 cursor-pointer hover:text-brand-600 ${expandedAssetRow === i ? 'whitespace-normal break-words' : 'truncate max-w-36'}`}
-                                title={a.nome || a.descrizione}
-                                onClick={() => setExpandedAssetRow(expandedAssetRow === i ? null : i)}
-                              >
-                                {a.nome || a.descrizione}
-                              </p>
-                              {a.ticker && <p className="text-xs text-gray-400">{a.ticker}</p>}
-                            </td>
-                            <td className="table-td text-xs text-gray-400 font-mono">{a.isin || '–'}</td>
-                            <td className="table-td text-right text-xs tabular-nums">{qtaAttuale.toLocaleString('it-IT', { maximumFractionDigits: 4 })}</td>
-                            <td className="table-td text-center">
-                              {quote?.changeFromHigh != null ? (
-                                <span
-                                  className="inline-block min-w-16 px-2 py-1 rounded-md text-xs font-semibold tabular-nums transition-transform hover:scale-105"
-                                  style={{ backgroundColor: highBg, color: highText }}
-                                  title="Variazione dal massimo a 52 settimane"
-                                >
-                                  {quote.changeFromHigh.toFixed(1)}%
-                                </span>
-                              ) : <span className="text-gray-300 text-xs">–</span>}
-                            </td>
-                            <td className="table-td text-center">
-                              {quote?.changeFromMonth != null ? (
-                                <span
-                                  className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs font-medium tabular-nums ${quote.changeFromMonth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}
-                                  title="Variazione rispetto a circa 30 giorni fa"
-                                >
-                                  {quote.changeFromMonth >= 0 ? '▲' : '▼'} {Math.abs(quote.changeFromMonth).toFixed(1)}%
-                                </span>
-                              ) : <span className="text-gray-300 text-xs">–</span>}
-                            </td>
-                            <td className="table-td text-right text-xs font-medium tabular-nums">{fmtK(valCarico)}</td>
-                            <td className="table-td text-right text-xs font-medium tabular-nums">
-                              {valAtt ? fmtK(valAtt) : <span className="text-gray-300">–</span>}
-                            </td>
-                            <td className={`table-td text-right text-xs font-medium tabular-nums ${pm ? (pm >= 0 ? 'text-green-700' : 'text-red-600') : ''}`}>
-                              {pm ? `${pm >= 0 ? '+' : ''}${fmtK(pm)} (${pmPct}%)` : <span className="text-gray-300">–</span>}
-                            </td>
-                            <td className="table-td text-center px-1">
-                              {a.classe_rischio ? (
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${CLASSE_BADGE[a.classe_rischio]}`}>
-                                  {CLASSE_LABEL[a.classe_rischio]}
-                                </span>
-                              ) : <span className="text-gray-300 text-xs">–</span>}
-                            </td>
-                            <td className="table-td text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                a.svincolato ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-500'
-                              }`}>
-                                {a.svincolato ? 'Sì' : 'No'}
-                              </span>
-                            </td>
-                            <td className="table-td text-center px-1 bg-amber-50/40">
-                              {a.id && idPiano.has(a.id) ? (
-                                <span className="inline-block px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 ring-1 ring-brand-100 text-[10px] font-medium whitespace-nowrap" title="La soglia dal massimo è gestita dalle tranche del Piano di accumulo">Piano</span>
-                              ) : showSoglieForm && a.id ? (
-                                <div className="flex items-center justify-center gap-1">
-                                  <input type="number" min={0} step={0.5}
-                                    value={dSoglia?.massimo ?? globalSogliaMax}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), massimo: Number(e.target.value) } }))}
-                                    className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
-                                  <input type="checkbox" title="Soglia attiva" checked={dSoglia?.attivo ?? true}
-                                    onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), attivo: e.target.checked } }))} />
-                                </div>
-                              ) : (
-                                <span className="text-xs tabular-nums text-gray-500">
-                                  {sMaxSaved && sMaxSaved.attivo ? `${sMaxSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
-                                </span>
-                              )}
-                            </td>
-                            <td className="table-td text-center px-1 bg-amber-50/40">
-                              {showSoglieForm && a.id ? (
-                                <input type="number" min={0} step={0.5}
-                                  value={dSoglia?.mensile ?? globalSogliaMese}
-                                  onChange={e => setDraftSoglie(prev => ({ ...prev, [a.id!]: { ...(prev[a.id!] ?? { massimo: globalSogliaMax, mensile: globalSogliaMese, attivo: true, accumulo: true }), mensile: Number(e.target.value) } }))}
-                                  className="w-11 border border-surface-200 rounded-md px-1 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent" />
-                              ) : (
-                                <span className="text-xs tabular-nums text-gray-500">
-                                  {sMeseSaved && sMeseSaved.attivo ? `${sMeseSaved.soglia_pct}%` : <span className="text-gray-300">–</span>}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="h-4" />
-              </div>
-              </>}
-              </div>
-
-              {/* KPI - subito dopo i pulsanti */}
-              {(() => {
-                const hasPrezzi = Object.keys(prezziAttuali).length > 0
-                const pctPlusMinus = valoreCaricoTotale > 0 ? (plusminus / valoreCaricoTotale) * 100 : 0
-                const cards = [
-                  {
-                    label: 'Valore di carico', val: fmtK(valoreCaricoTotale), color: 'text-gray-900', icon: '◆', iconBg: 'bg-blue-100 text-blue-700',
-                    badge: `${portafoglio.length} asset`, badgeBg: 'bg-blue-50 text-blue-700',
-                  },
-                  {
-                    label: 'Valore attuale', val: hasPrezzi ? fmtK(valoreAttualeTotale) : '–', color: hasPrezzi ? 'text-gray-900' : 'text-gray-300', icon: '↑', iconBg: 'bg-brand-100 text-brand-700',
-                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% vs carico` : 'In attesa di quotazioni', badgeBg: 'bg-surface-100 text-gray-600',
-                  },
-                  {
-                    label: 'Plus/Minus latente', val: hasPrezzi ? fmtK(plusminus) : '–', color: !hasPrezzi ? 'text-gray-300' : plusminus >= 0 ? 'text-green-700' : 'text-red-600',
-                    icon: '●', iconBg: !hasPrezzi ? 'bg-gray-100 text-gray-400' : plusminus >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600',
-                    badge: hasPrezzi ? `${pctPlusMinus >= 0 ? '+' : ''}${pctPlusMinus.toFixed(1)}% sul capitale` : 'Nessuna quotazione', badgeBg: !hasPrezzi ? 'bg-surface-100 text-gray-600' : plusminus >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600',
-                  },
-                  {
-                    label: 'Asset', val: portafoglio.length.toString(), color: 'text-gray-900', icon: '≡', iconBg: 'bg-gray-100 text-gray-600',
-                    badge: `${assetClasses.length || 1} asset class`, badgeBg: 'bg-surface-100 text-gray-600',
-                  },
-                ]
-                return (
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                    {cards.map(c => (
-                      <div key={c.label} className="card p-4 transition-transform hover:scale-[1.01]">
-                        <div className="flex items-start justify-between mb-2">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{c.label}</p>
-                          <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${c.iconBg}`}>{c.icon}</span>
-                        </div>
-                        <p className={`num-display text-xl font-bold tabular-nums ${c.color}`}>{c.val}</p>
-                        <div className="mt-2.5">
-                          <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.badgeBg}`}>{c.badge}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
-
-              {/* Grafici allocazione portafoglio — i 3 sulla stessa riga */}
-              {assetValori.length > 0 && (
-                <div className="card p-4 mb-6">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Allocazione portafoglio</p>
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Per classe di rischio</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie
-                            data={allocazioneClasse}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={50}
-                            outerRadius={80}
-                            paddingAngle={2}
-                          >
-                            {allocazioneClasse.map((d, i) => (
-                              <Cell key={i} fill={d.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(v: number) => fmtK(v)} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Peso % per asset</p>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={pesoAsset} layout="vertical" margin={{ left: 8, right: 16 }}>
-                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e4e7d8" />
-                          <XAxis type="number" tickFormatter={v => `${v.toFixed(0)}%`} fontSize={10} />
-                          <YAxis type="category" dataKey="nome" width={90} fontSize={10}
-                            tickFormatter={v => (v.length > 14 ? v.slice(0, 14) + '…' : v)} />
-                          <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                          <Bar dataKey="peso" radius={[0, 4, 4, 0]}>
-                            {pesoAsset.map((d, i) => (
-                              <Cell key={i} fill={CLASSE_COLOR[d.classe]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Per categoria</p>
-                      {!usaValoreMonetario && (
-                        <p className="text-[10px] text-gray-400 mb-1">Conteggio per numero di asset</p>
-                      )}
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie data={piePortafoglio} dataKey="value" nameKey="name" cx="50%" cy="45%"
-                            outerRadius={65} innerRadius={32}
-                            label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ''} labelLine={false}>
-                            {piePortafoglio.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                          </Pie>
-                          <Tooltip formatter={(v: number) => usaValoreMonetario ? fmtK(v) : `${v} asset`} />
-                          <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              )}
+              </Drawer>
+              <Drawer open={openSection.alert} onClose={closeSections}
+                title="Dettaglio alert" subtitle="Ultime notifiche con dettaglio">
+                {openSection.alert && <AlertDettaglioSezione />}
+              </Drawer>
 
             </>
           )}
-        </>
+        </div>
       )}
     </div>
   )

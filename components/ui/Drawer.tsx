@@ -5,12 +5,15 @@
 // Blocca lo scroll della pagina sotto.
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { IconClose } from './Icons'
 
 /** Elementi che non devono chiudere il pannello se cliccati (controlli, tabelle, grafici). */
 const KEEP_OPEN = 'button, a, input, select, textarea, label, table, svg, canvas, summary, [role="button"], [role="tab"], [data-keep-open]'
+
+/** Pannelli aperti, in ordine di apertura: Esc chiude solo quello in primo piano. */
+const aperti: object[] = []
 
 export default function Drawer({
   open, onClose, title, subtitle, headerExtra, children, variant = 'side', closeOnBlankClick = true, size = 'md',
@@ -31,9 +34,19 @@ export default function Drawer({
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
+  const idRef = useRef<object>({})
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const id = idRef.current
+    aperti.push(id)
+    return () => { const i = aperti.indexOf(id); if (i >= 0) aperti.splice(i, 1) }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && aperti[aperti.length - 1] === idRef.current) onClose()
+    }
     window.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'

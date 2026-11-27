@@ -82,6 +82,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
   const [vista, setVista] = useState<'situazione' | 'simulatore'>('situazione')
   const [vistaComp, setVistaComp] = useState<'classe' | 'settori' | 'paesi'>('classe')
   const [societaPopup, setSocietaPopup] = useState(false)
+  const [societaSel, setSocietaSel] = useState<string | null>(null)   // chiave della società di cui mostrare il dettaglio
   const [composizioni, setComposizioni] = useState<ComposizioneEtf[]>([])
   const [loading, setLoading] = useState(true)
   const [errore, setErrore] = useState('')
@@ -152,6 +153,8 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
     [righe]
   )
   const lt = useMemo(() => calcolaLookthrough(etfAzionari, composizioni), [etfAzionari, composizioni])
+  const etfPerId = useMemo(() => new Map(etfAzionari.map(e => [e.id, e])), [etfAzionari])
+  const socDett = societaSel ? lt.societa.find(x => x.chiave === societaSel) ?? null : null
   const coloreEtf = useMemo(() => {
     const m = new Map<string, string>()
     etfAzionari.forEach((e, i) => m.set(e.id, COLORI_ETF[i % COLORI_ETF.length]))
@@ -421,7 +424,9 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                 ) : (
                   <ul className="divide-y divide-surface-100 border-t border-surface-100">
                     {lt.societa.slice(0, 10).map((s, i) => (
-                      <li key={s.chiave} className="px-4 py-2">
+                      <li key={s.chiave}>
+                        <button type="button" onClick={() => setSocietaSel(s.chiave)} title="Vedi in quali asset è presente"
+                          className="w-full text-left px-4 py-2 hover:bg-surface-50 transition-colors">
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="truncate text-[13px] font-medium text-gray-900">
                             <span className="text-gray-400 text-[11px] tabular-nums inline-block w-5">{i + 1}</span>{s.nome}
@@ -437,6 +442,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                             <div key={c.etfId} style={{ width: `${(c.euro / s.euro) * 100}%`, backgroundColor: coloreEtf.get(c.etfId) ?? '#9ca3af' }} title={`${c.etfNome}: ${fmtEuro(c.euro)}`} />
                           ))}
                         </div>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -448,7 +454,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
           {/* Popup: elenco completo delle società */}
           <Drawer open={societaPopup} onClose={() => setSocietaPopup(false)} variant="center" size="xl"
             title="Esposizione effettiva alle società"
-            subtitle={`${lt.societa.length} società · i colori nelle barre corrispondono agli ETF della tabella Allocazione per strumento`}>
+            subtitle={`${lt.societa.length} società · clicca una società per vedere in quali asset è presente`}>
             <div className="overflow-x-auto -mx-1">
                       <table className="w-full min-w-[520px]">
                         <thead className="sticky top-0 z-10">
@@ -462,7 +468,7 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                         </thead>
                         <tbody>
                           {lt.societa.map((s, i) => (
-                            <tr key={s.chiave}>
+                            <tr key={s.chiave} onClick={() => setSocietaSel(s.chiave)} className="cursor-pointer hover:bg-surface-50 transition-colors" title="Vedi in quali asset è presente">
                               <td className="table-td !py-1.5 text-[13px] font-medium text-gray-900">
                                 <span className="text-gray-400 mr-1.5 text-[11px] tabular-nums inline-block w-5">{i + 1}</span>{s.nome}
                                 {s.nEtf > 1 && (
@@ -490,6 +496,62 @@ export default function AnalisiPortafoglio({ portafoglio, prezziAttuali, liquidi
                         </tbody>
                       </table>
             </div>
+          </Drawer>
+
+          {/* Dettaglio di una società: in quali asset è presente e con che peso */}
+          <Drawer open={!!socDett} onClose={() => setSocietaSel(null)} variant="center"
+            title={socDett?.nome ?? ''}
+            subtitle={socDett ? `Presente in ${socDett.contributi.length} ${socDett.contributi.length === 1 ? 'asset' : 'asset'}` : undefined}>
+            {socDett && (() => {
+              const tot = socDett.euro
+              const righeEtf = [...socDett.contributi].sort((a, b) => b.euro - a.euro)
+              return (
+                <div>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {[
+                      { l: 'Esposizione', v: fmtEuro(tot) },
+                      { l: '% patrimonio', v: patrimonio > 0 ? fmtPct((tot / patrimonio) * 100, 2) : '–' },
+                      { l: '% azionario', v: valAzionario > 0 ? fmtPct((tot / valAzionario) * 100, 2) : '–' },
+                    ].map(k => (
+                      <div key={k.l} className="rounded-lg bg-surface-50 px-2.5 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{k.l}</p>
+                        <p className="mt-0.5 text-[13px] font-mono tabular-nums font-semibold text-gray-900">{k.v}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <ul className="divide-y divide-surface-100 rounded-xl border border-surface-200">
+                    {righeEtf.map(c => {
+                      const e = etfPerId.get(c.etfId)
+                      const peso = e && e.valore > 0 ? (c.euro / e.valore) * 100 : null
+                      const quota = (c.euro / tot) * 100
+                      return (
+                        <li key={c.etfId} className="px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: coloreEtf.get(c.etfId) ?? '#9ca3af' }} />
+                              <div className="min-w-0">
+                                <p className="text-[13px] font-semibold text-gray-900 truncate">{e?.ticker || c.etfNome}</p>
+                                {e?.ticker && <p className="text-[11px] text-gray-400 truncate">{c.etfNome}</p>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[13px] font-mono tabular-nums font-semibold text-gray-900">{peso != null ? fmtPct(peso, 2) : '–'}</p>
+                              <p className="text-[10px] text-gray-400">peso nell&apos;ETF</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 h-1.5 rounded-full bg-surface-100 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${quota}%`, backgroundColor: coloreEtf.get(c.etfId) ?? '#9ca3af' }} />
+                          </div>
+                          <p className="mt-1 text-[11px] text-gray-400">
+                            {fmtEuro(c.euro)} · {fmtPct(quota, 0)} dell&apos;esposizione a questa società
+                          </p>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )
+            })()}
           </Drawer>
         </>
       )}

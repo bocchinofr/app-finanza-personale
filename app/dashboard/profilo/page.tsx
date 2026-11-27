@@ -1,8 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-
 import { RISK_QUESTIONS, type RiskDimension } from '@/lib/riskQuestionnaire'
+import KpiCard from '@/components/ui/KpiCard'
+import Drawer from '@/components/ui/Drawer'
+import InfoBox from '@/components/ui/InfoBox'
+import SegmentedControl from '@/components/ui/SegmentedControl'
+import { IconUser, IconShield, IconChart, IconCheck } from '@/components/ui/Icons'
 
 function getRiskLabel(score: number): string {
   if (score <= 30) return 'Conservativo'
@@ -33,41 +37,147 @@ function getAllocationLabel(equityPct: number): string {
   return 'Azionario'
 }
 
-// Lista degli obiettivi disponibili
 const AVAILABLE_GOALS = ['Fondo emergenza', 'Acquisto casa', 'Pensione', 'Istruzione figli', 'Viaggi', 'Auto nuova']
+
+const EMPLOYMENT_LABELS: Record<string, string> = {
+  dipendente: 'Dipendente',
+  autonomo: 'Autonomo / Libero professionista',
+  imprenditore: 'Imprenditore',
+  pensionato: 'Pensionato',
+  in_cerca: 'In cerca di occupazione',
+  studente: 'Studente',
+}
+
+type Sezione = 'dati' | 'obiettivi' | 'pensione' | 'rischio'
+
+interface Form {
+  nome: string
+  birthDate: string
+  employment: string
+  goals: string[]
+  goalsNote: string
+  hasPension: boolean
+  pensionTfr: boolean
+  pensionType: 'categoria' | 'privato' | ''
+  riskAnswers: Record<string, number>
+}
+
+const EMPTY: Form = {
+  nome: '', birthDate: '', employment: '', goals: [], goalsNote: '',
+  hasPension: false, pensionTfr: false, pensionType: '', riskAnswers: {},
+}
+
+function rischioCompleto(answers: Record<string, number>) {
+  return Object.keys(answers).length === RISK_QUESTIONS.length
+}
+
+function calcolaRischio(answers: Record<string, number>) {
+  const byDimension = (dim: RiskDimension) =>
+    RISK_QUESTIONS.filter(q => q.dimension === dim).map(q => answers[q.id]).filter(v => v !== undefined)
+  const avg = (values: number[]) => values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null
+
+  const risk = avg(byDimension('risk'))
+  const behavior = avg(byDimension('behavior'))
+  const diversification = avg(byDimension('diversification'))
+  const allocation = avg(byDimension('allocation'))
+
+  const score = risk !== null ? Math.round(risk) : 0
+  const equityPct = allocation !== null ? Math.round(allocation) : null
+
+  return {
+    score,
+    label: risk !== null ? getRiskLabel(score) : 'Non definito',
+    behaviorScore: behavior !== null ? Math.round(behavior) : null,
+    behaviorLabel: behavior !== null ? getBehaviorLabel(Math.round(behavior)) : null,
+    diversificationLabel: diversification !== null ? getDiversificationLabel(Math.round(diversification)) : null,
+    equityPct,
+    allocationLabel: equityPct !== null ? getAllocationLabel(equityPct) : null,
+  }
+}
+
+function calcolaEta(birthDate: string): number | null {
+  if (!birthDate) return null
+  const n = new Date(birthDate)
+  if (isNaN(n.getTime())) return null
+  const oggi = new Date()
+  let eta = oggi.getFullYear() - n.getFullYear()
+  if (oggi.getMonth() < n.getMonth() || (oggi.getMonth() === n.getMonth() && oggi.getDate() < n.getDate())) eta -= 1
+  return eta
+}
+
+function Pillola({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex max-w-full truncate items-center rounded-full bg-surface-100 text-gray-500 text-[11px] font-medium px-2 py-0.5">
+      {children}
+    </span>
+  )
+}
+
+function Riga({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-surface-100 last:border-b-0">
+      <span className="text-[12px] text-gray-500 shrink-0">{label}</span>
+      <span className="text-[13px] font-medium text-gray-900 text-right break-words min-w-0">{value}</span>
+    </div>
+  )
+}
+
+function SezioneCard({
+  titolo, icona, onModifica, labelModifica = 'Modifica', headerExtra, children, className = '',
+}: {
+  titolo: string
+  icona: React.ReactNode
+  onModifica: () => void
+  labelModifica?: string
+  headerExtra?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={`card flex flex-col ${className}`}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 min-w-0">
+          <span className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-lg bg-brand-50 text-brand-700">{icona}</span>
+          <span className="truncate">{titolo}</span>
+          {headerExtra}
+        </h2>
+        <button type="button" onClick={onModifica} className="btn-secondary !px-3 !py-1 text-xs shrink-0">
+          {labelModifica}
+        </button>
+      </div>
+      <div className="flex-1">{children}</div>
+    </section>
+  )
+}
+
+function FooterSalva({
+  onSalva, onAnnulla, saving, error,
+}: { onSalva: () => void; onAnnulla: () => void; saving: boolean; error: string }) {
+  return (
+    <div className="mt-5 pt-4 border-t border-surface-100">
+      {error && <div className="mb-3 rounded-lg px-3 py-2 text-sm bg-red-50 text-red-600">{error}</div>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onAnnulla} disabled={saving} className="btn-secondary">Annulla</button>
+        <button type="button" onClick={onSalva} disabled={saving} className="btn-primary">
+          {saving ? 'Salvataggio…' : 'Salva'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function ProfiloPage() {
   const supabase = createClient()
-  
+
   const [loading, setLoading] = useState(true)
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['personali']))
-  function toggleSection(id: string) {
-    setOpenSections(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
-  }
+  const [email, setEmail] = useState('')
+  const [saved, setSaved] = useState<Form>(EMPTY)
+  const [form, setForm] = useState<Form>(EMPTY)
+  const [riskLabelDb, setRiskLabelDb] = useState<string | null>(null)
+  const [drawer, setDrawer] = useState<Sezione | null>(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  
-  // Dati profilo
-  const [email, setEmail] = useState('')
-  const [nome, setNome] = useState('')
-  const [birthDate, setBirthDate] = useState('')
-  const [employmentStatus, setEmploymentStatus] = useState('')
-  const [financialGoals, setFinancialGoals] = useState<string[]>([])
-  const [goalsNote, setGoalsNote] = useState('')
-  
-  // Fondo pensione
-  const [hasPensionFund, setHasPensionFund] = useState<boolean>(false)
-  const [pensionFundTfr, setPensionFundTfr] = useState<boolean>(false)
-  const [pensionFundType, setPensionFundType] = useState<'categoria' | 'privato' | ''>('')
-  
-  // Risk questionnaire
-  const [riskAnswers, setRiskAnswers] = useState<Record<string, number>>({})
-  const [riskLabel, setRiskLabel] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -75,115 +185,99 @@ export default function ProfiloPage() {
       if (!user) return
       setEmail(user.email ?? '')
 
-      const { data } = await supabase
-        .from('profili')
-        .select('*')
-        .eq('user_id', user.id)
-        .single()
-
+      const { data } = await supabase.from('profili').select('*').eq('user_id', user.id).single()
       if (data) {
-        setNome(data.nome_visualizzato ?? '')
-        setBirthDate(data.birth_date ?? '')
-        setEmploymentStatus(data.employment_status ?? '')
-        setFinancialGoals(data.financial_goals ?? [])
-        setGoalsNote(data.financial_goals_note ?? '')
-        setHasPensionFund(data.has_pension_fund ?? false)
-        setPensionFundTfr(data.pension_fund_tfr ?? false)
-        setPensionFundType(data.pension_fund_type ?? '')
-        if (data.risk_profile_label) {
-          setRiskLabel(data.risk_profile_label)
+        const f: Form = {
+          nome: data.nome_visualizzato ?? '',
+          birthDate: data.birth_date ?? '',
+          employment: data.employment_status ?? '',
+          goals: data.financial_goals ?? [],
+          goalsNote: data.financial_goals_note ?? '',
+          hasPension: data.has_pension_fund ?? false,
+          pensionTfr: data.pension_fund_tfr ?? false,
+          pensionType: data.pension_fund_type ?? '',
+          riskAnswers: data.risk_answers ?? {},
         }
-        if (data.risk_answers) {
-          setRiskAnswers(data.risk_answers)
-        }
+        setSaved(f)
+        setForm(f)
+        setRiskLabelDb(data.risk_profile_label ?? null)
       }
       setLoading(false)
     }
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function handleRiskChange(questionId: string, value: number) {
-    setRiskAnswers(prev => ({ ...prev, [questionId]: value }))
+  useEffect(() => {
+    if (!message) return
+    const t = setTimeout(() => setMessage(''), 4000)
+    return () => clearTimeout(t)
+  }, [message])
+
+  function upd<K extends keyof Form>(k: K, v: Form[K]) {
+    setForm(p => ({ ...p, [k]: v }))
   }
 
-  function calculateRiskProfile() {
-    const byDimension = (dim: RiskDimension) =>
-      RISK_QUESTIONS.filter(q => q.dimension === dim).map(q => riskAnswers[q.id]).filter(v => v !== undefined)
-
-    const avg = (values: number[]) => values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null
-
-    const riskValues = avg(byDimension('risk'))
-    const behaviorValues = avg(byDimension('behavior'))
-    const diversificationValues = avg(byDimension('diversification'))
-    const allocationValues = avg(byDimension('allocation'))
-
-    const score = riskValues !== null ? Math.round(riskValues) : 0
-    const equityPct = allocationValues !== null ? Math.round(allocationValues) : 0
-
-    return {
-      score,
-      label: riskValues !== null ? getRiskLabel(score) : 'Non definito',
-      behaviorScore: behaviorValues !== null ? Math.round(behaviorValues) : null,
-      behaviorLabel: behaviorValues !== null ? getBehaviorLabel(Math.round(behaviorValues)) : null,
-      diversificationScore: diversificationValues !== null ? Math.round(diversificationValues) : null,
-      diversificationLabel: diversificationValues !== null ? getDiversificationLabel(Math.round(diversificationValues)) : null,
-      equityPct: allocationValues !== null ? equityPct : null,
-      allocationLabel: allocationValues !== null ? getAllocationLabel(equityPct) : null,
-    }
-  }
-
-  function toggleGoal(goal: string) {
-    setFinancialGoals(prev =>
-      prev.includes(goal) ? prev.filter(g => g !== goal) : [...prev, goal]
-    )
-  }
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault()
+  function apri(s: Sezione) {
     setError('')
-    setMessage('')
+    setForm(saved)
+    setDrawer(s)
+  }
 
-    let riskScore = null
-    let riskLabelFinal = null
-    let behaviorScoreFinal = null
-    let behaviorLabelFinal = null
-    if (Object.keys(riskAnswers).length === RISK_QUESTIONS.length) {
-      const result = calculateRiskProfile()
-      riskScore = result.score
-      riskLabelFinal = result.label
-      behaviorScoreFinal = result.behaviorScore
-      behaviorLabelFinal = result.behaviorLabel
-    }
+  function chiudi() {
+    if (saving) return
+    setDrawer(null)
+    setForm(saved)
+  }
 
+  async function salva() {
+    setError('')
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Non autenticato')
 
-      const { error: upsertError } = await supabase
-        .from('profili')
-        .upsert({
-          user_id: user.id,
-          nome_visualizzato: nome.trim() || null,
-          birth_date: birthDate || null,
-          employment_status: employmentStatus || null,
-          financial_goals: financialGoals,
-          financial_goals_note: goalsNote.trim() || null,
-          has_pension_fund: hasPensionFund,
-          pension_fund_tfr: hasPensionFund ? pensionFundTfr : false,
-          pension_fund_type: hasPensionFund ? pensionFundType : null,
-          risk_answers: Object.keys(riskAnswers).length > 0 ? riskAnswers : null,  // aggiunto
-          risk_profile_score: riskScore,
-          risk_profile_label: riskLabelFinal,
-          behavior_score: behaviorScoreFinal,
-          behavior_label: behaviorLabelFinal,
-          updated_at: new Date().toISOString(),
-        })
+      let score: number | null = null
+      let label: string | null = null
+      let behaviorScore: number | null = null
+      let behaviorLabel: string | null = null
+      if (rischioCompleto(form.riskAnswers)) {
+        const r = calcolaRischio(form.riskAnswers)
+        score = r.score
+        label = r.label
+        behaviorScore = r.behaviorScore
+        behaviorLabel = r.behaviorLabel
+      }
 
+      const { error: upsertError } = await supabase.from('profili').upsert({
+        user_id: user.id,
+        nome_visualizzato: form.nome.trim() || null,
+        birth_date: form.birthDate || null,
+        employment_status: form.employment || null,
+        financial_goals: form.goals,
+        financial_goals_note: form.goalsNote.trim() || null,
+        has_pension_fund: form.hasPension,
+        pension_fund_tfr: form.hasPension ? form.pensionTfr : false,
+        pension_fund_type: form.hasPension ? form.pensionType : null,
+        risk_answers: Object.keys(form.riskAnswers).length > 0 ? form.riskAnswers : null,
+        risk_profile_score: score,
+        risk_profile_label: label,
+        behavior_score: behaviorScore,
+        behavior_label: behaviorLabel,
+        updated_at: new Date().toISOString(),
+      })
       if (upsertError) throw upsertError
-      
-      setMessage('✓ Profilo aggiornato con successo')
-      if (riskLabelFinal) setRiskLabel(riskLabelFinal)
+
+      const nuovo: Form = {
+        ...form,
+        pensionTfr: form.hasPension ? form.pensionTfr : false,
+        pensionType: form.hasPension ? form.pensionType : '',
+      }
+      setSaved(nuovo)
+      setForm(nuovo)
+      setRiskLabelDb(label)
+      setDrawer(null)
+      setMessage('Profilo aggiornato con successo')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Errore nel salvataggio')
     } finally {
@@ -191,306 +285,282 @@ export default function ProfiloPage() {
     }
   }
 
-  if (loading) return <div className="text-sm text-gray-400">Caricamento…</div>
+  if (loading) return <div className="flex items-center justify-center h-64 text-sm text-gray-400">Caricamento…</div>
+
+  const rischio = rischioCompleto(saved.riskAnswers) ? calcolaRischio(saved.riskAnswers) : null
+  const labelRischio = rischio?.label ?? riskLabelDb
+  const eta = calcolaEta(saved.birthDate)
+  const lavoro = saved.employment ? (EMPLOYMENT_LABELS[saved.employment] ?? saved.employment) : null
+  const tipoFondo = saved.pensionType === 'categoria' ? 'Di categoria' : saved.pensionType === 'privato' ? 'Privato' : null
+  const anteprima = rischioCompleto(form.riskAnswers) ? calcolaRischio(form.riskAnswers) : null
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Profilo</h1>
-      <p className="text-sm text-gray-500 mb-6">Gestisci i tuoi dati personali, il profilo di rischio, gli obiettivi e la previdenza.</p>
+    <div className="max-w-[1680px] mx-auto flex flex-col gap-4">
+      {message && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700 inline-flex items-center gap-2">
+          <IconCheck size={16} /> {message}
+        </div>
+      )}
 
-      <form onSubmit={handleSave}>
-        {/* Sezioni ad espansione, affiancate in griglia per non sprecare larghezza */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 items-start">
-          {/* Colonna sinistra: dati personali, obiettivi, pensione */}
-          <div className="space-y-4">
-          {/* --- Dati personali --- */}
-          <div className="card p-0 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleSection('personali')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
-            >
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <span className="text-base">👤</span> Dati personali
-              </h2>
-              <span className={`text-gray-400 text-xs transition-transform ${openSections.has('personali') ? 'rotate-180' : ''}`}>▾</span>
-            </button>
-            {openSections.has('personali') && (
-              <div className="px-5 pb-5 space-y-4">
-            <div>
-              <p className="text-xs text-gray-400 mb-1">Email</p>
-              <p className="text-sm text-gray-700 bg-surface-50 px-3 py-2 rounded-lg border border-surface-200">
-                {email}
-              </p>
+      {/* KPI */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          variant="compact" label="Profilo di rischio" color="#3f6b4f" delta={null}
+          value={labelRischio ?? 'Da compilare'}
+          badge={<Pillola>{rischio?.behaviorLabel ?? 'Questionario'}</Pillola>}
+          onClick={() => apri('rischio')}
+        />
+        <KpiCard
+          variant="compact" label="Mix preferito" color="#2563eb" delta={null}
+          value={rischio?.equityPct != null ? `${rischio.equityPct}% azionario` : '—'}
+          badge={<Pillola>{rischio?.allocationLabel ?? 'Non definito'}</Pillola>}
+          onClick={() => apri('rischio')}
+        />
+        <KpiCard
+          variant="compact" label="Età" color="#d97706" delta={null}
+          value={eta != null ? `${eta} anni` : 'Non impostata'}
+          badge={<Pillola>{lavoro ?? 'Situazione lavorativa'}</Pillola>}
+          onClick={() => apri('dati')}
+        />
+        <KpiCard
+          variant="compact" label="Previdenza" color="#7c3aed" delta={null}
+          value={saved.hasPension ? 'Fondo attivo' : 'Nessun fondo'}
+          badge={<Pillola>{saved.hasPension ? (saved.pensionTfr ? 'Con TFR' : 'Senza TFR') : 'Non configurato'}</Pillola>}
+          onClick={() => apri('pensione')}
+        />
+      </div>
+
+      {/* Dati, obiettivi, previdenza */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <SezioneCard
+          titolo="Dati personali" icona={<IconUser size={16} />} onModifica={() => apri('dati')}
+          headerExtra={
+            <InfoBox title="Dati personali">
+              <p>Email, nome e data di nascita. La data di nascita serve alla sezione FIRE per calcolare l&apos;età di partenza.</p>
+              <p>Premi Modifica per aggiornare i dati in un popup.</p>
+            </InfoBox>
+          }
+        >
+          <Riga label="Email" value={email} />
+          <Riga label="Nome" value={saved.nome || '–'} />
+          <Riga label="Data di nascita" value={saved.birthDate ? new Date(saved.birthDate).toLocaleDateString('it-IT') : '–'} />
+          <Riga label="Situazione lavorativa" value={lavoro ?? '–'} />
+        </SezioneCard>
+
+        <SezioneCard
+          titolo="Obiettivi finanziari" icona={<IconChart size={16} />} onModifica={() => apri('obiettivi')}
+          headerExtra={
+            <InfoBox title="Obiettivi finanziari">
+              <p>Gli obiettivi principali che vuoi raggiungere, più una nota libera di massimo 120 caratteri.</p>
+            </InfoBox>
+          }
+        >
+          {saved.goals.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {saved.goals.map(g => (
+                <span key={g} className="text-xs px-3 py-1.5 rounded-full bg-brand-50 text-brand-700 font-medium">{g}</span>
+              ))}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Nome visualizzato</label>
-              <input value={nome} onChange={e => setNome(e.target.value)} className="input" placeholder="Francesco" />
+          ) : (
+            <p className="text-sm text-gray-400 pt-1">Nessun obiettivo selezionato.</p>
+          )}
+          {saved.goalsNote && <p className="text-xs text-gray-600 italic mt-3">“{saved.goalsNote}”</p>}
+        </SezioneCard>
+
+        <SezioneCard
+          titolo="Fondo pensione" icona={<IconShield size={16} />} onModifica={() => apri('pensione')}
+          headerExtra={
+            <InfoBox title="Fondo pensione">
+              <p>Indica se hai un fondo pensione, se ricevi il TFR e la tipologia. Questi dati guidano la sezione FIRE.</p>
+            </InfoBox>
+          }
+        >
+          <Riga label="Hai un fondo pensione" value={saved.hasPension ? 'Sì' : 'No'} />
+          {saved.hasPension && (
+            <>
+              <Riga label="Accredito TFR" value={saved.pensionTfr ? 'Sì' : 'No'} />
+              <Riga label="Tipologia" value={tipoFondo ?? '–'} />
+            </>
+          )}
+        </SezioneCard>
+      </div>
+
+      {/* Profilo di rischio */}
+      <SezioneCard
+        titolo="Profilo di rischio" icona={<IconChart size={16} />} onModifica={() => apri('rischio')}
+        labelModifica={rischio ? 'Rifai il questionario' : 'Compila il questionario'}
+        headerExtra={
+          <InfoBox title="Come si legge">
+            <p>Il profilo nasce dalle risposte al questionario: tolleranza al rischio, comportamento nei crolli, diversificazione e mix azionario/obbligazionario preferito.</p>
+            <p>Si ricalcola solo quando rispondi a tutte le domande.</p>
+          </InfoBox>
+        }
+      >
+        {rischio ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 pt-1">
+            <div className="rounded-lg bg-brand-50 border border-brand-200 px-3 py-2.5">
+              <p className="text-[11px] text-brand-700">Profilo complessivo</p>
+              <p className="text-lg font-bold text-brand-900">{rischio.label}</p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Data di nascita</label>
-              <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} className="input" />
-              {birthDate && (
-                <p className="text-xs text-gray-400 mt-1">
-                  Età: {new Date().getFullYear() - new Date(birthDate).getFullYear()} anni
-                </p>
-              )}
+            <div className="rounded-lg border border-surface-200 px-3 py-2.5">
+              <p className="text-[11px] text-gray-400 mb-0.5">Comportamento nei crolli</p>
+              <p className="text-sm font-semibold text-gray-900">{rischio.behaviorLabel}</p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Situazione lavorativa</label>
-              <select value={employmentStatus} onChange={e => setEmploymentStatus(e.target.value)} className="input">
-                <option value="">Seleziona...</option>
-                <option value="dipendente">Dipendente</option>
-                <option value="autonomo">Autonomo / Libero professionista</option>
-                <option value="imprenditore">Imprenditore</option>
-                <option value="pensionato">Pensionato</option>
-                <option value="in_cerca">In cerca di occupazione</option>
-                <option value="studente">Studente</option>
-              </select>
+            <div className="rounded-lg border border-surface-200 px-3 py-2.5">
+              <p className="text-[11px] text-gray-400 mb-0.5">Diversificazione preferita</p>
+              <p className="text-sm font-semibold text-gray-900">{rischio.diversificationLabel}</p>
             </div>
+            <div className="rounded-lg border border-surface-200 px-3 py-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[11px] text-gray-400">Mix ({rischio.allocationLabel})</p>
+                <p className="text-[11px] text-gray-400">{rischio.equityPct}% az. / {100 - (rischio.equityPct ?? 0)}% obbl.</p>
               </div>
-            )}
+              <div className="h-2.5 w-full rounded-full bg-surface-100 overflow-hidden flex">
+                <div className="h-full bg-brand-600" style={{ width: `${rischio.equityPct ?? 0}%` }} />
+                <div className="h-full bg-blue-200" style={{ width: `${100 - (rischio.equityPct ?? 0)}%` }} />
+              </div>
+            </div>
           </div>
+        ) : labelRischio ? (
+          <p className="text-sm text-gray-600 pt-1">Profilo salvato: <strong>{labelRischio}</strong>. Rifai il questionario per vedere il dettaglio.</p>
+        ) : (
+          <p className="text-sm text-gray-400 pt-1">Questionario non ancora compilato.</p>
+        )}
+      </SezioneCard>
 
-          {/* --- Obiettivi finanziari --- */}
-          <div className="card p-0 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleSection('obiettivi')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
-            >
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <span className="text-base">🎯</span> Obiettivi finanziari
-              </h2>
-              <span className={`text-gray-400 text-xs transition-transform ${openSections.has('obiettivi') ? 'rotate-180' : ''}`}>▾</span>
-            </button>
-            {openSections.has('obiettivi') && (
-              <div className="px-5 pb-5">
-              <div className="flex flex-wrap gap-2">
-                {AVAILABLE_GOALS.map(goal => (
-                  <button
-                    key={goal}
-                    type="button"
-                    onClick={() => toggleGoal(goal)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                      financialGoals.includes(goal) 
-                        ? 'bg-brand-600 text-white border-brand-600' 
-                        : 'bg-white text-gray-600 border-surface-300 hover:border-brand-400'
-                    }`}
-                  >
-                    {goal}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-gray-400 mt-1.5">Seleziona uno o più obiettivi principali.</p>
-              <div className="mt-4">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Altro obiettivo (facoltativo)</label>
-                <input
-                  value={goalsNote}
-                  onChange={e => setGoalsNote(e.target.value.slice(0, 120))}
-                  maxLength={120}
-                  className="input"
-                  placeholder="Es. Aprire un'attività, sabbatico nel 2030…"
-                />
-                <p className="text-[11px] text-gray-400 mt-1 text-right">{goalsNote.length}/120</p>
-              </div>
-              </div>
-            )}
-          </div>
-
-          {/* --- Fondo pensione --- */}
-          <div className="card p-0 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleSection('pensione')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
-            >
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <span className="text-base">🏦</span> Fondo pensione
-              </h2>
-              <span className={`text-gray-400 text-xs transition-transform ${openSections.has('pensione') ? 'rotate-180' : ''}`}>▾</span>
-            </button>
-            {openSections.has('pensione') && (
-              <div className="px-5 pb-5">
-              
-              {/* Ha un fondo pensione? */}
-              <div className="mb-4">
-                <label className="block text-xs font-medium text-gray-600 mb-2">Hai un fondo pensione?</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="hasPensionFund"
-                      checked={hasPensionFund === true}
-                      onChange={() => setHasPensionFund(true)}
-                      className="text-brand-600 focus:ring-brand-500"
-                    />
-                    Sì
-                  </label>
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="hasPensionFund"
-                      checked={hasPensionFund === false}
-                      onChange={() => {
-                        setHasPensionFund(false)
-                        setPensionFundTfr(false)
-                        setPensionFundType('')
-                      }}
-                      className="text-brand-600 focus:ring-brand-500"
-                    />
-                    No
-                  </label>
-                </div>
-              </div>
-
-              {/* Se sì, mostra le opzioni aggiuntive */}
-              {hasPensionFund && (
-                <div className="space-y-4 pl-1 border-l-2 border-brand-200 pl-3">
-                  {/* Accredito TFR */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-2">Con accredito del TFR?</label>
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <input
-                          type="radio"
-                          name="pensionFundTfr"
-                          checked={pensionFundTfr === true}
-                          onChange={() => setPensionFundTfr(true)}
-                          className="text-brand-600 focus:ring-brand-500"
-                        />
-                        Sì
-                      </label>
-                      <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <input
-                          type="radio"
-                          name="pensionFundTfr"
-                          checked={pensionFundTfr === false}
-                          onChange={() => setPensionFundTfr(false)}
-                          className="text-brand-600 focus:ring-brand-500"
-                        />
-                        No
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Tipologia fondo */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-2">Tipologia fondo</label>
-                    <select
-                      value={pensionFundType}
-                      onChange={(e) => setPensionFundType(e.target.value as 'categoria' | 'privato' | '')}
-                      className="input"
-                    >
-                      <option value="">Seleziona...</option>
-                      <option value="categoria">Di categoria</option>
-                      <option value="privato">Privato</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-              </div>
-            )}
-          </div>
-          </div>
-
-          {/* Colonna destra: profilo di rischio */}
+      {/* Popup di modifica */}
+      <Drawer open={drawer === 'dati'} onClose={chiudi} variant="center" closeOnBlankClick={false}
+        title="Dati personali" subtitle="Modifica i tuoi dati">
+        <div className="space-y-4">
           <div>
-          {/* --- Profilo di rischio (span pieno: contiene più campi) --- */}
-          <div className="card p-0 overflow-hidden">
+            <p className="text-xs text-gray-400 mb-1">Email</p>
+            <p className="text-sm text-gray-700 bg-surface-50 px-3 py-2 rounded-lg border border-surface-200">{email}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nome visualizzato</label>
+            <input value={form.nome} onChange={e => upd('nome', e.target.value)} className="input" placeholder="Francesco" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Data di nascita</label>
+            <input type="date" value={form.birthDate} onChange={e => upd('birthDate', e.target.value)} className="input" />
+            {calcolaEta(form.birthDate) != null && (
+              <p className="text-xs text-gray-400 mt-1">Età: {calcolaEta(form.birthDate)} anni</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Situazione lavorativa</label>
+            <select value={form.employment} onChange={e => upd('employment', e.target.value)} className="input">
+              <option value="">Seleziona...</option>
+              {Object.entries(EMPLOYMENT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+        </div>
+        <FooterSalva onSalva={salva} onAnnulla={chiudi} saving={saving} error={error} />
+      </Drawer>
+
+      <Drawer open={drawer === 'obiettivi'} onClose={chiudi} variant="center" closeOnBlankClick={false}
+        title="Obiettivi finanziari" subtitle="Seleziona uno o più obiettivi principali">
+        <div className="flex flex-wrap gap-2">
+          {AVAILABLE_GOALS.map(goal => (
             <button
+              key={goal}
               type="button"
-              onClick={() => toggleSection('rischio')}
-              className="w-full flex items-center justify-between px-5 py-4 text-left"
+              onClick={() => upd('goals', form.goals.includes(goal) ? form.goals.filter(g => g !== goal) : [...form.goals, goal])}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                form.goals.includes(goal)
+                  ? 'bg-brand-600 text-white border-brand-600'
+                  : 'bg-white text-gray-600 border-surface-300 hover:border-brand-400'
+              }`}
             >
-              <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <span className="text-base">📈</span> Profilo di rischio
-              </h2>
-              <span className={`text-gray-400 text-xs transition-transform ${openSections.has('rischio') ? 'rotate-180' : ''}`}>▾</span>
+              {goal}
             </button>
-            {openSections.has('rischio') && (
-              <div className="px-5 pb-5 space-y-4 max-h-[70vh] overflow-y-auto">
-            <p className="text-xs text-gray-400">Rispondi alle domande per calcolare il tuo profilo.</p>
-            <div className="grid grid-cols-1 gap-3">
-            {RISK_QUESTIONS.map((q) => (
-              <div key={q.id} className="space-y-1">
-                <label className="text-xs font-medium text-gray-600">{q.label}</label>
-                <select 
-                  className="input text-sm" 
-                  value={riskAnswers[q.id] ?? ''} 
-                  onChange={(e) => handleRiskChange(q.id, Number(e.target.value))}
+          ))}
+        </div>
+        <div className="mt-4">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Altro obiettivo (facoltativo)</label>
+          <input
+            value={form.goalsNote}
+            onChange={e => upd('goalsNote', e.target.value.slice(0, 120))}
+            maxLength={120}
+            className="input"
+            placeholder="Es. aprire un'attività, sabbatico nel 2030…"
+          />
+          <p className="text-[11px] text-gray-400 mt-1 text-right">{form.goalsNote.length}/120</p>
+        </div>
+        <FooterSalva onSalva={salva} onAnnulla={chiudi} saving={saving} error={error} />
+      </Drawer>
+
+      <Drawer open={drawer === 'pensione'} onClose={chiudi} variant="center" closeOnBlankClick={false}
+        title="Fondo pensione" subtitle="Previdenza complementare">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Hai un fondo pensione?</label>
+            <SegmentedControl<'si' | 'no'>
+              ariaLabel="Hai un fondo pensione"
+              options={[{ value: 'si', label: 'Sì' }, { value: 'no', label: 'No' }]}
+              value={form.hasPension ? 'si' : 'no'}
+              onChange={v => setForm(p => v === 'si'
+                ? { ...p, hasPension: true }
+                : { ...p, hasPension: false, pensionTfr: false, pensionType: '' })}
+            />
+          </div>
+          {form.hasPension && (
+            <div className="space-y-4 border-l-2 border-brand-200 pl-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">Con accredito del TFR?</label>
+                <SegmentedControl<'si' | 'no'>
+                  ariaLabel="Accredito TFR"
+                  options={[{ value: 'si', label: 'Sì' }, { value: 'no', label: 'No' }]}
+                  value={form.pensionTfr ? 'si' : 'no'}
+                  onChange={v => upd('pensionTfr', v === 'si')}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">Tipologia fondo</label>
+                <select
+                  value={form.pensionType}
+                  onChange={e => upd('pensionType', e.target.value as 'categoria' | 'privato' | '')}
+                  className="input"
                 >
                   <option value="">Seleziona...</option>
-                  {q.options.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                  <option value="categoria">Di categoria</option>
+                  <option value="privato">Privato</option>
                 </select>
               </div>
-            ))}
             </div>
-
-            {Object.keys(riskAnswers).length === RISK_QUESTIONS.length && (() => {
-              const result = calculateRiskProfile()
-              const equityPct = result.equityPct ?? 0
-              const bondPct = 100 - equityPct
-              return (
-                <div className="mt-2 space-y-3">
-                  <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-center">
-                    <p className="text-xs text-brand-700">Il tuo profilo complessivo:</p>
-                    <p className="text-lg font-bold text-brand-900">{result.label}</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="rounded-lg border border-surface-200 p-2.5">
-                      <p className="text-[11px] text-gray-400 mb-0.5">Comportamento nei crolli</p>
-                      <p className="text-sm font-semibold text-gray-900">{result.behaviorLabel}</p>
-                    </div>
-                    <div className="rounded-lg border border-surface-200 p-2.5">
-                      <p className="text-[11px] text-gray-400 mb-0.5">Diversificazione preferita</p>
-                      <p className="text-sm font-semibold text-gray-900">{result.diversificationLabel}</p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-surface-200 p-2.5">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-[11px] text-gray-400">Mix preferito ({result.allocationLabel})</p>
-                      <p className="text-[11px] text-gray-400">{equityPct}% az. / {bondPct}% obbl.</p>
-                    </div>
-                    <div className="h-2.5 w-full rounded-full bg-surface-100 overflow-hidden flex">
-                      <div className="h-full bg-brand-600" style={{ width: `${equityPct}%` }} />
-                      <div className="h-full bg-blue-200" style={{ width: `${bondPct}%` }} />
-                    </div>
-                    <div className="flex justify-between mt-1 text-[10px] text-gray-400">
-                      <span>Azionario</span>
-                      <span>Obbligazionario</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })()}
-            {riskLabel && Object.keys(riskAnswers).length === 0 && (
-              <div className="mt-2 p-3 bg-surface-50 rounded-lg text-center">
-                <p className="text-xs text-gray-500">Profilo salvato: <strong>{riskLabel}</strong></p>
-                <p className="text-xs text-gray-400">Modifica le risposte per ricalcolarlo.</p>
-              </div>
-            )}
-              </div>
-            )}
-          </div>
-          </div>
+          )}
         </div>
+        <FooterSalva onSalva={salva} onAnnulla={chiudi} saving={saving} error={error} />
+      </Drawer>
 
-        {/* Messaggi */}
-        {error && <div className="mb-4 rounded-lg px-4 py-3 text-sm bg-red-50 text-red-600">{error}</div>}
-        {message && <div className="mb-4 rounded-lg px-4 py-3 text-sm bg-green-50 text-green-700">{message}</div>}
-
-        {/* Bottone Salva */}
-        <div className="flex justify-end">
-          <button type="submit" disabled={saving} className="btn-primary">
-            {saving ? 'Salvataggio…' : 'Salva profilo'}
-          </button>
+      <Drawer open={drawer === 'rischio'} onClose={chiudi} closeOnBlankClick={false}
+        title="Questionario di rischio" subtitle="Rispondi a tutte le domande per calcolare il profilo">
+        <div className="space-y-3">
+          {RISK_QUESTIONS.map(q => (
+            <div key={q.id} className="space-y-1">
+              <label className="text-xs font-medium text-gray-600">{q.label}</label>
+              <select
+                className="input text-sm"
+                value={form.riskAnswers[q.id] ?? ''}
+                onChange={e => setForm(p => ({ ...p, riskAnswers: { ...p.riskAnswers, [q.id]: Number(e.target.value) } }))}
+              >
+                <option value="">Seleziona...</option>
+                {q.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </div>
+          ))}
         </div>
-      </form>
+        <p className="text-xs text-gray-400 mt-3">
+          Risposte: {Object.keys(form.riskAnswers).length}/{RISK_QUESTIONS.length}
+        </p>
+        {anteprima && (
+          <div className="mt-3 p-3 bg-brand-50 border border-brand-200 rounded-lg text-center">
+            <p className="text-xs text-brand-700">Il tuo profilo complessivo</p>
+            <p className="text-lg font-bold text-brand-900">{anteprima.label}</p>
+          </div>
+        )}
+        <FooterSalva onSalva={salva} onAnnulla={chiudi} saving={saving} error={error} />
+      </Drawer>
     </div>
   )
 }

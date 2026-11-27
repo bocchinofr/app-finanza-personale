@@ -6,6 +6,10 @@ import { parseMovimentiSheet } from '@/lib/parseXlsx'
 import { parseMovimentiCsv, parseLiquiditaCsv, parsePortafoglioCsv, parseFondoPensioneCsv } from '@/lib/parseGoogleSheet'
 import { Movimento } from '@/types'
 import { serveCongelamento, congelaAnno } from '@/lib/patrimonioAnnuale'
+import Drawer from '@/components/ui/Drawer'
+import InfoBox from '@/components/ui/InfoBox'
+import SegmentedControl from '@/components/ui/SegmentedControl'
+import { IconSync, IconUpload, IconTrash, IconCheck, IconArrowRight, IconTable } from '@/components/ui/Icons'
 
 type Status = 'idle' | 'fetching' | 'parsing' | 'saving' | 'done' | 'error'
 
@@ -25,6 +29,57 @@ async function fetchSheet(sheetId: string, sheetName: string): Promise<string[][
   return res.json()
 }
 
+const TEMPLATE_URL = 'https://docs.google.com/spreadsheets/d/1fLJoECuxa8bjYPAskzFi7RhRx6-O_1TWB_lmTHWBZ34'
+
+const FOGLI: { nome: string; obbl: boolean; desc: string; campi: [string, string][] }[] = [
+  {
+    nome: 'Movimenti conto', obbl: true,
+    desc: 'Elenco di tutte le transazioni del conto.',
+    campi: [
+      ['MESE', 'abbreviazione: gen, feb, mar…'],
+      ['Data operazione', 'formato GG/MM/AAAA'],
+      ['Descrizione', 'testo libero'],
+      ['Entrate / Uscite', 'importo numerico senza simbolo €'],
+      ['CATEGORIA', 'usa i valori dell\'elenco nel template'],
+      ['COMPONENTE', 'opzionale, es. Giulia o Famiglia'],
+    ],
+  },
+  {
+    nome: 'Liquidità', obbl: false,
+    desc: 'Saldo di conti e depositi, mese per mese.',
+    campi: [
+      ['ANNO', 'es. 2026'],
+      ['MESE', 'abbreviazione: gen, feb, mar…'],
+      ['CONTO', 'nome del conto (es. Intesa, Fineco)'],
+      ['SALDO', 'importo numerico'],
+    ],
+  },
+  {
+    nome: 'Fondo Pensione', obbl: false,
+    desc: 'Saldo e interessi maturati sul fondo pensione.',
+    campi: [
+      ['ANNO', 'es. 2026'],
+      ['MESE', 'abbreviazione: gen, feb, mar…'],
+      ['FONDO', 'nome del fondo'],
+      ['SALDO', 'importo numerico'],
+      ['INTERESSI', 'interessi maturati nel mese'],
+    ],
+  },
+  {
+    nome: 'Anagrafica Portafoglio', obbl: false,
+    desc: 'Asset finanziari: azioni, obbligazioni, ETF, fondi.',
+    campi: [
+      ['ASSET', 'nome o codice sintetico della posizione'],
+      ['TICKER / ISIN', 'identificativi per il recupero quotazioni'],
+      ['NOME / DESCRIZIONE', 'nome esteso dell\'asset'],
+      ['DATA ACQUISTO', 'formato GG/MM/AAAA'],
+      ['PREZZO ACQUISTO / QUANTITÀ', 'prezzo medio di carico e quantità possedute'],
+      ['CLASSE', 'azionario, obbligazionario o altro'],
+      ['SVINCOLATO', 'S se il capitale è libero e concorre alla riserva di accumulo'],
+    ],
+  },
+]
+
 function UploadPageInner() {
   const [dragging, setDragging]       = useState(false)
   const [status, setStatus]           = useState<Status>('idle')
@@ -37,6 +92,9 @@ function UploadPageInner() {
   // Modale "congela l'anno precedente": azione = sync/import da eseguire dopo la scelta
   const [conferma, setConferma]       = useState<{ annoPrec: number; azione: () => Promise<void> } | null>(null)
   const [congelando, setCongelando]   = useState(false)
+  const [modo, setModo]               = useState<'sheets' | 'xlsx'>('sheets')
+  const [guida, setGuida]             = useState(false)
+  const [confermaCancella, setConfermaCancella] = useState(false)
   const supabase = createClient()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -309,7 +367,7 @@ function UploadPageInner() {
   }
 
   async function clearData() {
-    if (!confirm(`Sei sicuro di voler cancellare tutti i movimenti del ${anno}?`)) return
+    setConfermaCancella(false)
     setStatus('saving')
     setMessage('Cancellazione in corso…')
     try {
@@ -356,275 +414,265 @@ function UploadPageInner() {
 
   const isLoading = ['fetching','parsing','saving'].includes(status)
 
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Importa dati</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Scegli come caricare i movimenti. I dati esistenti per l&apos;anno selezionato verranno sostituiti.
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-
-        {/* Card 1: Anno + Google Sheets con input per foglio */}
-        <div className="card space-y-4">
-          <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-            <span className="text-base">📊</span> Sincronizzazione automatica
-          </h2>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Anno di riferimento</label>
-            <select value={anno} onChange={e => setAnno(Number(e.target.value))} className="input w-full">
-              {[2024, 2025, 2026, 2027].map(y => <option key={y}>{y}</option>)}
-            </select>
-          </div>
-
-          <div className="pt-2 border-t border-surface-100">
-            {profileLoading ? (
-              <p className="text-xs text-gray-400">Caricamento…</p>
-            ) : (
-              <>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  URL o ID del foglio Google
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    value={sheetInput}
-                    onChange={e => setSheetInput(e.target.value)}
-                    placeholder="Incolla URL o ID"
-                    className="input flex-1"
-                  />
-                  <button
-                    onClick={saveSheetId}
-                    disabled={savingSheet}
-                    className="btn-secondary text-xs whitespace-nowrap"
-                  >
-                    {savingSheet ? 'Salvo…' : 'Salva foglio'}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  Deve essere condiviso come <strong>Visualizzatore</strong> per chiunque abbia il link.
-                </p>
-
-                {sheetId && (
-                  <div className="mt-3 pt-3 border-t border-surface-100">
-                    <p className="text-xs text-gray-500 mb-1">Foglio attualmente collegato:</p>
-                    <a
-                      href={`https://docs.google.com/spreadsheets/d/${sheetId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-brand-600 underline break-all"
-                    >
-                      ↗ {sheetId}
-                    </a>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => conControlloCongelamento(syncGoogleSheets)}
-                  disabled={isLoading || !sheetId}
-                  className="btn-primary text-sm w-full mt-3"
-                >
-                  {isLoading && status === 'fetching' ? '⟳ Sincronizzazione…' : 'Sincronizza ora'}
-                </button>
-              </>
-            )}
-          </div>
+    <div className="max-w-[1680px] mx-auto flex flex-col gap-4">
+      {/* Azioni */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">Anno</span>
+          <SegmentedControl<string>
+            ariaLabel="Anno di riferimento"
+            options={[2024, 2025, 2026, 2027].map(y => ({ value: String(y), label: String(y) }))}
+            value={String(anno)}
+            onChange={v => setAnno(Number(v))}
+          />
+          <InfoBox title="Come funziona">
+            <p>Scegli l&apos;anno, poi la sorgente: Google Sheets (sincronizzazione) oppure un file .xlsx.</p>
+            <p>I dati esistenti dell&apos;anno selezionato vengono aggiornati con quelli del foglio. Le righe già presenti non vengono toccate.</p>
+          </InfoBox>
         </div>
-
-        {/* Card 2: Upload file .xlsx (invariata) */}
-        <div
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors flex flex-col items-center justify-center
-            ${dragging ? 'border-brand-400 bg-brand-50' : 'border-surface-300 bg-white hover:border-surface-400'}`}
-        >
-          <div className="text-3xl mb-2">📄</div>
-          <p className="text-sm font-medium text-gray-700 mb-1">Carica file .xlsx</p>
-          <p className="text-xs text-gray-400 mb-4">Trascina il file qui oppure</p>
-          <label className="btn-secondary cursor-pointer inline-block text-sm">
-            Scegli file
-            <input type="file" accept=".xlsx" className="hidden" onChange={e => {
-              const f = e.target.files?.[0]; if (f) processFile(f)
-            }} />
-          </label>
-          <p className="text-xs text-gray-400 mt-3">
-            Compatibile con il template Google Sheets
-          </p>
-        </div>
-
-        {/* Card 3: Template info (invariata) */}
-        <div className="card space-y-4">
-          <h2 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-            <span className="text-base">📋</span> Non hai ancora un foglio?
-          </h2>
-          <p className="text-xs text-gray-500">
-            Apri il template, fai <strong>File → Crea una copia</strong> per salvarlo sul tuo Google Drive,
-            compilalo con i tuoi movimenti e incolla il link nella sezione qui accanto.
-          </p>
-          <a
-            href="https://docs.google.com/spreadsheets/d/1fLJoECuxa8bjYPAskzFi7RhRx6-O_1TWB_lmTHWBZ34"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary text-xs inline-block"
-          >
-            ↗ Apri template
+        <div className="flex items-center gap-2">
+          <a href={TEMPLATE_URL} target="_blank" rel="noopener noreferrer" className="btn-secondary inline-flex items-center gap-1.5">
+            <IconTable size={16} /> Template
           </a>
-          <div className="pt-2 border-t border-surface-100">
-            <p className="text-xs text-gray-400">
-              Il foglio può contenere fino a 4 fogli:<br />
-              <strong>Movimenti conto</strong> (obbligatorio), <strong>Liquidità</strong>, <strong>Fondo pensione</strong> e <strong>Anagrafica Portafoglio</strong> (opzionali).
-            </p>
-          </div>
+          <button type="button" onClick={() => setGuida(true)} className="btn-secondary">Guida al foglio</button>
         </div>
       </div>
 
-      {/* Guida configurazione — aggiornata: 4 fogli, colonne Liquidità/Fondo pensione corrette */}
-      <details className="mt-6 card bg-surface-50">
-        <summary className="text-sm font-semibold text-gray-700 cursor-pointer hover:text-brand-600 transition-colors">
-          📖 Come configurare il tuo foglio Google
-        </summary>
-        {/* ... contenuto invariato ... */}
-        <div className="space-y-3 pt-3 text-xs text-gray-500">
-          <p>
-            Il template contiene <strong className="text-gray-700">4 fogli</strong> che puoi compilare.
-            Solo il foglio <strong className="text-gray-700">&quot;Movimenti conto&quot;</strong> è obbligatorio.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-              <p className="font-medium text-gray-700 text-xs">📊 Foglio 1: Movimenti conto (obbligatorio)</p>
-              <p className="text-gray-500">Contiene l&apos;elenco di tutte le transazioni del conto.</p>
-              <div className="space-y-0.5 pt-1">
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Data operazione</code> — formato GG/MM/AAAA</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Descrizione</code> — testo libero</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Entrate</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">Uscite</code> — importo numerico senza simbolo €</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CATEGORIA</code> — usa i valori dell&apos;elenco nel template</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">COMPONENTE</code> — opzionale, es. &quot;Giulia&quot; o &quot;Famiglia&quot;</p>
-              </div>
-            </div>
-            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-              <p className="font-medium text-gray-700 text-xs">💰 Foglio 2: Liquidità (opzionale)</p>
-              <p className="text-gray-500">Traccia il saldo dei conti correnti e dei depositi, mese per mese.</p>
-              <div className="space-y-0.5 pt-1">
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ANNO</code> — es. 2026</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CONTO</code> — nome del conto (es. &quot;Intesa&quot;, &quot;Fineco&quot;)</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">SALDO</code> — importo numerico</p>
-              </div>
-            </div>
-            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-              <p className="font-medium text-gray-700 text-xs">🏦 Foglio 3: Fondo pensione (opzionale)</p>
-              <p className="text-gray-500">Traccia il saldo e gli interessi maturati sul fondo pensione, mese per mese.</p>
-              <div className="space-y-0.5 pt-1">
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ANNO</code> — es. 2026</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">MESE</code> — abbreviazione: gen, feb, mar…</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">FONDO</code> — nome del fondo</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">SALDO</code> — importo numerico</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">INTERESSI</code> — interessi maturati nel mese</p>
-              </div>
-            </div>
-            <div className="bg-surface-50/50 rounded-lg p-3 space-y-1 border border-surface-200/50">
-              <p className="font-medium text-gray-700 text-xs">📈 Foglio 4: Anagrafica Portafoglio (opzionale)</p>
-              <p className="text-gray-500">Elenco degli asset finanziari (azioni, obbligazioni, ETF, fondi).</p>
-              <div className="space-y-0.5 pt-1">
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ASSET</code> — nome/codice sintetico della posizione</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">TICKER</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">ISIN</code> — identificativi per il recupero quotazioni</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">NOME</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">DESCRIZIONE</code> — nome esteso dell&apos;asset</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">DATA ACQUISTO</code> — formato GG/MM/AAAA</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">PREZZO ACQUISTO</code> / <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">QUANTITÀ</code> — prezzo medio di carico e quantità possedute</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">CLASSE</code> — azionario, obbligazionario o altro</p>
-                <p>• <code className="bg-surface-200 px-1.5 py-0.5 rounded text-[11px]">SVINCOLATO</code> — &quot;S&quot; se il capitale è libero e concorre alla riserva di accumulo</p>
-              </div>
-            </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        {/* Sorgente dati */}
+        <section className="card flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">Sorgente dati · {anno}</h2>
+            <SegmentedControl<'sheets' | 'xlsx'>
+              ariaLabel="Sorgente"
+              options={[{ value: 'sheets', label: 'Google Sheets' }, { value: 'xlsx', label: 'File .xlsx' }]}
+              value={modo}
+              onChange={setModo}
+            />
           </div>
-          <div className="mt-2 pt-3 border-t border-surface-200 space-y-1">
-            <p className="font-medium text-gray-700 text-xs">🚀 Come iniziare</p>
-            <p>1. Apri il <a href="https://docs.google.com/spreadsheets/d/1fLJoECuxa8bjYPAskzFi7RhRx6-O_1TWB_lmTHWBZ34" target="_blank" rel="noopener noreferrer" className="text-brand-600 underline">template</a> e fai <strong className="text-gray-700">File → Crea una copia</strong></p>
+
+          {modo === 'sheets' ? (
+            <div className="space-y-3">
+              {profileLoading ? (
+                <p className="text-xs text-gray-400">Caricamento…</p>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">URL o ID del foglio Google</label>
+                    <div className="flex gap-2">
+                      <input
+                        value={sheetInput}
+                        onChange={e => setSheetInput(e.target.value)}
+                        placeholder="Incolla URL o ID"
+                        className="input flex-1"
+                      />
+                      <button onClick={saveSheetId} disabled={savingSheet} className="btn-secondary text-xs whitespace-nowrap">
+                        {savingSheet ? 'Salvo…' : 'Salva foglio'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">
+                      Deve essere condiviso come <strong>Visualizzatore</strong> per chiunque abbia il link.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-50 border border-surface-100 px-3 py-2">
+                    {sheetId ? (
+                      <>
+                        <a
+                          href={`https://docs.google.com/spreadsheets/d/${sheetId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-brand-600 hover:underline truncate"
+                        >
+                          ↗ Foglio collegato: {sheetId}
+                        </a>
+                        <span className="shrink-0 rounded-full bg-green-50 text-green-700 text-[11px] font-semibold px-2 py-0.5">Collegato</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs text-gray-500">Nessun foglio collegato</span>
+                        <span className="shrink-0 rounded-full bg-surface-100 text-gray-500 text-[11px] font-medium px-2 py-0.5">Non collegato</span>
+                      </>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => conControlloCongelamento(syncGoogleSheets)}
+                    disabled={isLoading || !sheetId}
+                    className="btn-primary w-full inline-flex items-center justify-center gap-2"
+                  >
+                    <IconSync size={16} className={isLoading ? 'animate-spin' : ''} />
+                    {isLoading && status === 'fetching' ? 'Sincronizzazione…' : 'Sincronizza ora'}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div
+              onDragOver={e => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors flex flex-col items-center justify-center
+                ${dragging ? 'border-brand-400 bg-brand-50' : 'border-surface-300 bg-surface-50 hover:border-surface-400'}`}
+            >
+              <span className="h-11 w-11 inline-flex items-center justify-center rounded-full bg-brand-50 text-brand-700 mb-3">
+                <IconUpload size={22} />
+              </span>
+              <p className="text-sm font-medium text-gray-700 mb-1">Carica file .xlsx</p>
+              <p className="text-xs text-gray-400 mb-4">Trascina il file qui oppure</p>
+              <label className="btn-primary cursor-pointer inline-block text-sm">
+                Scegli file
+                <input type="file" accept=".xlsx" className="hidden" onChange={e => {
+                  const f = e.target.files?.[0]; if (f) processFile(f)
+                }} />
+              </label>
+              <p className="text-xs text-gray-400 mt-3">Compatibile con il template Google Sheets (solo foglio Movimenti conto)</p>
+            </div>
+          )}
+
+          {message && (
+            <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2
+              ${status === 'done' ? 'bg-green-50 text-green-700' :
+                status === 'error' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>
+              {isLoading ? <IconSync size={16} className="animate-spin shrink-0" /> : status === 'done' ? <IconCheck size={16} className="shrink-0" /> : null}
+              <span>{message.replace(/^✓\s*/, '')}</span>
+            </div>
+          )}
+          {status === 'done' && (
+            <a href="/dashboard" className="inline-flex items-center gap-1 text-sm text-brand-600 hover:underline">
+              Vai al Patrimonio <IconArrowRight size={14} />
+            </a>
+          )}
+        </section>
+
+        {/* Cosa viene importato + zona pericolo */}
+        <section className="card flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">Cosa viene importato</h2>
+            <InfoBox title="Fogli del template">
+              <p>Il foglio Google può contenere fino a 4 schede. Solo Movimenti conto è obbligatoria.</p>
+              <p>Il dettaglio delle colonne è nella Guida al foglio.</p>
+            </InfoBox>
+          </div>
+          <ul className="divide-y divide-surface-100">
+            {FOGLI.map(f => (
+              <li key={f.nome} className="py-2.5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-gray-900">{f.nome}</p>
+                  <p className="text-xs text-gray-500">{f.desc}</p>
+                </div>
+                <span className={`shrink-0 rounded-full text-[11px] font-semibold px-2 py-0.5 ${f.obbl ? 'bg-green-50 text-green-700' : 'bg-surface-100 text-gray-500'}`}>
+                  {f.obbl ? 'Obbligatorio' : 'Opzionale'}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-auto pt-3 border-t border-surface-100 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-gray-900">Cancella dati {anno}</p>
+              <p className="text-xs text-gray-500">Rimuove movimenti, liquidità e fondo pensione dell&apos;anno.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfermaCancella(true)}
+              disabled={isLoading}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40"
+            >
+              <IconTrash size={14} /> Cancella
+            </button>
+          </div>
+        </section>
+      </div>
+
+      {/* Guida al foglio */}
+      <Drawer open={guida} onClose={() => setGuida(false)} title="Guida al foglio Google" subtitle="Come preparare il tuo foglio">
+        <div className="space-y-4 text-xs text-gray-500">
+          <p>
+            Il template contiene <strong className="text-gray-700">4 fogli</strong>. Solo{' '}
+            <strong className="text-gray-700">Movimenti conto</strong> è obbligatorio.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {FOGLI.map(f => (
+              <div key={f.nome} className="rounded-lg border border-surface-200 p-3 space-y-1.5">
+                <p className="font-semibold text-gray-800 text-[13px]">
+                  {f.nome} <span className="font-normal text-gray-400">· {f.obbl ? 'obbligatorio' : 'opzionale'}</span>
+                </p>
+                <p>{f.desc}</p>
+                <ul className="space-y-0.5 pt-1">
+                  {f.campi.map(([c, d]) => (
+                    <li key={c}>
+                      <code className="bg-surface-100 px-1.5 py-0.5 rounded text-[11px] text-gray-700">{c}</code> — {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="pt-3 border-t border-surface-100 space-y-1">
+            <p className="font-semibold text-gray-800 text-[13px]">Come iniziare</p>
+            <p>1. Apri il <a href={TEMPLATE_URL} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline">template</a> e fai <strong className="text-gray-700">File → Crea una copia</strong></p>
             <p>2. Rinomina il file e compila i fogli che ti servono</p>
             <p>3. Condividilo: <strong className="text-gray-700">Condividi → Chiunque abbia il link → Visualizzatore</strong></p>
-            <p>4. Incolla l&apos;URL qui sopra e clicca <strong className="text-gray-700">Salva foglio</strong></p>
-            <p>5. Clicca <strong className="text-gray-700">Sincronizza ora</strong></p>
+            <p>4. Incolla l&apos;URL e premi <strong className="text-gray-700">Salva foglio</strong></p>
+            <p>5. Premi <strong className="text-gray-700">Sincronizza ora</strong></p>
           </div>
         </div>
-      </details>
+      </Drawer>
 
-      {/* Zona pericolo */}
-      <div className="mt-6 card border-red-200 bg-red-50">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-red-800">⚠️ Cancella dati {anno}</p>
-            <p className="text-xs text-red-600 mt-0.5">Rimuove movimenti e liquidità per l&apos;anno selezionato.</p>
-          </div>
-          <button onClick={clearData} disabled={isLoading}
-            className="px-3 py-1.5 text-xs font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-40">
-            Cancella
-          </button>
-        </div>
-      </div>
-
-      {/* Status message */}
-      {message && (
-        <div className={`mt-4 rounded-lg px-4 py-3 text-sm flex items-center gap-2
-          ${status === 'done' ? 'bg-green-50 text-green-700' :
-            status === 'error' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>
-          {isLoading && <span className="animate-spin text-base">⟳</span>}
-          {message}
-        </div>
-      )}
-
-      {conferma && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="card w-full max-w-md space-y-3 shadow-xl">
-            <div className="flex items-start gap-3">
-              <span className="text-xl">🧊</span>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Congelare i dati del {conferma.annoPrec} prima di importare il {anno}?
-                </h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  Stai caricando il primo file del {anno} e il {conferma.annoPrec} non è ancora salvato nella vista annuale.
-                  Se non lo congeli, in futuro i suoi totali verranno ricalcolati dai dati attuali.
-                </p>
-              </div>
-            </div>
+      {/* Congelamento anno precedente */}
+      <Drawer
+        open={!!conferma}
+        onClose={() => { if (!congelando) setConferma(null) }}
+        variant="center"
+        closeOnBlankClick={false}
+        title={conferma ? `Congelare il ${conferma.annoPrec} prima di importare il ${anno}?` : ''}
+      >
+        {conferma && (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              Stai caricando il primo file del {anno} e il {conferma.annoPrec} non è ancora salvato nella vista annuale.
+              Se non lo congeli, in futuro i suoi totali verranno ricalcolati dai dati attuali.
+            </p>
             <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
               Attenzione: il <strong>capitale investito</strong> si ricostruisce dagli asset in portafoglio oggi.
               Se hai già venduto o modificato posizioni dopo il {conferma.annoPrec}, il valore salvato
               potrebbe risultare inesatto. Congelare adesso, prima del sync, è il momento più preciso.
             </p>
-            <div className="flex flex-col sm:flex-row gap-2 pt-1">
-              <button
-                onClick={() => confermaCongelamento(true)}
-                disabled={congelando}
-                className="btn-primary text-sm flex-1"
-              >
+            <div className="flex flex-col gap-2 pt-1">
+              <button onClick={() => confermaCongelamento(true)} disabled={congelando} className="btn-primary text-sm">
                 {congelando ? 'Salvo…' : `Congela ${conferma.annoPrec} e sincronizza`}
               </button>
-              <button
-                onClick={() => confermaCongelamento(false)}
-                disabled={congelando}
-                className="btn-secondary text-sm flex-1"
-              >
+              <button onClick={() => confermaCongelamento(false)} disabled={congelando} className="btn-secondary text-sm">
                 Sincronizza senza congelare
               </button>
+              <button onClick={() => setConferma(null)} disabled={congelando} className="text-xs text-gray-400 hover:text-gray-600 py-1">
+                Annulla
+              </button>
             </div>
-            <button
-              onClick={() => setConferma(null)}
-              disabled={congelando}
-              className="w-full text-xs text-gray-400 hover:text-gray-600"
-            >
-              Annulla
-            </button>
           </div>
-        </div>
-      )}
+        )}
+      </Drawer>
 
-      {status === 'done' && (
-        <div className="mt-3 text-center">
-          <a href="/dashboard" className="text-sm text-brand-600 hover:underline">→ Vai alla dashboard</a>
+      {/* Conferma cancellazione */}
+      <Drawer
+        open={confermaCancella}
+        onClose={() => setConfermaCancella(false)}
+        variant="center"
+        closeOnBlankClick={false}
+        title={`Cancellare i dati del ${anno}?`}
+      >
+        <p className="text-xs text-gray-500">
+          Verranno rimossi tutti i movimenti, la liquidità e il fondo pensione del {anno}. L&apos;operazione non si può annullare.
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={() => setConfermaCancella(false)} className="btn-secondary">Annulla</button>
+          <button onClick={clearData} className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors">
+            Cancella definitivamente
+          </button>
         </div>
-      )}
+      </Drawer>
     </div>
   )
 }

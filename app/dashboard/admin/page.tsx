@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { RISK_QUESTIONS } from '@/lib/riskQuestionnaire'
+import KpiCard from '@/components/ui/KpiCard'
+import Drawer from '@/components/ui/Drawer'
+import InfoBox from '@/components/ui/InfoBox'
+import SegmentedControl from '@/components/ui/SegmentedControl'
+import { IconSync } from '@/components/ui/Icons'
 
 interface AdminStat {
   user_id: string
@@ -52,6 +57,15 @@ function calcAge(birthDate: string) {
   return new Date().getFullYear() - new Date(birthDate).getFullYear()
 }
 
+function Sezione({ titolo, children }: { titolo: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-5">
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{titolo}</p>
+      {children}
+    </div>
+  )
+}
+
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 py-2 border-b border-surface-100 last:border-0">
@@ -70,6 +84,8 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<AdminStat | null>(null)
   const [detail, setDetail] = useState<AdminDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [ricerca, setRicerca] = useState('')
+  const [filtroFoglio, setFiltroFoglio] = useState<'tutti' | 'con' | 'senza'>('tutti')
 
   useEffect(() => {
     if (!selectedUser) { setDetail(null); return }
@@ -118,7 +134,7 @@ export default function AdminPage() {
   const totFogli = stats.filter(s => s.google_sheet_id).length
   const totMovimenti = stats.reduce((s, r) => s + Number(r.movimenti_count), 0)
 
-  if (loading) return <div className="text-sm text-gray-400 mt-8 text-center">Caricamento…</div>
+  if (loading) return <div className="flex items-center justify-center h-64 text-sm text-gray-400">Caricamento…</div>
 
   if (error) return (
     <div className="max-w-lg mt-8">
@@ -133,153 +149,169 @@ export default function AdminPage() {
     </div>
   )
 
+  const totRischio = stats.filter(s => s.risk_profile_label).length
+  const q = ricerca.trim().toLowerCase()
+  const filtrati = stats.filter(s => {
+    if (filtroFoglio === 'con' && !s.google_sheet_id) return false
+    if (filtroFoglio === 'senza' && s.google_sheet_id) return false
+    if (q && !(`${s.email} ${s.nome_visualizzato ?? ''}`.toLowerCase().includes(q))) return false
+    return true
+  })
+  const filtriAttivi = q !== '' || filtroFoglio !== 'tutti'
+  const pct = (n: number) => totUtenti > 0 ? `${Math.round((n / totUtenti) * 100)}%` : '0%'
+  const Pill = ({ children }: { children: React.ReactNode }) => (
+    <span className="inline-flex items-center rounded-full bg-surface-100 text-gray-500 text-[11px] font-medium px-2 py-0.5">{children}</span>
+  )
+
   return (
-    <div className="flex gap-6 h-full">
-
-      {/* ===== LISTA UTENTI ===== */}
-      <div className={`transition-all duration-300 ${selectedUser ? 'flex-1 min-w-0' : 'w-full'}`}>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">Admin</h1>
-            {lastRefresh && (
-              <p className="text-xs text-gray-400 mt-0.5">
-                Aggiornato alle {lastRefresh.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            )}
-          </div>
-          <button onClick={load} className="btn-secondary text-xs">↻ Aggiorna</button>
-        </div>
-
-        {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          {[
-            { label: 'Utenti registrati', val: totUtenti, color: 'text-gray-900' },
-            { label: 'Fogli collegati', val: totFogli, color: 'text-brand-700' },
-            { label: 'Movimenti totali', val: totMovimenti.toLocaleString('it-IT'), color: 'text-gray-900' },
-          ].map(c => (
-            <div key={c.label} className="card py-3">
-              <p className="text-xs text-gray-400 mb-1">{c.label}</p>
-              <p className={`text-2xl font-semibold ${c.color}`}>{c.val}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Users table */}
-        <div className="card p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th className="table-th">Utente</th>
-                  <th className="table-th">Registrato</th>
-                  <th className="table-th">Nome</th>
-                  <th className="table-th">Foglio Google</th>
-                  <th className="table-th text-right">Movimenti</th>
-                  <th className="table-th">Anni</th>
-                  <th className="table-th">Profilo rischio</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.map(s => (
-                  <tr
-                    key={s.user_id}
-                    onClick={() => setSelectedUser(prev => prev?.user_id === s.user_id ? null : s)}
-                    className={`cursor-pointer transition-colors
-                      ${selectedUser?.user_id === s.user_id
-                        ? 'bg-brand-50'
-                        : 'hover:bg-surface-50'}`}
-                  >
-                    <td className="table-td text-xs font-medium">{s.email}</td>
-                    <td className="table-td text-xs text-gray-400">{fmt(s.created_at)}</td>
-                    <td className="table-td text-xs text-gray-500">{s.nome_visualizzato ?? '–'}</td>
-                    <td className="table-td text-xs">
-                      {s.google_sheet_id ? (
-                        <a
-                          href={`https://docs.google.com/spreadsheets/d/${s.google_sheet_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-brand-600 hover:underline"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          ↗ Apri foglio
-                        </a>
-                      ) : (
-                        <span className="text-gray-300">non collegato</span>
-                      )}
-                    </td>
-                    <td className="table-td text-xs text-right font-medium tabular-nums">
-                      {Number(s.movimenti_count).toLocaleString('it-IT')}
-                    </td>
-                    <td className="table-td text-xs text-gray-400">{s.anni}</td>
-                    <td className="table-td text-xs">
-                      {s.risk_profile_label ? (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLORS[s.risk_profile_label] ?? 'bg-surface-100 text-gray-600'}`}>
-                          {s.risk_profile_label}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">–</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {stats.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="table-td text-center text-gray-400 py-8">Nessun utente</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+    <div className="max-w-[1680px] mx-auto flex flex-col gap-4">
+      {/* Azioni */}
+      <div className="flex items-center justify-end gap-3">
+        {lastRefresh && (
+          <span className="text-xs text-gray-400">
+            Aggiornato alle {lastRefresh.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+        <button onClick={load} className="btn-secondary inline-flex items-center gap-1.5">
+          <IconSync size={16} /> Aggiorna
+        </button>
       </div>
 
-      {/* ===== PANNELLO LATERALE PROFILO ===== */}
-      {selectedUser && (
-        <div className="w-96 shrink-0">
-          <div className="card sticky top-6">
-            {/* Header pannello */}
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
-                  {selectedUser.nome_visualizzato ?? 'Utente'}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">{selectedUser.email}</p>
-              </div>
-              <button
-                onClick={() => setSelectedUser(null)}
-                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
-              >
-                ×
+      {/* KPI */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard variant="compact" label="Utenti registrati" color="#3f6b4f" delta={null}
+          value={String(totUtenti)} badge={<Pill>Totale</Pill>} />
+        <KpiCard variant="compact" label="Fogli collegati" color="#2563eb" delta={null}
+          value={String(totFogli)} badge={<Pill>{pct(totFogli)} degli utenti</Pill>} />
+        <KpiCard variant="compact" label="Movimenti totali" color="#d97706" delta={null}
+          value={totMovimenti.toLocaleString('it-IT')} badge={<Pill>Tutti gli utenti</Pill>} />
+        <KpiCard variant="compact" label="Profilo di rischio compilato" color="#7c3aed" delta={null}
+          value={String(totRischio)} badge={<Pill>{pct(totRischio)} degli utenti</Pill>} />
+      </div>
+
+      {/* Tabella utenti */}
+      <section className="card p-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-surface-100">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">Utenti</h2>
+            <span className="text-xs text-gray-400">{filtrati.length} di {totUtenti}</span>
+            <InfoBox title="Come si usa">
+              <p>Cerca per email o nome e filtra per foglio Google collegato.</p>
+              <p>Clicca una riga per aprire il dettaglio dell&apos;utente in un pannello laterale.</p>
+            </InfoBox>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={ricerca}
+              onChange={e => setRicerca(e.target.value)}
+              placeholder="Cerca email o nome"
+              className="input !w-56"
+            />
+            <SegmentedControl<'tutti' | 'con' | 'senza'>
+              ariaLabel="Filtro foglio"
+              options={[{ value: 'tutti', label: 'Tutti' }, { value: 'con', label: 'Con foglio' }, { value: 'senza', label: 'Senza foglio' }]}
+              value={filtroFoglio}
+              onChange={setFiltroFoglio}
+            />
+            {filtriAttivi && (
+              <button type="button" onClick={() => { setRicerca(''); setFiltroFoglio('tutti') }} className="text-xs text-brand-700 hover:underline">
+                Azzera filtri
               </button>
+            )}
+          </div>
+        </div>
+        <table className="w-full table-fixed">
+          <thead>
+            <tr>
+              <th className="table-th w-[34%]">Utente</th>
+              <th className="table-th">Registrato</th>
+              <th className="table-th">Foglio Google</th>
+              <th className="table-th text-right">Movimenti</th>
+              <th className="table-th">Profilo rischio</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtrati.map(s => (
+              <tr
+                key={s.user_id}
+                onClick={() => setSelectedUser(s)}
+                className="cursor-pointer transition-colors hover:bg-surface-50"
+              >
+                <td className="table-td">
+                  <p className="text-xs font-medium text-gray-900 truncate">{s.email}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{s.nome_visualizzato ?? '–'}</p>
+                </td>
+                <td className="table-td text-xs text-gray-500">{fmt(s.created_at)}</td>
+                <td className="table-td text-xs">
+                  {s.google_sheet_id ? (
+                    <span className="rounded-full bg-green-50 text-green-700 text-[11px] font-semibold px-2 py-0.5">Collegato</span>
+                  ) : (
+                    <span className="text-gray-300">non collegato</span>
+                  )}
+                </td>
+                <td className="table-td text-xs text-right font-medium tabular-nums">
+                  {Number(s.movimenti_count).toLocaleString('it-IT')}
+                </td>
+                <td className="table-td text-xs">
+                  {s.risk_profile_label ? (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLORS[s.risk_profile_label] ?? 'bg-surface-100 text-gray-600'}`}>
+                      {s.risk_profile_label}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300">–</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {filtrati.length === 0 && (
+              <tr>
+                <td colSpan={5} className="table-td text-center text-gray-400 py-8">Nessun utente</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      {/* Dettaglio utente */}
+      <Drawer
+        open={!!selectedUser}
+        onClose={() => setSelectedUser(null)}
+        title={selectedUser?.nome_visualizzato ?? 'Utente'}
+        subtitle={selectedUser?.email}
+      >
+        {selectedUser && (
+          <>
+            <div className="grid grid-cols-3 gap-2 mb-5">
+              <div className="rounded-lg bg-surface-50 border border-surface-100 px-3 py-2">
+                <p className="text-[11px] text-gray-500">Movimenti</p>
+                <p className="text-[13px] font-semibold font-mono tabular-nums">{Number(selectedUser.movimenti_count).toLocaleString('it-IT')}</p>
+              </div>
+              <div className="rounded-lg bg-surface-50 border border-surface-100 px-3 py-2">
+                <p className="text-[11px] text-gray-500">Anni</p>
+                <p className="text-[13px] font-semibold">{selectedUser.anni || '–'}</p>
+              </div>
+              <div className="rounded-lg bg-surface-50 border border-surface-100 px-3 py-2">
+                <p className="text-[11px] text-gray-500">Rischio</p>
+                <p className="text-[13px] font-semibold truncate">{selectedUser.risk_profile_label ?? '–'}</p>
+              </div>
             </div>
 
-            {/* Sezione: Dati personali */}
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Dati personali</p>
+            <Sezione titolo="Dati personali">
               <DetailRow label="Registrato" value={fmt(selectedUser.created_at)} />
-              <DetailRow
-                label="Età"
-                value={selectedUser.birth_date
-                  ? `${calcAge(selectedUser.birth_date)} anni`
-                  : '–'}
-              />
+              <DetailRow label="Età" value={selectedUser.birth_date ? `${calcAge(selectedUser.birth_date)} anni` : '–'} />
               <DetailRow
                 label="Lavoro"
                 value={selectedUser.employment_status
                   ? EMPLOYMENT_LABELS[selectedUser.employment_status] ?? selectedUser.employment_status
                   : '–'}
               />
-            </div>
+            </Sezione>
 
-            {/* Sezione: Obiettivi */}
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Obiettivi finanziari</p>
+            <Sezione titolo="Obiettivi finanziari">
               {selectedUser.financial_goals && selectedUser.financial_goals.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {selectedUser.financial_goals.map(g => (
-                    <span key={g} className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">
-                      {g}
-                    </span>
+                    <span key={g} className="text-xs bg-surface-100 text-gray-600 px-2 py-0.5 rounded-full">{g}</span>
                   ))}
                 </div>
               ) : (
@@ -288,11 +320,9 @@ export default function AdminPage() {
               {detail?.financial_goals_note && (
                 <p className="text-xs text-gray-600 mt-2 italic">“{detail.financial_goals_note}”</p>
               )}
-            </div>
+            </Sezione>
 
-            {/* Sezione: Profilo rischio */}
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Profilo di rischio</p>
+            <Sezione titolo="Profilo di rischio">
               {selectedUser.risk_profile_label ? (
                 <div className="flex items-center gap-2">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${RISK_COLORS[selectedUser.risk_profile_label] ?? 'bg-surface-100 text-gray-600'}`}>
@@ -308,28 +338,22 @@ export default function AdminPage() {
               {detailLoading && <p className="text-xs text-gray-300 mt-2">Caricamento risposte…</p>}
               {detail?.risk_answers && (
                 <div className="mt-3 space-y-2.5">
-                  {detail.behavior_label && (
-                    <DetailRow label="Comportamento nei crolli" value={detail.behavior_label} />
-                  )}
-                  {RISK_QUESTIONS.map(q => {
-                    const v = detail.risk_answers?.[q.id]
-                    const opt = q.options.find(o => o.value === v)
+                  {detail.behavior_label && <DetailRow label="Comportamento nei crolli" value={detail.behavior_label} />}
+                  {RISK_QUESTIONS.map(qu => {
+                    const v = detail.risk_answers?.[qu.id]
+                    const opt = qu.options.find(o => o.value === v)
                     return (
-                      <div key={q.id} className="rounded-lg bg-surface-50 px-2.5 py-2">
-                        <p className="text-[11px] text-gray-400 leading-snug">{q.label}</p>
+                      <div key={qu.id} className="rounded-lg bg-surface-50 px-2.5 py-2">
+                        <p className="text-[11px] text-gray-400 leading-snug">{qu.label}</p>
                         <p className="text-xs text-gray-800 font-medium mt-0.5">{opt?.label ?? '–'}</p>
                       </div>
                     )
                   })}
                 </div>
               )}
-            </div>
+            </Sezione>
 
-            {/* Sezione: Dati */}
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Dati importati</p>
-              <DetailRow label="Movimenti" value={Number(selectedUser.movimenti_count).toLocaleString('it-IT')} />
-              <DetailRow label="Anni" value={selectedUser.anni} />
+            <Sezione titolo="Dati importati">
               <DetailRow
                 label="Foglio Google"
                 value={selectedUser.google_sheet_id ? (
@@ -343,11 +367,9 @@ export default function AdminPage() {
                   </a>
                 ) : '–'}
               />
-            </div>
+            </Sezione>
 
-            {/* Sezione: Fondo pensione */}
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Fondo pensione</p>
+            <Sezione titolo="Fondo pensione">
               {selectedUser.has_pension_fund === true ? (
                 <>
                   <DetailRow label="Ha fondo pensione" value="Sì" />
@@ -365,11 +387,10 @@ export default function AdminPage() {
               ) : (
                 <p className="text-xs text-gray-400">Non specificato</p>
               )}
-            </div>
-
-          </div>
-        </div>
-      )}
+            </Sezione>
+          </>
+        )}
+      </Drawer>
     </div>
   )
 }
